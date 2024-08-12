@@ -1,0 +1,19 @@
+[package]
+name = "paralight"
+description = "A lightweight parallelism library for indexed structures"
+version = "0.0.1"
+authors = ["Guillaume Endignoux <guillaumee@google.com>"]
+license = "MIT OR Apache-2.0"
+edition = "2021"
+
+[dependencies]
+log = { optional = true, version = "0.4" }
+
+# Platforms that support `libc::sched_setaffinity()`.
+[target.'cfg(any(target_os = "android", target_os = "dragonfly", target_os = "freebsd", target_os = "linux"))'.dependencies]
+nix = { version = "0.28", features = ["sched"] }
+
+[features]
+default = []
+log = ["dep:log"]
+log_parallelism = ["log"]
