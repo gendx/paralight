@@ -1,5 +1,7 @@
 # Paralight: a lightweight parallelism library for indexed structures
 
+[![Crate](https://img.shields.io/crates/v/paralight.svg?logo=rust)](https://crates.io/crates/paralight)
+[![Documentation](https://img.shields.io/docsrs/paralight?logo=rust)](https://docs.rs/paralight)
 [![Minimum Rust 1.75.0](https://img.shields.io/badge/rust-1.75.0%2B-orange.svg?logo=rust)](https://releases.rs/docs/1.75.0/)
 [![Dependencies](https://deps.rs/repo/github/gendx/paralight/status.svg)](https://deps.rs/repo/github/gendx/paralight)
 [![Lines of Code](https://www.aschey.tech/tokei/github/gendx/paralight?category=code)](https://github.com/aschey/vercel-tokei)
