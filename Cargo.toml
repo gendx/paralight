@@ -4,6 +4,11 @@ description = "A lightweight parallelism library for indexed structures"
 version = "0.0.1"
 authors = ["Guillaume Endignoux <guillaumee@google.com>"]
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/gendx/paralight"
+readme = "README.md"
+categories = ["concurrency"]
+keywords = ["parallelism"]
+exclude = [".github/*"]
 edition = "2021"
 rust-version = "1.75.0"
 

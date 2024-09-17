@@ -1,6 +1,10 @@
 # Paralight: a lightweight parallelism library for indexed structures
 
 [![Minimum Rust 1.75.0](https://img.shields.io/badge/rust-1.75.0%2B-orange.svg?logo=rust)](https://releases.rs/docs/1.75.0/)
+[![Dependencies](https://deps.rs/repo/github/gendx/paralight/status.svg)](https://deps.rs/repo/github/gendx/paralight)
+[![Lines of Code](https://www.aschey.tech/tokei/github/gendx/paralight?category=code)](https://github.com/aschey/vercel-tokei)
+[![Build Status](https://github.com/gendx/paralight/workflows/Build/badge.svg)](https://github.com/gendx/paralight/actions/workflows/build.yml)
+[![Test Status](https://github.com/gendx/paralight/workflows/Tests/badge.svg)](https://github.com/gendx/paralight/actions/workflows/tests.yml)
 
 This library allows you to distribute computation over slices among multiple
 threads. Each thread processes a subset of the items, and a final step reduces
@@ -91,7 +95,7 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for details.
 
 ## License
 
-This software is distributed under the terms of both the MIT license and the
-Apache License (Version 2.0).
+This software is distributed under the terms of both the [MIT
+license](LICENSE-MIT) and the [Apache License (Version 2.0)](LICENSE-APACHE).
 
 See [`LICENSE`](LICENSE) for details.
