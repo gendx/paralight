@@ -1,5 +1,7 @@
 # Paralight: a lightweight parallelism library for indexed structures
 
+[![Minimum Rust 1.75.0](https://img.shields.io/badge/rust-1.75.0%2B-orange.svg?logo=rust)](https://releases.rs/docs/1.75.0/)
+
 This library allows you to distribute computation over slices among multiple
 threads. Each thread processes a subset of the items, and a final step reduces
 the outputs from all threads into a single result.

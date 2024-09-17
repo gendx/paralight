@@ -1,0 +1,30 @@
+on: [push, pull_request]
+name: Lints on nightly toolchain
+jobs:
+  clippy:
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "-D warnings"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: clippy
+
+      - name: Check Clippy lints (no default features)
+        run: cargo clippy --verbose --all --no-default-features
+      - name: Check Clippy lints (log feature)
+        run: cargo clippy --verbose --all --no-default-features --features=log
+      - name: Check Clippy lints (all features)
+        run: cargo clippy --verbose --all --all-features
+      - name: Check Clippy lints (default features)
+        run: cargo clippy --verbose --all
+
+      - name: Check Clippy lints on tests (no default features)
+        run: cargo clippy --verbose --all --tests --no-default-features
+      - name: Check Clippy lints on tests (log feature)
+        run: cargo clippy --verbose --all --tests --no-default-features --features=log
+      - name: Check Clippy lints on tests (all features)
+        run: cargo clippy --verbose --all --tests --all-features
+      - name: Check Clippy lints on tests (default features)
+        run: cargo clippy --verbose --all --tests

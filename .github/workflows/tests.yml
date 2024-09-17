@@ -1,0 +1,29 @@
+on: [push, pull_request]
+name: Tests
+jobs:
+  test:
+    strategy:
+      matrix:
+        rust:
+          - stable
+          - beta
+          - nightly
+          - 1.77.0  # MSRV for tests
+      fail-fast: false
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: "-D warnings"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+
+      - name: Run tests (no default features)
+        run: cargo test --release --verbose --all --no-default-features
+      - name: Run tests (log feature)
+        run: cargo test --release --verbose --all --no-default-features --features=log
+      - name: Run tests (all features)
+        run: cargo test --release --verbose --all --all-features
+      - name: Run tests (default features)
+        run: cargo test --release --verbose --all
