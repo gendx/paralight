@@ -13,7 +13,8 @@ threads. Each thread processes a subset of the items, and a final step reduces
 the outputs from all threads into a single result.
 
 ```rust
-use paralight::ThreadPool;
+use paralight::{RangeStrategy, ThreadAccumulator, ThreadPool};
+use std::num::NonZeroUsize;
 
 let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 let num_threads = NonZeroUsize::try_from(4).unwrap();
@@ -57,11 +58,13 @@ Note: In principle, Paralight could be extended to support other inputs than
 slices as long as they are *indexed*, but for now only slices are supported.
 Come back to check when future versions are published!
 
+## Work-stealing strategy
+
 Paralight offers two strategies to distribute computation among threads:
-- "fixed" splits the input evenly and hands out a fixed sequential range of
-  items to each thread,
-- "work-stealing" starts with the fixed distribution, but lets each thread steal
-  items from others once it is done computing its items.
+- [`RangeStrategy::Fixed`] splits the input evenly and hands out a fixed
+  sequential range of items to each thread,
+- [`RangeStrategy::WorkStealing`] starts with the fixed distribution, but lets
+  each thread steal items from others once it is done computing its items.
 
 Note: In work-stealing mode, each thread processes an arbitrary subset of items
 in arbitrary order, meaning that the reduction operation must be both
@@ -82,10 +85,10 @@ Two optional features are available if you want to debug performance.
   stolen among threads).
 
 Note that in any case neither the input items nor the resulting computation are
-logged. Only the indices of the items in the input may be present. If you're
-concerned about that leaking information about your data into log, you need to
-make sure that you depend on Paralight with the `log` and `log_parallelism`
-features disabled.
+logged. Only the _indices_ of the items in the input may be present in the logs.
+If you're concerned that these indices leak too much information about your
+data, you need to make sure that you depend on Paralight with the `log` and
+`log_parallelism` features disabled.
 
 ## Disclaimer
 

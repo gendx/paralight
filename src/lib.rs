@@ -6,8 +6,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-//! A lightweight parallelism library for indexed structures.
-
+#![doc = include_str!("../README.md")]
 #![forbid(missing_docs, unsafe_code)]
 
 mod macros;
