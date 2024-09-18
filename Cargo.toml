@@ -17,7 +17,7 @@ log = { optional = true, version = "0.4" }
 
 # Platforms that support `libc::sched_setaffinity()`.
 [target.'cfg(any(target_os = "android", target_os = "dragonfly", target_os = "freebsd", target_os = "linux"))'.dependencies]
-nix = { version = "0.28", features = ["sched"] }
+nix = { version = "0.29", features = ["sched"] }
 
 [features]
 default = []
