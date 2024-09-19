@@ -152,6 +152,7 @@ mod test {
                 test_one_panic => fail("A worker thread panicked!"),
                 test_some_panics => fail("A worker thread panicked!"),
                 test_many_panics => fail("A worker thread panicked!"),
+                test_fn_once,
             );
         };
     }
@@ -238,5 +239,16 @@ mod test {
             |thread_pool| thread_pool.process_inputs().reduce(|a, b| a + b).unwrap(),
         );
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_fn_once(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            range_strategy,
+        };
+        // The scope should accept FnOnce() parameter. We test it with a closure that
+        // captures and consumes a non-Copy type.
+        let token = Box::new(());
+        pool_builder.scope(&[], || SumAccumulator, |_| drop(token));
     }
 }

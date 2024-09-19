@@ -82,7 +82,7 @@ impl ThreadPoolBuilder {
         &self,
         input: &[Input],
         new_accumulator: impl Fn() -> Accum,
-        f: impl Fn(ThreadPool<Output>) -> R,
+        f: impl FnOnce(ThreadPool<Output>) -> R,
     ) -> R {
         std::thread::scope(|scope| {
             let thread_pool = ThreadPool::new(
