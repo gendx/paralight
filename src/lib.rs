@@ -159,8 +159,13 @@ mod test {
     all_parallelism_tests!(fixed, RangeStrategy::Fixed);
     all_parallelism_tests!(work_stealing, RangeStrategy::WorkStealing);
 
+    #[cfg(not(miri))]
+    const INPUT_LEN: u64 = 100_000;
+    #[cfg(miri)]
+    const INPUT_LEN: u64 = 1000;
+
     fn test_sum_integers(range_strategy: RangeStrategy) {
-        let input = (0..=10_000).collect::<Vec<u64>>();
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
@@ -170,11 +175,11 @@ mod test {
             || SumAccumulator,
             |thread_pool| thread_pool.process_inputs().reduce(|a, b| a + b).unwrap(),
         );
-        assert_eq!(sum, 5_000 * 10_001);
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
     fn test_sum_twice(range_strategy: RangeStrategy) {
-        let input = (0..=10_000).collect::<Vec<u64>>();
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
@@ -189,12 +194,12 @@ mod test {
                 (sum1, sum2)
             },
         );
-        assert_eq!(sum1, 5_000 * 10_001);
-        assert_eq!(sum2, 5_000 * 10_001);
+        assert_eq!(sum1, INPUT_LEN * (INPUT_LEN + 1) / 2);
+        assert_eq!(sum2, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
     fn test_one_panic(range_strategy: RangeStrategy) {
-        let input = (0..=10_000).collect::<Vec<u64>>();
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
@@ -204,11 +209,11 @@ mod test {
             || SumAccumulatorOnePanic,
             |thread_pool| thread_pool.process_inputs().reduce(|a, b| a + b).unwrap(),
         );
-        assert_eq!(sum, 5_000 * 10_001);
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
     fn test_some_panics(range_strategy: RangeStrategy) {
-        let input = (0..=10_000).collect::<Vec<u64>>();
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
@@ -218,11 +223,11 @@ mod test {
             || SumAccumulatorSomePanics,
             |thread_pool| thread_pool.process_inputs().reduce(|a, b| a + b).unwrap(),
         );
-        assert_eq!(sum, 5_000 * 10_001);
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
     fn test_many_panics(range_strategy: RangeStrategy) {
-        let input = (0..=10_000).collect::<Vec<u64>>();
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
@@ -232,6 +237,6 @@ mod test {
             || SumAccumulatorManyPanics,
             |thread_pool| thread_pool.process_inputs().reduce(|a, b| a + b).unwrap(),
         );
-        assert_eq!(sum, 5_000 * 10_001);
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 }
