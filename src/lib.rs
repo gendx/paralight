@@ -13,7 +13,7 @@ mod macros;
 mod range;
 mod thread_pool;
 
-pub use thread_pool::{RangeStrategy, ThreadAccumulator, ThreadPool};
+pub use thread_pool::{RangeStrategy, ThreadAccumulator, ThreadPool, ThreadPoolBuilder};
 
 #[cfg(test)]
 mod test {
@@ -161,65 +161,77 @@ mod test {
 
     fn test_sum_integers(range_strategy: RangeStrategy) {
         let input = (0..=10_000).collect::<Vec<u64>>();
-        let num_threads = NonZeroUsize::try_from(4).unwrap();
-        let sum = std::thread::scope(|scope| {
-            let thread_pool = ThreadPool::new(scope, num_threads, range_strategy, &input, || {
-                SumAccumulator
-            });
-            thread_pool.process_inputs().reduce(|a, b| a + b).unwrap()
-        });
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            range_strategy,
+        };
+        let sum = pool_builder.scope(
+            &input,
+            || SumAccumulator,
+            |thread_pool| thread_pool.process_inputs().reduce(|a, b| a + b).unwrap(),
+        );
         assert_eq!(sum, 5_000 * 10_001);
     }
 
     fn test_sum_twice(range_strategy: RangeStrategy) {
         let input = (0..=10_000).collect::<Vec<u64>>();
-        let num_threads = NonZeroUsize::try_from(4).unwrap();
-        let (sum1, sum2) = std::thread::scope(|scope| {
-            let thread_pool = ThreadPool::new(scope, num_threads, range_strategy, &input, || {
-                SumAccumulator
-            });
-            // The same input can be processed multiple times on the thread pool.
-            let sum1 = thread_pool.process_inputs().reduce(|a, b| a + b).unwrap();
-            let sum2 = thread_pool.process_inputs().reduce(|a, b| a + b).unwrap();
-            (sum1, sum2)
-        });
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            range_strategy,
+        };
+        let (sum1, sum2) = pool_builder.scope(
+            &input,
+            || SumAccumulator,
+            |thread_pool| {
+                // The same input can be processed multiple times on the thread pool.
+                let sum1 = thread_pool.process_inputs().reduce(|a, b| a + b).unwrap();
+                let sum2 = thread_pool.process_inputs().reduce(|a, b| a + b).unwrap();
+                (sum1, sum2)
+            },
+        );
         assert_eq!(sum1, 5_000 * 10_001);
         assert_eq!(sum2, 5_000 * 10_001);
     }
 
     fn test_one_panic(range_strategy: RangeStrategy) {
         let input = (0..=10_000).collect::<Vec<u64>>();
-        let num_threads = NonZeroUsize::try_from(4).unwrap();
-        let sum = std::thread::scope(|scope| {
-            let thread_pool = ThreadPool::new(scope, num_threads, range_strategy, &input, || {
-                SumAccumulatorOnePanic
-            });
-            thread_pool.process_inputs().reduce(|a, b| a + b).unwrap()
-        });
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            range_strategy,
+        };
+        let sum = pool_builder.scope(
+            &input,
+            || SumAccumulatorOnePanic,
+            |thread_pool| thread_pool.process_inputs().reduce(|a, b| a + b).unwrap(),
+        );
         assert_eq!(sum, 5_000 * 10_001);
     }
 
     fn test_some_panics(range_strategy: RangeStrategy) {
         let input = (0..=10_000).collect::<Vec<u64>>();
-        let num_threads = NonZeroUsize::try_from(4).unwrap();
-        let sum = std::thread::scope(|scope| {
-            let thread_pool = ThreadPool::new(scope, num_threads, range_strategy, &input, || {
-                SumAccumulatorSomePanics
-            });
-            thread_pool.process_inputs().reduce(|a, b| a + b).unwrap()
-        });
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            range_strategy,
+        };
+        let sum = pool_builder.scope(
+            &input,
+            || SumAccumulatorSomePanics,
+            |thread_pool| thread_pool.process_inputs().reduce(|a, b| a + b).unwrap(),
+        );
         assert_eq!(sum, 5_000 * 10_001);
     }
 
     fn test_many_panics(range_strategy: RangeStrategy) {
         let input = (0..=10_000).collect::<Vec<u64>>();
-        let num_threads = NonZeroUsize::try_from(4).unwrap();
-        let sum = std::thread::scope(|scope| {
-            let thread_pool = ThreadPool::new(scope, num_threads, range_strategy, &input, || {
-                SumAccumulatorManyPanics
-            });
-            thread_pool.process_inputs().reduce(|a, b| a + b).unwrap()
-        });
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            range_strategy,
+        };
+        let sum = pool_builder.scope(
+            &input,
+            || SumAccumulatorManyPanics,
+            |thread_pool| thread_pool.process_inputs().reduce(|a, b| a + b).unwrap(),
+        );
         assert_eq!(sum, 5_000 * 10_001);
     }
 }

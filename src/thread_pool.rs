@@ -32,6 +32,71 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::thread::{Scope, ScopedJoinHandle};
 
+/// A builder for [`ThreadPool`].
+pub struct ThreadPoolBuilder {
+    /// Number of worker threads to spawn in the pool.
+    pub num_threads: NonZeroUsize,
+    /// Strategy to distribute ranges of work items among threads.
+    pub range_strategy: RangeStrategy,
+}
+
+impl ThreadPoolBuilder {
+    /// Spawn a scoped thread pool using the given input and accumulator.
+    ///
+    /// ```rust
+    /// # use paralight::{RangeStrategy, ThreadAccumulator, ThreadPool, ThreadPoolBuilder};
+    /// # use std::num::NonZeroUsize;
+    /// let pool_builder = ThreadPoolBuilder {
+    ///     num_threads: NonZeroUsize::try_from(4).unwrap(),
+    ///     range_strategy: RangeStrategy::WorkStealing,
+    /// };
+    ///
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum = pool_builder.scope(
+    ///     &input,
+    ///     || SumAccumulator,
+    ///     |thread_pool| thread_pool.process_inputs().reduce(|a, b| a + b).unwrap(),
+    /// );
+    /// assert_eq!(sum, 5 * 11);
+    ///
+    /// // Example of accumulator that computes a sum of integers.
+    /// struct SumAccumulator;
+    ///
+    /// impl ThreadAccumulator<u64, u64> for SumAccumulator {
+    ///     type Accumulator<'a> = u64;
+    ///
+    ///     fn init(&self) -> u64 {
+    ///         0
+    ///     }
+    ///
+    ///     fn process_item(&self, accumulator: &mut u64, _index: usize, x: &u64) {
+    ///         *accumulator += *x;
+    ///     }
+    ///
+    ///     fn finalize(&self, accumulator: u64) -> u64 {
+    ///         accumulator
+    ///     }
+    /// }
+    /// ```
+    pub fn scope<Input: Sync, Output: Send, Accum: ThreadAccumulator<Input, Output> + Send, R>(
+        &self,
+        input: &[Input],
+        new_accumulator: impl Fn() -> Accum,
+        f: impl Fn(ThreadPool<Output>) -> R,
+    ) -> R {
+        std::thread::scope(|scope| {
+            let thread_pool = ThreadPool::new(
+                scope,
+                self.num_threads,
+                self.range_strategy,
+                input,
+                new_accumulator,
+            );
+            f(thread_pool)
+        })
+    }
+}
+
 /// Status of the main thread.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum MainStatus {
@@ -150,6 +215,7 @@ struct WorkerThreadHandle<'scope, Output> {
 }
 
 /// Strategy to distribute ranges of work items among threads.
+#[derive(Clone, Copy)]
 pub enum RangeStrategy {
     /// Each thread processes a fixed range of items.
     Fixed,
@@ -160,7 +226,7 @@ pub enum RangeStrategy {
 impl<'scope, Output: Send + 'scope> ThreadPool<'scope, Output> {
     /// Creates a new pool tied to the given scope, spawning the given number of
     /// threads and using the given input slice.
-    pub fn new<'env, Input: Sync, Accum: ThreadAccumulator<Input, Output> + Send + 'scope>(
+    fn new<'env, Input: Sync, Accum: ThreadAccumulator<Input, Output> + Send + 'scope>(
         thread_scope: &'scope Scope<'scope, 'env>,
         num_threads: NonZeroUsize,
         range_strategy: RangeStrategy,

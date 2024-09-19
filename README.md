@@ -13,25 +13,25 @@ threads. Each thread processes a subset of the items, and a final step reduces
 the outputs from all threads into a single result.
 
 ```rust
-use paralight::{RangeStrategy, ThreadAccumulator, ThreadPool};
+use paralight::{RangeStrategy, ThreadAccumulator, ThreadPool, ThreadPoolBuilder};
 use std::num::NonZeroUsize;
 
-let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-let num_threads = NonZeroUsize::try_from(4).unwrap();
+// Define thread pool parameters.
+let pool_builder = ThreadPoolBuilder {
+    num_threads: NonZeroUsize::try_from(4).unwrap(),
+    range_strategy: RangeStrategy::WorkStealing,
+};
 
-let sum = std::thread::scope(|scope| {
-    // Initialize a thread pool attached to the given input and accumulator (see
-    // below).
-    let thread_pool = ThreadPool::new(
-        scope,
-        num_threads,
-        RangeStrategy::WorkStealing,
-        &input,
-        || SumAccumulator,
-    );
-    // Compute the sum over the inputs.
-    thread_pool.process_inputs().reduce(|a, b| a + b).unwrap()
-});
+// Create a scoped thread pool attached to the given input and accumulator (see below).
+let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+let sum = pool_builder.scope(
+    &input,
+    || SumAccumulator,
+    |thread_pool| {
+        // Compute the sum of the inputs.
+        thread_pool.process_inputs().reduce(|a, b| a + b).unwrap()
+    },
+);
 assert_eq!(sum, 5 * 11);
 
 // Example of accumulator that computes a sum of integers.
