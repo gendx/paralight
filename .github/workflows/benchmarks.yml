@@ -1,0 +1,32 @@
+on: [push, pull_request]
+name: Build benchmarks
+jobs:
+  build_benches:
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+        rust:
+          - stable
+          - beta
+          - nightly
+          - 1.77.0  # MSRV for tests
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
+    env:
+      RUSTFLAGS: "-D warnings"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+
+      - name: Build (no default features)
+        run: cargo bench --no-run --verbose --all --no-default-features
+      - name: Build (log feature)
+        run: cargo bench --no-run --verbose --all --no-default-features --features=log
+      - name: Build (all features)
+        run: cargo bench --no-run --verbose --all --all-features
+      - name: Build (default features)
+        run: cargo bench --no-run --verbose --all
