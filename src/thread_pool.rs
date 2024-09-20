@@ -42,7 +42,7 @@ pub struct ThreadPoolBuilder {
 }
 
 impl ThreadPoolBuilder {
-    /// Spawn a scoped thread pool using the given input and accumulator.
+    /// Spawn a scoped thread pool.
     ///
     /// ```rust
     /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
@@ -52,8 +52,8 @@ impl ThreadPoolBuilder {
     ///     range_strategy: RangeStrategy::WorkStealing,
     /// };
     ///
-    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let sum = pool_builder.scope(|thread_pool| {
+    ///     let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     ///     thread_pool
     ///         .process_inputs(&input, || 0u64, |acc, _, x| *acc += *x, |acc| acc)
     ///         .reduce(|a, b| a + b)
@@ -154,7 +154,7 @@ impl<'scope, Input: Sync + 'scope, Output: Send + 'scope, Accum: 'scope>
     ThreadPool<'scope, Input, Output, Accum>
 {
     /// Creates a new pool tied to the given scope, spawning the given number of
-    /// threads and using the given input slice.
+    /// worker threads.
     fn new<'env>(
         thread_scope: &'scope Scope<'scope, 'env>,
         num_threads: NonZeroUsize,
@@ -260,8 +260,33 @@ impl<'scope, Input: Sync + 'scope, Output: Send + 'scope, Accum: 'scope>
         }
     }
 
-    /// Performs a computation round, processing the input slice in parallel and
-    /// returning an iterator over the threads' outputs.
+    /// Processes an input slice in parallel and returns an iterator over the
+    /// threads' outputs.
+    ///
+    /// # Parameters
+    ///
+    /// - `input` slice to process in parallel,
+    /// - `init` function to create a new (per-thread) accumulator,
+    /// - `process_item` function to accumulate an item from the slice into the
+    ///   accumulator,
+    /// - `finalize` function to transform an accumulator into an output.
+    ///
+    /// ```rust
+    /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
+    /// # use std::num::NonZeroUsize;
+    /// # let pool_builder = ThreadPoolBuilder {
+    /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// # };
+    /// # pool_builder.scope(|thread_pool| {
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum = thread_pool
+    ///     .process_inputs(&input, || 0u64, |acc, _, x| *acc += *x, |acc| acc)
+    ///     .reduce(|a, b| a + b)
+    ///     .unwrap();
+    /// assert_eq!(sum, 5 * 11);
+    /// # });
+    /// ```
     pub fn process_inputs(
         &self,
         input: &[Input],

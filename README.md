@@ -22,13 +22,18 @@ let pool_builder = ThreadPoolBuilder {
     range_strategy: RangeStrategy::WorkStealing,
 };
 
-// Create a scoped thread pool attached to the given input and accumulator (see below).
-let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+// Create a scoped thread pool.
 let sum = pool_builder.scope(
     |thread_pool| {
-        // Compute the sum of the inputs.
+        // Compute the sum of a slice.
+        let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
         thread_pool
-            .process_inputs(&input, || 0u64, |acc, _, x| *acc += *x, |acc| acc)
+            .process_inputs(
+                &input,
+                /* init */ || 0u64,
+                /* process_item */ |acc, _, x| *acc += *x,
+                /* finalize */ |acc| acc,
+            )
             .reduce(|a, b| a + b)
             .unwrap()
     },
