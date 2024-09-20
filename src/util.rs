@@ -6,6 +6,50 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
+
+/// An ergonomic wrapper around a [`Mutex`]-[`Condvar`] pair.
+pub struct Status<T> {
+    mutex: Mutex<T>,
+    condvar: Condvar,
+}
+
+impl<T> Status<T> {
+    /// Creates a new status initialized with the given value.
+    pub fn new(t: T) -> Self {
+        Self {
+            mutex: Mutex::new(t),
+            condvar: Condvar::new(),
+        }
+    }
+
+    /// Attempts to set the status to the given value and notifies one waiting
+    /// thread.
+    ///
+    /// Fails if the [`Mutex`] is poisoned.
+    pub fn try_notify_one(&self, t: T) -> Result<(), PoisonError<MutexGuard<'_, T>>> {
+        *self.mutex.lock()? = t;
+        self.condvar.notify_one();
+        Ok(())
+    }
+
+    /// Sets the status to the given value and notifies all waiting threads.
+    pub fn notify_all(&self, t: T) {
+        *self.mutex.lock().unwrap() = t;
+        self.condvar.notify_all();
+    }
+
+    /// Waits until the predicate is true on this status.
+    ///
+    /// This returns a [`MutexGuard`], allowing to further inspect or modify the
+    /// status.
+    pub fn wait_while(&self, predicate: impl FnMut(&mut T) -> bool) -> MutexGuard<T> {
+        self.condvar
+            .wait_while(self.mutex.lock().unwrap(), predicate)
+            .unwrap()
+    }
+}
+
 /// A lifetime-erased slice. This acts as a [`&[T]`](slice) but whose lifetime
 /// can be adjusted via the `unsafe` function [`get()`](Self::get).
 pub struct SliceView<T> {

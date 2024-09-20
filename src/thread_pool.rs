@@ -13,7 +13,7 @@ use super::range::{
 };
 use crate::macros::{log_debug, log_error, log_warn};
 // Platforms that support `libc::sched_setaffinity()`.
-use super::util::SliceView;
+use super::util::{SliceView, Status};
 #[cfg(all(
     not(miri),
     any(
@@ -30,7 +30,7 @@ use nix::{
 use std::cell::Cell;
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::thread::{Scope, ScopedJoinHandle};
 
 /// A builder for [`ThreadPool`].
@@ -133,48 +133,6 @@ impl RoundColor {
             RoundColor::Blue => RoundColor::Red,
             RoundColor::Red => RoundColor::Blue,
         }
-    }
-}
-
-/// An ergonomic wrapper around a [`Mutex`]-[`Condvar`] pair.
-struct Status<T> {
-    mutex: Mutex<T>,
-    condvar: Condvar,
-}
-
-impl<T> Status<T> {
-    /// Creates a new status initialized with the given value.
-    fn new(t: T) -> Self {
-        Self {
-            mutex: Mutex::new(t),
-            condvar: Condvar::new(),
-        }
-    }
-
-    /// Attempts to set the status to the given value and notifies one waiting
-    /// thread.
-    ///
-    /// Fails if the [`Mutex`] is poisoned.
-    fn try_notify_one(&self, t: T) -> Result<(), PoisonError<MutexGuard<'_, T>>> {
-        *self.mutex.lock()? = t;
-        self.condvar.notify_one();
-        Ok(())
-    }
-
-    /// Sets the status to the given value and notifies all waiting threads.
-    fn notify_all(&self, t: T) {
-        *self.mutex.lock().unwrap() = t;
-        self.condvar.notify_all();
-    }
-
-    /// Waits until the predicate is true on this status.
-    ///
-    /// This returns a [`MutexGuard`], allowing to further inspect or modify the
-    /// status.
-    fn wait_while(&self, predicate: impl FnMut(&mut T) -> bool) -> MutexGuard<T> {
-        self.condvar
-            .wait_while(self.mutex.lock().unwrap(), predicate)
-            .unwrap()
     }
 }
 
