@@ -58,7 +58,7 @@ mod rayon {
 mod paralight {
     use super::{LENGTHS, NUM_THREADS};
     use divan::counter::BytesCount;
-    use divan::Bencher;
+    use divan::{black_box, Bencher};
     use paralight::{RangeStrategy, ThreadAccumulator, ThreadPoolBuilder};
     use std::num::NonZeroUsize;
 
@@ -78,17 +78,22 @@ mod paralight {
         range_strategy: RangeStrategy,
     ) {
         let input = (0..=len as u64).map(|x| x.into()).collect::<Vec<u64>>();
+        let input_slice = input.as_slice();
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(NUM_THREADS).unwrap(),
             range_strategy,
         };
         pool_builder.scope(
-            &input,
             || SumAccumulator,
             move |thread_pool| {
                 bencher
                     .counter(BytesCount::of_many::<u64>(len))
-                    .bench_local(|| thread_pool.process_inputs().reduce(|a, b| a + b).unwrap());
+                    .bench_local(|| {
+                        thread_pool
+                            .process_inputs(black_box(input_slice))
+                            .reduce(|a, b| a + b)
+                            .unwrap()
+                    });
             },
         );
     }

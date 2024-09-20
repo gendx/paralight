@@ -25,11 +25,13 @@ let pool_builder = ThreadPoolBuilder {
 // Create a scoped thread pool attached to the given input and accumulator (see below).
 let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 let sum = pool_builder.scope(
-    &input,
     || SumAccumulator,
     |thread_pool| {
         // Compute the sum of the inputs.
-        thread_pool.process_inputs().reduce(|a, b| a + b).unwrap()
+        thread_pool
+            .process_inputs(&input)
+            .reduce(|a, b| a + b)
+            .unwrap()
     },
 );
 assert_eq!(sum, 5 * 11);

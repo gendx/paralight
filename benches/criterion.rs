@@ -69,7 +69,7 @@ mod rayon {
 
 /// Benchmarks using Paralight.
 mod paralight {
-    use criterion::Bencher;
+    use criterion::{black_box, Bencher};
     use paralight::{RangeStrategy, ThreadAccumulator, ThreadPoolBuilder};
     use std::num::NonZeroUsize;
 
@@ -80,15 +80,20 @@ mod paralight {
         len: &usize,
     ) {
         let input = (0..=*len as u64).collect::<Vec<u64>>();
+        let input_slice = input.as_slice();
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(num_threads).unwrap(),
             range_strategy,
         };
         pool_builder.scope(
-            &input,
             || SumAccumulator,
             |thread_pool| {
-                bencher.iter(|| thread_pool.process_inputs().reduce(|a, b| a + b).unwrap());
+                bencher.iter(|| {
+                    thread_pool
+                        .process_inputs(black_box(input_slice))
+                        .reduce(|a, b| a + b)
+                        .unwrap()
+                });
             },
         );
     }

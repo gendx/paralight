@@ -11,7 +11,7 @@ use crate::macros::log_debug;
 use crate::macros::{log_info, log_trace};
 #[cfg(feature = "log_parallelism")]
 use std::ops::AddAssign;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 #[cfg(feature = "log_parallelism")]
 use std::sync::Mutex;
@@ -21,9 +21,9 @@ pub trait RangeFactory {
     type Rn: Range;
     type Orchestrator: RangeOrchestrator;
 
-    /// Creates a new factory for a range with the given number of elements
-    /// split across the given number of threads.
-    fn new(num_elements: usize, num_threads: usize) -> Self;
+    /// Creates a new factory for a range split across the given number of
+    /// threads.
+    fn new(num_threads: usize) -> Self;
 
     /// Returns the orchestrator object for all the ranges created by this
     /// factory.
@@ -36,7 +36,7 @@ pub trait RangeFactory {
 /// An orchestrator for the ranges given to all the threads.
 pub trait RangeOrchestrator {
     /// Resets all the ranges to prepare a new computation round.
-    fn reset_ranges(&self);
+    fn reset_ranges(&self, num_elements: usize);
 
     /// Hook to display various debugging statistics.
     #[cfg(feature = "log_parallelism")]
@@ -56,52 +56,68 @@ pub trait Range {
 
 /// A factory that hands out a fixed range to each thread, without any stealing.
 pub struct FixedRangeFactory {
-    /// Total number of elements to iterate over.
-    num_elements: usize,
     /// Number of threads that iterate.
     num_threads: usize,
+    /// Total number of elements in the current range.
+    num_elements: Arc<AtomicUsize>,
 }
 
 impl RangeFactory for FixedRangeFactory {
     type Rn = FixedRange;
     type Orchestrator = FixedRangeOrchestrator;
 
-    fn new(num_elements: usize, num_threads: usize) -> Self {
+    fn new(num_threads: usize) -> Self {
         Self {
-            num_elements,
             num_threads,
+            num_elements: Arc::new(AtomicUsize::new(0)),
         }
     }
 
     fn orchestrator(self) -> FixedRangeOrchestrator {
-        FixedRangeOrchestrator {}
+        FixedRangeOrchestrator {
+            num_elements: self.num_elements,
+        }
     }
 
     fn range(&self, thread_id: usize) -> FixedRange {
-        let start = (thread_id * self.num_elements) / self.num_threads;
-        let end = ((thread_id + 1) * self.num_elements) / self.num_threads;
-        FixedRange(start..end)
+        FixedRange {
+            id: thread_id,
+            num_threads: self.num_threads,
+            num_elements: self.num_elements.clone(),
+        }
     }
 }
 
 /// An orchestrator for the [`FixedRangeFactory`].
-pub struct FixedRangeOrchestrator {}
+pub struct FixedRangeOrchestrator {
+    /// Total number of elements.
+    num_elements: Arc<AtomicUsize>,
+}
 
 impl RangeOrchestrator for FixedRangeOrchestrator {
-    fn reset_ranges(&self) {
-        // Nothing to do.
+    fn reset_ranges(&self, num_elements: usize) {
+        self.num_elements.store(num_elements, Ordering::Relaxed);
     }
 }
 
 /// A fixed range.
-#[derive(Debug, PartialEq, Eq)]
-pub struct FixedRange(std::ops::Range<usize>);
+pub struct FixedRange {
+    /// Index of the thread that owns this range.
+    id: usize,
+    /// Total number of threads.
+    num_threads: usize,
+    /// Total number of elements.
+    num_elements: Arc<AtomicUsize>,
+}
 
 impl Range for FixedRange {
     type Iter = std::ops::Range<usize>;
 
     fn iter(&self) -> Self::Iter {
-        self.0.clone()
+        let num_elements = self.num_elements.load(Ordering::Relaxed);
+        let start = (self.id * num_elements) / self.num_threads;
+        let end = ((self.id + 1) * num_elements) / self.num_threads;
+        start..end
     }
 }
 
@@ -111,8 +127,6 @@ impl Range for FixedRange {
 /// to steal from. It then divides that range into two and steals a half, to
 /// continue processing items.
 pub struct WorkStealingRangeFactory {
-    /// Total number of elements to iterate over.
-    num_elements: usize,
     /// Handle to the ranges of all the threads.
     ranges: Arc<Vec<AtomicRange>>,
     /// Handle to the work-stealing statistics.
@@ -124,9 +138,8 @@ impl RangeFactory for WorkStealingRangeFactory {
     type Rn = WorkStealingRange;
     type Orchestrator = WorkStealingRangeOrchestrator;
 
-    fn new(num_elements: usize, num_threads: usize) -> Self {
+    fn new(num_threads: usize) -> Self {
         Self {
-            num_elements,
             ranges: Arc::new((0..num_threads).map(|_| AtomicRange::default()).collect()),
             #[cfg(feature = "log_parallelism")]
             stats: Arc::new(Mutex::new(WorkStealingStats::default())),
@@ -135,7 +148,6 @@ impl RangeFactory for WorkStealingRangeFactory {
 
     fn orchestrator(self) -> WorkStealingRangeOrchestrator {
         WorkStealingRangeOrchestrator {
-            num_elements: self.num_elements,
             ranges: self.ranges,
             #[cfg(feature = "log_parallelism")]
             stats: self.stats,
@@ -154,8 +166,6 @@ impl RangeFactory for WorkStealingRangeFactory {
 
 /// An orchestrator for the [`WorkStealingRangeFactory`].
 pub struct WorkStealingRangeOrchestrator {
-    /// Total number of elements to iterate over.
-    num_elements: usize,
     /// Handle to the ranges of all the threads.
     ranges: Arc<Vec<AtomicRange>>,
     /// Handle to the work-stealing statistics.
@@ -164,12 +174,12 @@ pub struct WorkStealingRangeOrchestrator {
 }
 
 impl RangeOrchestrator for WorkStealingRangeOrchestrator {
-    fn reset_ranges(&self) {
+    fn reset_ranges(&self, num_elements: usize) {
         log_debug!("Resetting ranges.");
         let num_threads = self.ranges.len();
         for (i, range) in self.ranges.iter().enumerate() {
-            let start = (i * self.num_elements) / num_threads;
-            let end = ((i + 1) * self.num_elements) / num_threads;
+            let start = (i * num_elements) / num_threads;
+            let end = ((i + 1) * num_elements) / num_threads;
             range.store(PackedRange::new(start as u32, end as u32));
         }
     }
@@ -483,31 +493,35 @@ mod test {
 
     #[test]
     fn test_fixed_range_factory_splits_evenly() {
-        let factory = FixedRangeFactory::new(100, 4);
-        assert_eq!(factory.range(0), FixedRange(0..25));
-        assert_eq!(factory.range(1), FixedRange(25..50));
-        assert_eq!(factory.range(2), FixedRange(50..75));
-        assert_eq!(factory.range(3), FixedRange(75..100));
+        let factory = FixedRangeFactory::new(4);
+        let ranges: [_; 4] = std::array::from_fn(|i| factory.range(i));
+        factory.orchestrator().reset_ranges(200);
+        assert_eq!(ranges[0].iter(), 0..50);
+        assert_eq!(ranges[1].iter(), 50..100);
+        assert_eq!(ranges[2].iter(), 100..150);
+        assert_eq!(ranges[3].iter(), 150..200);
 
-        let factory = FixedRangeFactory::new(100, 7);
-        assert_eq!(factory.range(0), FixedRange(0..14));
-        assert_eq!(factory.range(1), FixedRange(14..28));
-        assert_eq!(factory.range(2), FixedRange(28..42));
-        assert_eq!(factory.range(3), FixedRange(42..57));
-        assert_eq!(factory.range(4), FixedRange(57..71));
-        assert_eq!(factory.range(5), FixedRange(71..85));
-        assert_eq!(factory.range(6), FixedRange(85..100));
+        let factory = FixedRangeFactory::new(7);
+        let ranges: [_; 7] = std::array::from_fn(|i| factory.range(i));
+        factory.orchestrator().reset_ranges(100);
+        assert_eq!(ranges[0].iter(), 0..14);
+        assert_eq!(ranges[1].iter(), 14..28);
+        assert_eq!(ranges[2].iter(), 28..42);
+        assert_eq!(ranges[3].iter(), 42..57);
+        assert_eq!(ranges[4].iter(), 57..71);
+        assert_eq!(ranges[5].iter(), 71..85);
+        assert_eq!(ranges[6].iter(), 85..100);
     }
 
     #[test]
     fn test_fixed_range() {
-        let factory = FixedRangeFactory::new(100, 4);
+        let factory = FixedRangeFactory::new(4);
         let ranges: [_; 4] = std::array::from_fn(|i| factory.range(i));
         let orchestrator = factory.orchestrator();
 
         std::thread::scope(|s| {
             for _ in 0..10 {
-                orchestrator.reset_ranges();
+                orchestrator.reset_ranges(100);
                 let handles = ranges
                     .each_ref()
                     .map(|range| s.spawn(move || range.iter().collect::<Vec<_>>()));
@@ -529,13 +543,13 @@ mod test {
         #[cfg(miri)]
         const NUM_ELEMENTS: usize = 100;
 
-        let factory = WorkStealingRangeFactory::new(NUM_ELEMENTS, NUM_THREADS);
+        let factory = WorkStealingRangeFactory::new(NUM_THREADS);
         let ranges: [_; NUM_THREADS] = std::array::from_fn(|i| factory.range(i));
         let orchestrator = factory.orchestrator();
 
         std::thread::scope(|s| {
             for _ in 0..10 {
-                orchestrator.reset_ranges();
+                orchestrator.reset_ranges(NUM_ELEMENTS);
                 let handles = ranges
                     .each_ref()
                     .map(|range| s.spawn(move || range.iter().collect::<Vec<_>>()));

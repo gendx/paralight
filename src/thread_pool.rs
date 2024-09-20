@@ -13,6 +13,7 @@ use super::range::{
 };
 use crate::macros::{log_debug, log_error, log_warn};
 // Platforms that support `libc::sched_setaffinity()`.
+use super::util::SliceView;
 #[cfg(all(
     not(miri),
     any(
@@ -29,7 +30,7 @@ use nix::{
 use std::cell::Cell;
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, RwLock};
 use std::thread::{Scope, ScopedJoinHandle};
 
 /// A builder for [`ThreadPool`].
@@ -53,9 +54,13 @@ impl ThreadPoolBuilder {
     ///
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let sum = pool_builder.scope(
-    ///     &input,
     ///     || SumAccumulator,
-    ///     |thread_pool| thread_pool.process_inputs().reduce(|a, b| a + b).unwrap(),
+    ///     |thread_pool| {
+    ///         thread_pool
+    ///             .process_inputs(&input)
+    ///             .reduce(|a, b| a + b)
+    ///             .unwrap()
+    ///     },
     /// );
     /// assert_eq!(sum, 5 * 11);
     ///
@@ -80,16 +85,14 @@ impl ThreadPoolBuilder {
     /// ```
     pub fn scope<Input: Sync, Output: Send, Accum: ThreadAccumulator<Input, Output> + Send, R>(
         &self,
-        input: &[Input],
         new_accumulator: impl Fn() -> Accum,
-        f: impl FnOnce(ThreadPool<Output>) -> R,
+        f: impl FnOnce(ThreadPool<Input, Output>) -> R,
     ) -> R {
         std::thread::scope(|scope| {
             let thread_pool = ThreadPool::new(
                 scope,
                 self.num_threads,
                 self.range_strategy,
-                input,
                 new_accumulator,
             );
             f(thread_pool)
@@ -187,9 +190,9 @@ impl<T> Status<T> {
     }
 }
 
-/// A thread pool tied to a scope, that can process inputs into the given output
-/// type.
-pub struct ThreadPool<'scope, Output> {
+/// A thread pool tied to a scope, that can process inputs into outputs of the
+/// given types.
+pub struct ThreadPool<'scope, Input, Output> {
     /// Handles to all the worker threads in the pool.
     threads: Vec<WorkerThreadHandle<'scope, Output>>,
     /// Number of worker threads active in the current round.
@@ -204,6 +207,8 @@ pub struct ThreadPool<'scope, Output> {
     /// dynamic object to avoid making the range type a parameter of
     /// everything.
     range_orchestrator: Box<dyn RangeOrchestrator>,
+    /// Reference to the inputs to process.
+    input: Arc<RwLock<SliceView<Input>>>,
 }
 
 /// Handle to a worker thread in the pool.
@@ -223,31 +228,27 @@ pub enum RangeStrategy {
     WorkStealing,
 }
 
-impl<'scope, Output: Send + 'scope> ThreadPool<'scope, Output> {
+impl<'scope, Input: Sync + 'scope, Output: Send + 'scope> ThreadPool<'scope, Input, Output> {
     /// Creates a new pool tied to the given scope, spawning the given number of
     /// threads and using the given input slice.
-    fn new<'env, Input: Sync, Accum: ThreadAccumulator<Input, Output> + Send + 'scope>(
+    fn new<'env, Accum: ThreadAccumulator<Input, Output> + Send + 'scope>(
         thread_scope: &'scope Scope<'scope, 'env>,
         num_threads: NonZeroUsize,
         range_strategy: RangeStrategy,
-        input: &'env [Input],
         new_accumulator: impl Fn() -> Accum,
     ) -> Self {
         let num_threads: usize = num_threads.into();
-        let input_len = input.len();
         match range_strategy {
             RangeStrategy::Fixed => Self::new_with_factory(
                 thread_scope,
                 num_threads,
-                FixedRangeFactory::new(input_len, num_threads),
-                input,
+                FixedRangeFactory::new(num_threads),
                 new_accumulator,
             ),
             RangeStrategy::WorkStealing => Self::new_with_factory(
                 thread_scope,
                 num_threads,
-                WorkStealingRangeFactory::new(input_len, num_threads),
-                input,
+                WorkStealingRangeFactory::new(num_threads),
                 new_accumulator,
             ),
         }
@@ -256,13 +257,11 @@ impl<'scope, Output: Send + 'scope> ThreadPool<'scope, Output> {
     fn new_with_factory<
         'env,
         RnFactory: RangeFactory,
-        Input: Sync,
         Accum: ThreadAccumulator<Input, Output> + Send + 'scope,
     >(
         thread_scope: &'scope Scope<'scope, 'env>,
         num_threads: usize,
         range_factory: RnFactory,
-        input: &'env [Input],
         new_accumulator: impl Fn() -> Accum,
     ) -> Self
     where
@@ -273,6 +272,8 @@ impl<'scope, Output: Send + 'scope> ThreadPool<'scope, Output> {
         let num_active_threads = Arc::new(AtomicUsize::new(0));
         let worker_status = Arc::new(Status::new(WorkerStatus::Round(color)));
         let main_status = Arc::new(Status::new(MainStatus::Waiting));
+
+        let input = Arc::new(RwLock::new(SliceView::new()));
 
         #[cfg(any(
             miri,
@@ -294,7 +295,7 @@ impl<'scope, Output: Send + 'scope> ThreadPool<'scope, Output> {
                     worker_status: worker_status.clone(),
                     main_status: main_status.clone(),
                     range: range_factory.range(id),
-                    input,
+                    input: input.clone(),
                     output: output.clone(),
                     accumulator: new_accumulator(),
                 };
@@ -334,13 +335,14 @@ impl<'scope, Output: Send + 'scope> ThreadPool<'scope, Output> {
             worker_status,
             main_status,
             range_orchestrator: Box::new(range_factory.orchestrator()),
+            input,
         }
     }
 
     /// Performs a computation round, processing the input slice in parallel and
     /// returning an iterator over the threads' outputs.
-    pub fn process_inputs(&self) -> impl Iterator<Item = Output> + '_ {
-        self.range_orchestrator.reset_ranges();
+    pub fn process_inputs(&self, input: &[Input]) -> impl Iterator<Item = Output> + '_ {
+        self.range_orchestrator.reset_ranges(input.len());
 
         let num_threads = self.threads.len();
         self.num_active_threads.store(num_threads, Ordering::SeqCst);
@@ -349,6 +351,7 @@ impl<'scope, Output: Send + 'scope> ThreadPool<'scope, Output> {
         round.toggle();
         self.round.set(round);
 
+        self.input.write().unwrap().set(input);
         log_debug!("[main thread, round {round:?}] Ready to compute a round.");
 
         self.worker_status.notify_all(WorkerStatus::Round(round));
@@ -366,6 +369,7 @@ impl<'scope, Output: Send + 'scope> ThreadPool<'scope, Output> {
         drop(guard);
 
         log_debug!("[main thread, round {round:?}] All threads have now finished this round.");
+        self.input.write().unwrap().clear();
 
         self.threads
             .iter()
@@ -373,7 +377,7 @@ impl<'scope, Output: Send + 'scope> ThreadPool<'scope, Output> {
     }
 }
 
-impl<Output> Drop for ThreadPool<'_, Output> {
+impl<Input, Output> Drop for ThreadPool<'_, Input, Output> {
     /// Joins all the threads in the pool.
     #[allow(clippy::single_match, clippy::unused_enumerate_index)]
     fn drop(&mut self) {
@@ -418,7 +422,7 @@ pub trait ThreadAccumulator<Input, Output> {
 }
 
 /// Context object owned by a worker thread.
-struct ThreadContext<'env, Rn: Range, Input, Output, Accum: ThreadAccumulator<Input, Output>> {
+struct ThreadContext<Rn: Range, Input, Output, Accum: ThreadAccumulator<Input, Output>> {
     /// Thread index.
     #[cfg(feature = "log")]
     id: usize,
@@ -431,15 +435,15 @@ struct ThreadContext<'env, Rn: Range, Input, Output, Accum: ThreadAccumulator<In
     /// Range of items that this worker thread needs to process.
     range: Rn,
     /// Reference to the inputs to process.
-    input: &'env [Input],
+    input: Arc<RwLock<SliceView<Input>>>,
     /// Output that this thread writes to.
     output: Arc<Mutex<Option<Output>>>,
     /// Function to map and reduce inputs into the output.
     accumulator: Accum,
 }
 
-impl<'env, Rn: Range, Input, Output, Accum: ThreadAccumulator<Input, Output>>
-    ThreadContext<'env, Rn, Input, Output, Accum>
+impl<Rn: Range, Input, Output, Accum: ThreadAccumulator<Input, Output>>
+    ThreadContext<Rn, Input, Output, Accum>
 {
     /// Main function run by this thread.
     fn run(&self) {
@@ -480,10 +484,15 @@ impl<'env, Rn: Range, Input, Output, Accum: ThreadAccumulator<Input, Output>>
                     };
                     {
                         let mut accumulator = self.accumulator.init();
+                        let guard = self.input.read().unwrap();
+                        // SAFETY: the underlying input slice is valid and not mutated for the whole
+                        // lifetime of this block.
+                        let input = unsafe { guard.get().unwrap() };
                         for i in self.range.iter() {
                             self.accumulator
-                                .process_item(&mut accumulator, i, &self.input[i]);
+                                .process_item(&mut accumulator, i, &input[i]);
                         }
+                        drop(guard);
                         *self.output.lock().unwrap() = Some(self.accumulator.finalize(accumulator));
                     }
                     std::mem::forget(panic_notifier);

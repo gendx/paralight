@@ -7,11 +7,18 @@
 // except according to those terms.
 
 #![doc = include_str!("../README.md")]
-#![forbid(missing_docs, unsafe_code)]
+#![forbid(
+    missing_docs,
+    unsafe_op_in_unsafe_fn,
+    clippy::missing_safety_doc,
+    clippy::multiple_unsafe_ops_per_block
+)]
+#![cfg_attr(not(test), forbid(clippy::undocumented_unsafe_blocks))]
 
 mod macros;
 mod range;
 mod thread_pool;
+mod util;
 
 pub use thread_pool::{RangeStrategy, ThreadAccumulator, ThreadPool, ThreadPoolBuilder};
 
@@ -153,6 +160,8 @@ mod test {
                 test_some_panics => fail("A worker thread panicked!"),
                 test_many_panics => fail("A worker thread panicked!"),
                 test_fn_once,
+                test_local_sum,
+                test_several_inputs,
             );
         };
     }
@@ -172,9 +181,13 @@ mod test {
             range_strategy,
         };
         let sum = pool_builder.scope(
-            &input,
             || SumAccumulator,
-            |thread_pool| thread_pool.process_inputs().reduce(|a, b| a + b).unwrap(),
+            |thread_pool| {
+                thread_pool
+                    .process_inputs(&input)
+                    .reduce(|a, b| a + b)
+                    .unwrap()
+            },
         );
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
@@ -186,12 +199,17 @@ mod test {
             range_strategy,
         };
         let (sum1, sum2) = pool_builder.scope(
-            &input,
             || SumAccumulator,
             |thread_pool| {
                 // The same input can be processed multiple times on the thread pool.
-                let sum1 = thread_pool.process_inputs().reduce(|a, b| a + b).unwrap();
-                let sum2 = thread_pool.process_inputs().reduce(|a, b| a + b).unwrap();
+                let sum1 = thread_pool
+                    .process_inputs(&input)
+                    .reduce(|a, b| a + b)
+                    .unwrap();
+                let sum2 = thread_pool
+                    .process_inputs(&input)
+                    .reduce(|a, b| a + b)
+                    .unwrap();
                 (sum1, sum2)
             },
         );
@@ -206,9 +224,13 @@ mod test {
             range_strategy,
         };
         let sum = pool_builder.scope(
-            &input,
             || SumAccumulatorOnePanic,
-            |thread_pool| thread_pool.process_inputs().reduce(|a, b| a + b).unwrap(),
+            |thread_pool| {
+                thread_pool
+                    .process_inputs(&input)
+                    .reduce(|a, b| a + b)
+                    .unwrap()
+            },
         );
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
@@ -220,9 +242,13 @@ mod test {
             range_strategy,
         };
         let sum = pool_builder.scope(
-            &input,
             || SumAccumulatorSomePanics,
-            |thread_pool| thread_pool.process_inputs().reduce(|a, b| a + b).unwrap(),
+            |thread_pool| {
+                thread_pool
+                    .process_inputs(&input)
+                    .reduce(|a, b| a + b)
+                    .unwrap()
+            },
         );
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
@@ -234,9 +260,13 @@ mod test {
             range_strategy,
         };
         let sum = pool_builder.scope(
-            &input,
             || SumAccumulatorManyPanics,
-            |thread_pool| thread_pool.process_inputs().reduce(|a, b| a + b).unwrap(),
+            |thread_pool| {
+                thread_pool
+                    .process_inputs(&input)
+                    .reduce(|a, b| a + b)
+                    .unwrap()
+            },
         );
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
@@ -249,6 +279,55 @@ mod test {
         // The scope should accept FnOnce() parameter. We test it with a closure that
         // captures and consumes a non-Copy type.
         let token = Box::new(());
-        pool_builder.scope(&[], || SumAccumulator, |_| drop(token));
+        pool_builder.scope(|| SumAccumulator, |_| drop(token));
+    }
+
+    fn test_local_sum(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            range_strategy,
+        };
+        let sum = pool_builder.scope(
+            || SumAccumulator,
+            |thread_pool| {
+                // The input can be local.
+                let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+                thread_pool
+                    .process_inputs(&input)
+                    .reduce(|a, b| a + b)
+                    .unwrap()
+            },
+        );
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_several_inputs(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            range_strategy,
+        };
+        let (sum1, sum2) = pool_builder.scope(
+            || SumAccumulator,
+            |thread_pool| {
+                // Several inputs can be used successively.
+                let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+                let sum1 = thread_pool
+                    .process_inputs(&input)
+                    .reduce(|a, b| a + b)
+                    .unwrap();
+
+                let input = (0..=2 * INPUT_LEN).collect::<Vec<u64>>();
+                let sum2 = thread_pool
+                    .process_inputs(&input)
+                    .reduce(|a, b| a + b)
+                    .unwrap();
+
+                (sum1, sum2)
+            },
+        );
+        // n(n+1)/2
+        assert_eq!(sum1, INPUT_LEN * (INPUT_LEN + 1) / 2);
+        // 2n(2n+1)/2
+        assert_eq!(sum2, INPUT_LEN * (2 * INPUT_LEN + 1));
     }
 }
