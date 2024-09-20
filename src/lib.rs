@@ -20,103 +20,12 @@ mod range;
 mod thread_pool;
 mod util;
 
-pub use thread_pool::{RangeStrategy, ThreadAccumulator, ThreadPool, ThreadPoolBuilder};
+pub use thread_pool::{RangeStrategy, ThreadPool, ThreadPoolBuilder};
 
 #[cfg(test)]
 mod test {
     use super::*;
     use std::num::NonZeroUsize;
-
-    /// Example of accumulator that computes a sum of integers.
-    struct SumAccumulator;
-
-    impl ThreadAccumulator<u64, u64> for SumAccumulator {
-        type Accumulator<'a> = u64;
-
-        fn init(&self) -> u64 {
-            0
-        }
-
-        fn process_item(&self, accumulator: &mut u64, _index: usize, x: &u64) {
-            *accumulator += *x;
-        }
-
-        fn finalize(&self, accumulator: u64) -> u64 {
-            accumulator
-        }
-    }
-
-    /// Example of accumulator that computes a sum of integers, but panics on
-    /// one input.
-    struct SumAccumulatorOnePanic;
-
-    impl ThreadAccumulator<u64, u64> for SumAccumulatorOnePanic {
-        type Accumulator<'a> = u64;
-
-        fn init(&self) -> u64 {
-            0
-        }
-
-        fn process_item(&self, accumulator: &mut u64, _index: usize, x: &u64) {
-            if *x == 0 {
-                panic!("arithmetic panic");
-            } else {
-                *accumulator += *x;
-            }
-        }
-
-        fn finalize(&self, accumulator: u64) -> u64 {
-            accumulator
-        }
-    }
-
-    /// Example of accumulator that computes a sum of integers, but panics on
-    /// some inputs.
-    struct SumAccumulatorSomePanics;
-
-    impl ThreadAccumulator<u64, u64> for SumAccumulatorSomePanics {
-        type Accumulator<'a> = u64;
-
-        fn init(&self) -> u64 {
-            0
-        }
-
-        fn process_item(&self, accumulator: &mut u64, _index: usize, x: &u64) {
-            if *x % 123 == 0 {
-                panic!("arithmetic panic");
-            } else {
-                *accumulator += *x;
-            }
-        }
-
-        fn finalize(&self, accumulator: u64) -> u64 {
-            accumulator
-        }
-    }
-
-    /// Example of accumulator that computes a sum of integers, but panics on
-    /// many inputs.
-    struct SumAccumulatorManyPanics;
-
-    impl ThreadAccumulator<u64, u64> for SumAccumulatorManyPanics {
-        type Accumulator<'a> = u64;
-
-        fn init(&self) -> u64 {
-            0
-        }
-
-        fn process_item(&self, accumulator: &mut u64, _index: usize, x: &u64) {
-            if *x % 2 == 0 {
-                panic!("arithmetic panic");
-            } else {
-                *accumulator += *x;
-            }
-        }
-
-        fn finalize(&self, accumulator: u64) -> u64 {
-            accumulator
-        }
-    }
 
     macro_rules! expand_tests {
         ( $range_strategy:expr, ) => {};
@@ -162,6 +71,7 @@ mod test {
                 test_fn_once,
                 test_local_sum,
                 test_several_inputs,
+                test_several_functions,
             );
         };
     }
@@ -180,15 +90,12 @@ mod test {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
         };
-        let sum = pool_builder.scope(
-            || SumAccumulator,
-            |thread_pool| {
-                thread_pool
-                    .process_inputs(&input)
-                    .reduce(|a, b| a + b)
-                    .unwrap()
-            },
-        );
+        let sum = pool_builder.scope(|thread_pool| {
+            thread_pool
+                .process_inputs(&input, || 0u64, |acc, _, x| *acc += *x, |acc| acc)
+                .reduce(|a, b| a + b)
+                .unwrap()
+        });
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -198,21 +105,18 @@ mod test {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
         };
-        let (sum1, sum2) = pool_builder.scope(
-            || SumAccumulator,
-            |thread_pool| {
-                // The same input can be processed multiple times on the thread pool.
-                let sum1 = thread_pool
-                    .process_inputs(&input)
-                    .reduce(|a, b| a + b)
-                    .unwrap();
-                let sum2 = thread_pool
-                    .process_inputs(&input)
-                    .reduce(|a, b| a + b)
-                    .unwrap();
-                (sum1, sum2)
-            },
-        );
+        let (sum1, sum2) = pool_builder.scope(|thread_pool| {
+            // The same input can be processed multiple times on the thread pool.
+            let sum1 = thread_pool
+                .process_inputs(&input, || 0u64, |acc, _, x| *acc += *x, |acc| acc)
+                .reduce(|a, b| a + b)
+                .unwrap();
+            let sum2 = thread_pool
+                .process_inputs(&input, || 0u64, |acc, _, x| *acc += *x, |acc| acc)
+                .reduce(|a, b| a + b)
+                .unwrap();
+            (sum1, sum2)
+        });
         assert_eq!(sum1, INPUT_LEN * (INPUT_LEN + 1) / 2);
         assert_eq!(sum2, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
@@ -222,17 +126,25 @@ mod test {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
         };
-        let sum = pool_builder.scope(
-            || SumAccumulatorOnePanic,
-            |thread_pool| {
-                // The input can be local.
-                let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-                thread_pool
-                    .process_inputs(&input)
-                    .reduce(|a, b| a + b)
-                    .unwrap()
-            },
-        );
+        let sum = pool_builder.scope(|thread_pool| {
+            // The input can be local.
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            thread_pool
+                .process_inputs(
+                    &input,
+                    || 0u64,
+                    |acc, _, x| {
+                        if *x == 0 {
+                            panic!("arithmetic panic");
+                        } else {
+                            *acc += *x;
+                        }
+                    },
+                    |acc| acc,
+                )
+                .reduce(|a, b| a + b)
+                .unwrap()
+        });
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -241,17 +153,25 @@ mod test {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
         };
-        let sum = pool_builder.scope(
-            || SumAccumulatorSomePanics,
-            |thread_pool| {
-                // The input can be local.
-                let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-                thread_pool
-                    .process_inputs(&input)
-                    .reduce(|a, b| a + b)
-                    .unwrap()
-            },
-        );
+        let sum = pool_builder.scope(|thread_pool| {
+            // The input can be local.
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            thread_pool
+                .process_inputs(
+                    &input,
+                    || 0u64,
+                    |acc, _, x| {
+                        if *x % 123 == 0 {
+                            panic!("arithmetic panic");
+                        } else {
+                            *acc += *x;
+                        }
+                    },
+                    |acc| acc,
+                )
+                .reduce(|a, b| a + b)
+                .unwrap()
+        });
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -260,17 +180,25 @@ mod test {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
         };
-        let sum = pool_builder.scope(
-            || SumAccumulatorManyPanics,
-            |thread_pool| {
-                // The input can be local.
-                let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-                thread_pool
-                    .process_inputs(&input)
-                    .reduce(|a, b| a + b)
-                    .unwrap()
-            },
-        );
+        let sum = pool_builder.scope(|thread_pool| {
+            // The input can be local.
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            thread_pool
+                .process_inputs(
+                    &input,
+                    || 0u64,
+                    |acc, _, x| {
+                        if *x % 2 == 0 {
+                            panic!("arithmetic panic");
+                        } else {
+                            *acc += *x;
+                        }
+                    },
+                    |acc| acc,
+                )
+                .reduce(|a, b| a + b)
+                .unwrap()
+        });
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -282,7 +210,7 @@ mod test {
         // The scope should accept FnOnce() parameter. We test it with a closure that
         // captures and consumes a non-Copy type.
         let token = Box::new(());
-        pool_builder.scope(|| SumAccumulator, |_| drop(token));
+        pool_builder.scope::<(), (), (), ()>(|_| drop(token));
     }
 
     fn test_local_sum(range_strategy: RangeStrategy) {
@@ -290,17 +218,14 @@ mod test {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
         };
-        let sum = pool_builder.scope(
-            || SumAccumulator,
-            |thread_pool| {
-                // The input can be local.
-                let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-                thread_pool
-                    .process_inputs(&input)
-                    .reduce(|a, b| a + b)
-                    .unwrap()
-            },
-        );
+        let sum = pool_builder.scope(|thread_pool| {
+            // The input can be local.
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            thread_pool
+                .process_inputs(&input, || 0u64, |acc, _, x| *acc += *x, |acc| acc)
+                .reduce(|a, b| a + b)
+                .unwrap()
+        });
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -309,28 +234,54 @@ mod test {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
         };
-        let (sum1, sum2) = pool_builder.scope(
-            || SumAccumulator,
-            |thread_pool| {
-                // Several inputs can be used successively.
-                let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-                let sum1 = thread_pool
-                    .process_inputs(&input)
-                    .reduce(|a, b| a + b)
-                    .unwrap();
+        let (sum1, sum2) = pool_builder.scope(|thread_pool| {
+            // Several inputs can be used successively.
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            let sum1 = thread_pool
+                .process_inputs(&input, || 0u64, |acc, _, x| *acc += *x, |acc| acc)
+                .reduce(|a, b| a + b)
+                .unwrap();
 
-                let input = (0..=2 * INPUT_LEN).collect::<Vec<u64>>();
-                let sum2 = thread_pool
-                    .process_inputs(&input)
-                    .reduce(|a, b| a + b)
-                    .unwrap();
+            let input = (0..=2 * INPUT_LEN).collect::<Vec<u64>>();
+            let sum2 = thread_pool
+                .process_inputs(&input, || 0u64, |acc, _, x| *acc += *x, |acc| acc)
+                .reduce(|a, b| a + b)
+                .unwrap();
 
-                (sum1, sum2)
-            },
-        );
+            (sum1, sum2)
+        });
         // n(n+1)/2
         assert_eq!(sum1, INPUT_LEN * (INPUT_LEN + 1) / 2);
         // 2n(2n+1)/2
         assert_eq!(sum2, INPUT_LEN * (2 * INPUT_LEN + 1));
+    }
+
+    fn test_several_functions(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            range_strategy,
+        };
+        let (sum, sum_squares) = pool_builder.scope(|thread_pool| {
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            // Several functions can be computed successively.
+            let sum = thread_pool
+                .process_inputs(&input, || 0u64, |acc, _, x| *acc += *x, |acc| acc)
+                .reduce(|a, b| a + b)
+                .unwrap();
+
+            let sum_squares = thread_pool
+                .process_inputs(&input, || 0u64, |acc, _, &x| *acc += x * x, |acc| acc)
+                .reduce(|a, b| a + b)
+                .unwrap();
+
+            (sum, sum_squares)
+        });
+        // n(n+1)/2
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+        // n(n+1)(2n+1) / 6
+        assert_eq!(
+            sum_squares,
+            INPUT_LEN * (INPUT_LEN + 1) * (2 * INPUT_LEN + 1) / 6
+        );
     }
 }

@@ -13,7 +13,7 @@ threads. Each thread processes a subset of the items, and a final step reduces
 the outputs from all threads into a single result.
 
 ```rust
-use paralight::{RangeStrategy, ThreadAccumulator, ThreadPool, ThreadPoolBuilder};
+use paralight::{RangeStrategy, ThreadPoolBuilder};
 use std::num::NonZeroUsize;
 
 // Define thread pool parameters.
@@ -25,35 +25,15 @@ let pool_builder = ThreadPoolBuilder {
 // Create a scoped thread pool attached to the given input and accumulator (see below).
 let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 let sum = pool_builder.scope(
-    || SumAccumulator,
     |thread_pool| {
         // Compute the sum of the inputs.
         thread_pool
-            .process_inputs(&input)
+            .process_inputs(&input, || 0u64, |acc, _, x| *acc += *x, |acc| acc)
             .reduce(|a, b| a + b)
             .unwrap()
     },
 );
 assert_eq!(sum, 5 * 11);
-
-// Example of accumulator that computes a sum of integers.
-struct SumAccumulator;
-
-impl ThreadAccumulator<u64, u64> for SumAccumulator {
-    type Accumulator<'a> = u64;
-
-    fn init(&self) -> u64 {
-        0
-    }
-
-    fn process_item(&self, accumulator: &mut u64, _index: usize, x: &u64) {
-        *accumulator += *x;
-    }
-
-    fn finalize(&self, accumulator: u64) -> u64 {
-        accumulator
-    }
-}
 ```
 
 Note: In principle, Paralight could be extended to support other inputs than

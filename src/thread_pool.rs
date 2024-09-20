@@ -45,7 +45,7 @@ impl ThreadPoolBuilder {
     /// Spawn a scoped thread pool using the given input and accumulator.
     ///
     /// ```rust
-    /// # use paralight::{RangeStrategy, ThreadAccumulator, ThreadPool, ThreadPoolBuilder};
+    /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
     /// # use std::num::NonZeroUsize;
     /// let pool_builder = ThreadPoolBuilder {
     ///     num_threads: NonZeroUsize::try_from(4).unwrap(),
@@ -53,48 +53,20 @@ impl ThreadPoolBuilder {
     /// };
     ///
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    /// let sum = pool_builder.scope(
-    ///     || SumAccumulator,
-    ///     |thread_pool| {
-    ///         thread_pool
-    ///             .process_inputs(&input)
-    ///             .reduce(|a, b| a + b)
-    ///             .unwrap()
-    ///     },
-    /// );
+    /// let sum = pool_builder.scope(|thread_pool| {
+    ///     thread_pool
+    ///         .process_inputs(&input, || 0u64, |acc, _, x| *acc += *x, |acc| acc)
+    ///         .reduce(|a, b| a + b)
+    ///         .unwrap()
+    /// });
     /// assert_eq!(sum, 5 * 11);
-    ///
-    /// // Example of accumulator that computes a sum of integers.
-    /// struct SumAccumulator;
-    ///
-    /// impl ThreadAccumulator<u64, u64> for SumAccumulator {
-    ///     type Accumulator<'a> = u64;
-    ///
-    ///     fn init(&self) -> u64 {
-    ///         0
-    ///     }
-    ///
-    ///     fn process_item(&self, accumulator: &mut u64, _index: usize, x: &u64) {
-    ///         *accumulator += *x;
-    ///     }
-    ///
-    ///     fn finalize(&self, accumulator: u64) -> u64 {
-    ///         accumulator
-    ///     }
-    /// }
     /// ```
-    pub fn scope<Input: Sync, Output: Send, Accum: ThreadAccumulator<Input, Output> + Send, R>(
+    pub fn scope<Input: Sync, Output: Send, Accum, R>(
         &self,
-        new_accumulator: impl Fn() -> Accum,
-        f: impl FnOnce(ThreadPool<Input, Output>) -> R,
+        f: impl FnOnce(ThreadPool<Input, Output, Accum>) -> R,
     ) -> R {
         std::thread::scope(|scope| {
-            let thread_pool = ThreadPool::new(
-                scope,
-                self.num_threads,
-                self.range_strategy,
-                new_accumulator,
-            );
+            let thread_pool = ThreadPool::new(scope, self.num_threads, self.range_strategy);
             f(thread_pool)
         })
     }
@@ -138,7 +110,7 @@ impl RoundColor {
 
 /// A thread pool tied to a scope, that can process inputs into outputs of the
 /// given types.
-pub struct ThreadPool<'scope, Input, Output> {
+pub struct ThreadPool<'scope, Input, Output, Accum> {
     /// Handles to all the worker threads in the pool.
     threads: Vec<WorkerThreadHandle<'scope, Output>>,
     /// Number of worker threads active in the current round.
@@ -157,6 +129,8 @@ pub struct ThreadPool<'scope, Input, Output> {
     range_orchestrator: Box<dyn RangeOrchestrator>,
     /// Reference to the inputs to process.
     input: Arc<RwLock<SliceView<Input>>>,
+    /// Pipeline to map and reduce inputs into the output.
+    pipeline: Arc<RwLock<Option<Pipeline<Input, Output, Accum>>>>,
 }
 
 /// Handle to a worker thread in the pool.
@@ -176,14 +150,15 @@ pub enum RangeStrategy {
     WorkStealing,
 }
 
-impl<'scope, Input: Sync + 'scope, Output: Send + 'scope> ThreadPool<'scope, Input, Output> {
+impl<'scope, Input: Sync + 'scope, Output: Send + 'scope, Accum: 'scope>
+    ThreadPool<'scope, Input, Output, Accum>
+{
     /// Creates a new pool tied to the given scope, spawning the given number of
     /// threads and using the given input slice.
-    fn new<'env, Accum: ThreadAccumulator<Input, Output> + Send + 'scope>(
+    fn new<'env>(
         thread_scope: &'scope Scope<'scope, 'env>,
         num_threads: NonZeroUsize,
         range_strategy: RangeStrategy,
-        new_accumulator: impl Fn() -> Accum,
     ) -> Self {
         let num_threads: usize = num_threads.into();
         match range_strategy {
@@ -191,26 +166,19 @@ impl<'scope, Input: Sync + 'scope, Output: Send + 'scope> ThreadPool<'scope, Inp
                 thread_scope,
                 num_threads,
                 FixedRangeFactory::new(num_threads),
-                new_accumulator,
             ),
             RangeStrategy::WorkStealing => Self::new_with_factory(
                 thread_scope,
                 num_threads,
                 WorkStealingRangeFactory::new(num_threads),
-                new_accumulator,
             ),
         }
     }
 
-    fn new_with_factory<
-        'env,
-        RnFactory: RangeFactory,
-        Accum: ThreadAccumulator<Input, Output> + Send + 'scope,
-    >(
+    fn new_with_factory<'env, RnFactory: RangeFactory>(
         thread_scope: &'scope Scope<'scope, 'env>,
         num_threads: usize,
         range_factory: RnFactory,
-        new_accumulator: impl Fn() -> Accum,
     ) -> Self
     where
         RnFactory::Rn: 'scope + Send,
@@ -223,6 +191,7 @@ impl<'scope, Input: Sync + 'scope, Output: Send + 'scope> ThreadPool<'scope, Inp
         let main_status = Arc::new(Status::new(MainStatus::Waiting));
 
         let input = Arc::new(RwLock::new(SliceView::new()));
+        let pipeline = Arc::new(RwLock::new(None));
 
         #[cfg(any(
             miri,
@@ -247,7 +216,7 @@ impl<'scope, Input: Sync + 'scope, Output: Send + 'scope> ThreadPool<'scope, Inp
                     range: range_factory.range(id),
                     input: input.clone(),
                     output: output.clone(),
-                    accumulator: new_accumulator(),
+                    pipeline: pipeline.clone(),
                 };
                 WorkerThreadHandle {
                     handle: thread_scope.spawn(move || {
@@ -287,12 +256,19 @@ impl<'scope, Input: Sync + 'scope, Output: Send + 'scope> ThreadPool<'scope, Inp
             main_status,
             range_orchestrator: Box::new(range_factory.orchestrator()),
             input,
+            pipeline,
         }
     }
 
     /// Performs a computation round, processing the input slice in parallel and
     /// returning an iterator over the threads' outputs.
-    pub fn process_inputs(&self, input: &[Input]) -> impl Iterator<Item = Output> + '_ {
+    pub fn process_inputs(
+        &self,
+        input: &[Input],
+        init: impl Fn() -> Accum + Send + Sync + 'static,
+        process_item: impl Fn(&mut Accum, usize, &Input) + Send + Sync + 'static,
+        finalize: impl Fn(Accum) -> Output + Send + Sync + 'static,
+    ) -> impl Iterator<Item = Output> + '_ {
         self.range_orchestrator.reset_ranges(input.len());
 
         let num_threads = self.threads.len();
@@ -303,6 +279,11 @@ impl<'scope, Input: Sync + 'scope, Output: Send + 'scope> ThreadPool<'scope, Inp
         self.round.set(round);
 
         self.input.write().unwrap().set(input);
+        *self.pipeline.write().unwrap() = Some(Pipeline {
+            init: Box::new(init),
+            process_item: Box::new(process_item),
+            finalize: Box::new(finalize),
+        });
         log_debug!("[main thread, round {round:?}] Ready to compute a parallel pipeline.");
 
         self.worker_status.notify_all(WorkerStatus::Round(round));
@@ -328,6 +309,7 @@ impl<'scope, Input: Sync + 'scope, Output: Send + 'scope> ThreadPool<'scope, Inp
         log_debug!(
             "[main thread, round {round:?}] All threads have now finished computing this pipeline."
         );
+        *self.pipeline.write().unwrap() = None;
         self.input.write().unwrap().clear();
 
         self.threads
@@ -336,7 +318,7 @@ impl<'scope, Input: Sync + 'scope, Output: Send + 'scope> ThreadPool<'scope, Inp
     }
 }
 
-impl<Input, Output> Drop for ThreadPool<'_, Input, Output> {
+impl<Input, Output, Accum> Drop for ThreadPool<'_, Input, Output, Accum> {
     /// Joins all the threads in the pool.
     #[allow(clippy::single_match, clippy::unused_enumerate_index)]
     fn drop(&mut self) {
@@ -358,30 +340,15 @@ impl<Input, Output> Drop for ThreadPool<'_, Input, Output> {
     }
 }
 
-/// Trait representing a function to map and reduce inputs into an output.
-pub trait ThreadAccumulator<Input, Output> {
-    /// Type to accumulate inputs into.
-    type Accumulator<'a>
-    where
-        Self: 'a;
-
-    /// Creates a new accumulator to process inputs.
-    fn init(&self) -> Self::Accumulator<'_>;
-
-    /// Accumulates the given input item.
-    fn process_item<'a>(
-        &'a self,
-        accumulator: &mut Self::Accumulator<'a>,
-        index: usize,
-        item: &Input,
-    );
-
-    /// Converts the given accumulator into an output.
-    fn finalize<'a>(&'a self, accumulator: Self::Accumulator<'a>) -> Output;
+#[allow(clippy::type_complexity)]
+struct Pipeline<Input, Output, Accum> {
+    init: Box<dyn Fn() -> Accum + Send + Sync>,
+    process_item: Box<dyn Fn(&mut Accum, usize, &Input) + Send + Sync>,
+    finalize: Box<dyn Fn(Accum) -> Output + Send + Sync>,
 }
 
 /// Context object owned by a worker thread.
-struct ThreadContext<Rn: Range, Input, Output, Accum: ThreadAccumulator<Input, Output>> {
+struct ThreadContext<Rn: Range, Input, Output, Accum> {
     /// Thread index.
     #[cfg(feature = "log")]
     id: usize,
@@ -399,13 +366,11 @@ struct ThreadContext<Rn: Range, Input, Output, Accum: ThreadAccumulator<Input, O
     input: Arc<RwLock<SliceView<Input>>>,
     /// Output that this thread writes to.
     output: Arc<Mutex<Option<Output>>>,
-    /// Function to map and reduce inputs into the output.
-    accumulator: Accum,
+    /// Pipeline to map and reduce inputs into the output.
+    pipeline: Arc<RwLock<Option<Pipeline<Input, Output, Accum>>>>,
 }
 
-impl<Rn: Range, Input, Output, Accum: ThreadAccumulator<Input, Output>>
-    ThreadContext<Rn, Input, Output, Accum>
-{
+impl<Rn: Range, Input, Output, Accum> ThreadContext<Rn, Input, Output, Accum> {
     /// Main function run by this thread.
     fn run(&self) {
         let mut round = RoundColor::Blue;
@@ -451,17 +416,19 @@ impl<Rn: Range, Input, Output, Accum: ThreadAccumulator<Input, Output>>
                     };
 
                     {
-                        let mut accumulator = self.accumulator.init();
+                        let pipeline_guard = self.pipeline.read().unwrap();
+                        let pipeline = pipeline_guard.as_ref().unwrap();
+                        let mut accumulator = (pipeline.init)();
+
                         let guard = self.input.read().unwrap();
                         // SAFETY: the underlying input slice is valid and not mutated for the whole
                         // lifetime of this block.
                         let input = unsafe { guard.get().unwrap() };
                         for i in self.range.iter() {
-                            self.accumulator
-                                .process_item(&mut accumulator, i, &input[i]);
+                            (pipeline.process_item)(&mut accumulator, i, &input[i]);
                         }
                         drop(guard);
-                        *self.output.lock().unwrap() = Some(self.accumulator.finalize(accumulator));
+                        *self.output.lock().unwrap() = Some((pipeline.finalize)(accumulator));
                     }
 
                     // Explicit drop for clarity.

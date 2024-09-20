@@ -59,7 +59,7 @@ mod paralight {
     use super::{LENGTHS, NUM_THREADS};
     use divan::counter::BytesCount;
     use divan::{black_box, Bencher};
-    use paralight::{RangeStrategy, ThreadAccumulator, ThreadPoolBuilder};
+    use paralight::{RangeStrategy, ThreadPoolBuilder};
     use std::num::NonZeroUsize;
 
     #[divan::bench(consts = NUM_THREADS, args = LENGTHS)]
@@ -83,33 +83,20 @@ mod paralight {
             num_threads: NonZeroUsize::try_from(NUM_THREADS).unwrap(),
             range_strategy,
         };
-        pool_builder.scope(
-            || SumAccumulator,
-            move |thread_pool| {
-                bencher
-                    .counter(BytesCount::of_many::<u64>(len))
-                    .bench_local(|| {
-                        thread_pool
-                            .process_inputs(black_box(input_slice))
-                            .reduce(|a, b| a + b)
-                            .unwrap()
-                    });
-            },
-        );
-    }
-
-    struct SumAccumulator;
-
-    impl ThreadAccumulator<u64, u64> for SumAccumulator {
-        type Accumulator<'a> = u64;
-        fn init(&self) -> u64 {
-            0
-        }
-        fn process_item(&self, accumulator: &mut u64, _index: usize, x: &u64) {
-            *accumulator += *x;
-        }
-        fn finalize(&self, accumulator: u64) -> u64 {
-            accumulator
-        }
+        pool_builder.scope(move |thread_pool| {
+            bencher
+                .counter(BytesCount::of_many::<u64>(len))
+                .bench_local(|| {
+                    thread_pool
+                        .process_inputs(
+                            black_box(input_slice),
+                            || 0u64,
+                            |acc, _, x| *acc += *x,
+                            |acc| acc,
+                        )
+                        .reduce(|a, b| a + b)
+                        .unwrap()
+                });
+        });
     }
 }
