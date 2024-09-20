@@ -17,22 +17,30 @@ const LENGTHS: &[usize] = &[10_000, 100_000, 1_000_000, 10_000_000];
 /// involved).
 mod serial {
     use super::LENGTHS;
+    use divan::counter::BytesCount;
+    use divan::{black_box, Bencher};
 
     #[divan::bench(args = LENGTHS)]
-    fn sum(bencher: divan::Bencher, len: usize) {
+    fn sum(bencher: Bencher, len: usize) {
         let input = (0..=len as u64).collect::<Vec<u64>>();
-        bencher.bench_local(|| input.iter().sum::<u64>())
+        let input_slice = input.as_slice();
+        bencher
+            .counter(BytesCount::of_many::<u64>(len))
+            .bench_local(|| black_box(input_slice).iter().sum::<u64>())
     }
 }
 
 /// Benchmarks using Rayon.
 mod rayon {
     use super::{LENGTHS, NUM_THREADS};
+    use divan::counter::BytesCount;
+    use divan::{black_box, Bencher};
     use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
     #[divan::bench(consts = NUM_THREADS, args = LENGTHS)]
-    fn sum_rayon<const NUM_THREADS: usize>(bencher: divan::Bencher, len: usize) {
+    fn sum_rayon<const NUM_THREADS: usize>(bencher: Bencher, len: usize) {
         let input = (0..=len as u64).collect::<Vec<u64>>();
+        let input_slice = input.as_slice();
         let thread_pool = rayon::ThreadPoolBuilder::new()
             .num_threads(NUM_THREADS)
             .build()
@@ -40,28 +48,32 @@ mod rayon {
         // Ideally we'd prefer to run bench_local() inside the Rayon thread pool, but
         // that doesn't work because divan::Bencher isn't Send (and bench_local()
         // consumes it).
-        bencher.bench_local(|| thread_pool.install(|| input.par_iter().sum::<u64>()));
+        bencher
+            .counter(BytesCount::of_many::<u64>(len))
+            .bench_local(|| thread_pool.install(|| black_box(input_slice).par_iter().sum::<u64>()));
     }
 }
 
 /// Benchmarks using Paralight.
 mod paralight {
     use super::{LENGTHS, NUM_THREADS};
+    use divan::counter::BytesCount;
+    use divan::Bencher;
     use paralight::{RangeStrategy, ThreadAccumulator, ThreadPoolBuilder};
     use std::num::NonZeroUsize;
 
     #[divan::bench(consts = NUM_THREADS, args = LENGTHS)]
-    fn sum_fixed<const NUM_THREADS: usize>(bencher: divan::Bencher, len: usize) {
+    fn sum_fixed<const NUM_THREADS: usize>(bencher: Bencher, len: usize) {
         sum_impl::<NUM_THREADS>(bencher, len, RangeStrategy::Fixed)
     }
 
     #[divan::bench(consts = NUM_THREADS, args = LENGTHS)]
-    fn sum_work_stealing<const NUM_THREADS: usize>(bencher: divan::Bencher, len: usize) {
+    fn sum_work_stealing<const NUM_THREADS: usize>(bencher: Bencher, len: usize) {
         sum_impl::<NUM_THREADS>(bencher, len, RangeStrategy::WorkStealing)
     }
 
     fn sum_impl<const NUM_THREADS: usize>(
-        bencher: divan::Bencher,
+        bencher: Bencher,
         len: usize,
         range_strategy: RangeStrategy,
     ) {
@@ -74,7 +86,9 @@ mod paralight {
             &input,
             || SumAccumulator,
             move |thread_pool| {
-                bencher.bench_local(|| thread_pool.process_inputs().reduce(|a, b| a + b).unwrap());
+                bencher
+                    .counter(BytesCount::of_many::<u64>(len))
+                    .bench_local(|| thread_pool.process_inputs().reduce(|a, b| a + b).unwrap());
             },
         );
     }
