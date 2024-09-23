@@ -32,7 +32,9 @@ mod test {
         ( $range_strategy:expr, $case:ident, $( $others:tt )* ) => {
             #[test]
             fn $case() {
-                $crate::test::$case($range_strategy);
+                for _ in 0..ITERATIONS {
+                    $crate::test::$case($range_strategy);
+                }
             }
 
             expand_tests!($range_strategy, $($others)*);
@@ -72,6 +74,7 @@ mod test {
                 test_local_sum,
                 test_several_inputs,
                 test_several_functions,
+                test_several_accumulators,
             );
         };
     }
@@ -84,6 +87,11 @@ mod test {
     #[cfg(miri)]
     const INPUT_LEN: u64 = 1000;
 
+    #[cfg(not(miri))]
+    const ITERATIONS: u64 = 100;
+    #[cfg(miri)]
+    const ITERATIONS: u64 = 1;
+
     fn test_sum_integers(range_strategy: RangeStrategy) {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let pool_builder = ThreadPoolBuilder {
@@ -91,10 +99,13 @@ mod test {
             range_strategy,
         };
         let sum = pool_builder.scope(|thread_pool| {
-            thread_pool
-                .process_inputs(&input, || 0u64, |acc, _, x| *acc += *x, |acc| acc)
-                .reduce(|a, b| a + b)
-                .unwrap()
+            thread_pool.pipeline(
+                &input,
+                || 0u64,
+                |acc, _, x| *acc += *x,
+                |acc| acc,
+                |a, b| a + b,
+            )
         });
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
@@ -107,14 +118,20 @@ mod test {
         };
         let (sum1, sum2) = pool_builder.scope(|thread_pool| {
             // The same input can be processed multiple times on the thread pool.
-            let sum1 = thread_pool
-                .process_inputs(&input, || 0u64, |acc, _, x| *acc += *x, |acc| acc)
-                .reduce(|a, b| a + b)
-                .unwrap();
-            let sum2 = thread_pool
-                .process_inputs(&input, || 0u64, |acc, _, x| *acc += *x, |acc| acc)
-                .reduce(|a, b| a + b)
-                .unwrap();
+            let sum1 = thread_pool.pipeline(
+                &input,
+                || 0u64,
+                |acc, _, x| *acc += *x,
+                |acc| acc,
+                |a, b| a + b,
+            );
+            let sum2 = thread_pool.pipeline(
+                &input,
+                || 0u64,
+                |acc, _, x| *acc += *x,
+                |acc| acc,
+                |a, b| a + b,
+            );
             (sum1, sum2)
         });
         assert_eq!(sum1, INPUT_LEN * (INPUT_LEN + 1) / 2);
@@ -129,21 +146,19 @@ mod test {
         let sum = pool_builder.scope(|thread_pool| {
             // The input can be local.
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-            thread_pool
-                .process_inputs(
-                    &input,
-                    || 0u64,
-                    |acc, _, x| {
-                        if *x == 0 {
-                            panic!("arithmetic panic");
-                        } else {
-                            *acc += *x;
-                        }
-                    },
-                    |acc| acc,
-                )
-                .reduce(|a, b| a + b)
-                .unwrap()
+            thread_pool.pipeline(
+                &input,
+                || 0u64,
+                |acc, _, x| {
+                    if *x == 0 {
+                        panic!("arithmetic panic");
+                    } else {
+                        *acc += *x;
+                    }
+                },
+                |acc| acc,
+                |a, b| a + b,
+            )
         });
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
@@ -156,21 +171,19 @@ mod test {
         let sum = pool_builder.scope(|thread_pool| {
             // The input can be local.
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-            thread_pool
-                .process_inputs(
-                    &input,
-                    || 0u64,
-                    |acc, _, x| {
-                        if *x % 123 == 0 {
-                            panic!("arithmetic panic");
-                        } else {
-                            *acc += *x;
-                        }
-                    },
-                    |acc| acc,
-                )
-                .reduce(|a, b| a + b)
-                .unwrap()
+            thread_pool.pipeline(
+                &input,
+                || 0u64,
+                |acc, _, x| {
+                    if *x % 123 == 0 {
+                        panic!("arithmetic panic");
+                    } else {
+                        *acc += *x;
+                    }
+                },
+                |acc| acc,
+                |a, b| a + b,
+            )
         });
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
@@ -183,21 +196,19 @@ mod test {
         let sum = pool_builder.scope(|thread_pool| {
             // The input can be local.
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-            thread_pool
-                .process_inputs(
-                    &input,
-                    || 0u64,
-                    |acc, _, x| {
-                        if *x % 2 == 0 {
-                            panic!("arithmetic panic");
-                        } else {
-                            *acc += *x;
-                        }
-                    },
-                    |acc| acc,
-                )
-                .reduce(|a, b| a + b)
-                .unwrap()
+            thread_pool.pipeline(
+                &input,
+                || 0u64,
+                |acc, _, x| {
+                    if *x % 2 == 0 {
+                        panic!("arithmetic panic");
+                    } else {
+                        *acc += *x;
+                    }
+                },
+                |acc| acc,
+                |a, b| a + b,
+            )
         });
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
@@ -210,7 +221,7 @@ mod test {
         // The scope should accept FnOnce() parameter. We test it with a closure that
         // captures and consumes a non-Copy type.
         let token = Box::new(());
-        pool_builder.scope::<(), (), (), ()>(|_| drop(token));
+        pool_builder.scope::<(), (), ()>(|_| drop(token));
     }
 
     fn test_local_sum(range_strategy: RangeStrategy) {
@@ -221,10 +232,13 @@ mod test {
         let sum = pool_builder.scope(|thread_pool| {
             // The input can be local.
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-            thread_pool
-                .process_inputs(&input, || 0u64, |acc, _, x| *acc += *x, |acc| acc)
-                .reduce(|a, b| a + b)
-                .unwrap()
+            thread_pool.pipeline(
+                &input,
+                || 0u64,
+                |acc, _, x| *acc += *x,
+                |acc| acc,
+                |a, b| a + b,
+            )
         });
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
@@ -237,16 +251,22 @@ mod test {
         let (sum1, sum2) = pool_builder.scope(|thread_pool| {
             // Several inputs can be used successively.
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-            let sum1 = thread_pool
-                .process_inputs(&input, || 0u64, |acc, _, x| *acc += *x, |acc| acc)
-                .reduce(|a, b| a + b)
-                .unwrap();
+            let sum1 = thread_pool.pipeline(
+                &input,
+                || 0u64,
+                |acc, _, x| *acc += *x,
+                |acc| acc,
+                |a, b| a + b,
+            );
 
             let input = (0..=2 * INPUT_LEN).collect::<Vec<u64>>();
-            let sum2 = thread_pool
-                .process_inputs(&input, || 0u64, |acc, _, x| *acc += *x, |acc| acc)
-                .reduce(|a, b| a + b)
-                .unwrap();
+            let sum2 = thread_pool.pipeline(
+                &input,
+                || 0u64,
+                |acc, _, x| *acc += *x,
+                |acc| acc,
+                |a, b| a + b,
+            );
 
             (sum1, sum2)
         });
@@ -264,15 +284,21 @@ mod test {
         let (sum, sum_squares) = pool_builder.scope(|thread_pool| {
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
             // Several functions can be computed successively.
-            let sum = thread_pool
-                .process_inputs(&input, || 0u64, |acc, _, x| *acc += *x, |acc| acc)
-                .reduce(|a, b| a + b)
-                .unwrap();
+            let sum = thread_pool.pipeline(
+                &input,
+                || 0u64,
+                |acc, _, x| *acc += *x,
+                |acc| acc,
+                |a, b| a + b,
+            );
 
-            let sum_squares = thread_pool
-                .process_inputs(&input, || 0u64, |acc, _, &x| *acc += x * x, |acc| acc)
-                .reduce(|a, b| a + b)
-                .unwrap();
+            let sum_squares = thread_pool.pipeline(
+                &input,
+                || 0u64,
+                |acc, _, &x| *acc += x * x,
+                |acc| acc,
+                |a, b| a + b,
+            );
 
             (sum, sum_squares)
         });
@@ -283,5 +309,35 @@ mod test {
             sum_squares,
             INPUT_LEN * (INPUT_LEN + 1) * (2 * INPUT_LEN + 1) / 6
         );
+    }
+
+    fn test_several_accumulators(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            range_strategy,
+        };
+        let (sum1, sum2) = pool_builder.scope(|thread_pool| {
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            // Several accumulator types can be used successively.
+            let sum1 = thread_pool.pipeline(
+                &input,
+                || 0u32,
+                |acc, _, &x| *acc += x as u32,
+                |acc| acc as u64,
+                |a, b| (a + b) & 0xffff_ffff,
+            );
+
+            let sum2 = thread_pool.pipeline(
+                &input,
+                || 0u64,
+                |acc, _, x| *acc += *x,
+                |acc| acc,
+                |a, b| a + b,
+            );
+
+            (sum1, sum2)
+        });
+        assert_eq!(sum1, (INPUT_LEN * (INPUT_LEN + 1) / 2) & 0xffff_ffff);
+        assert_eq!(sum2, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 }

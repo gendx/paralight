@@ -27,15 +27,13 @@ let sum = pool_builder.scope(
     |thread_pool| {
         // Compute the sum of a slice.
         let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        thread_pool
-            .process_inputs(
-                &input,
-                /* init */ || 0u64,
-                /* process_item */ |acc, _, x| *acc += *x,
-                /* finalize */ |acc| acc,
-            )
-            .reduce(|a, b| a + b)
-            .unwrap()
+        thread_pool.pipeline(
+            &input,
+            /* init */ || 0u64,
+            /* process_item */ |acc, _, x| *acc += *x,
+            /* finalize */ |acc| acc,
+            /* reduce */ |a, b| a + b,
+        )
     },
 );
 assert_eq!(sum, 5 * 11);

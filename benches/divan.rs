@@ -87,15 +87,13 @@ mod paralight {
             bencher
                 .counter(BytesCount::of_many::<u64>(len))
                 .bench_local(|| {
-                    thread_pool
-                        .process_inputs(
-                            black_box(input_slice),
-                            || 0u64,
-                            |acc, _, x| *acc += *x,
-                            |acc| acc,
-                        )
-                        .reduce(|a, b| a + b)
-                        .unwrap()
+                    thread_pool.pipeline(
+                        black_box(input_slice),
+                        || 0u64,
+                        |acc, _, x| *acc += *x,
+                        |acc| acc,
+                        |a, b| a + b,
+                    )
                 });
         });
     }
