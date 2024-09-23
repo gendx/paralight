@@ -280,9 +280,9 @@ impl<'scope> ThreadPool<'scope> {
     pub fn pipeline<Input: Sync + 'scope, Output: Send + 'scope, Accum: 'scope>(
         &self,
         input: &[Input],
-        init: impl Fn() -> Accum + Send + Sync + 'static,
-        process_item: impl Fn(&mut Accum, usize, &Input) + Send + Sync + 'static,
-        finalize: impl Fn(Accum) -> Output + Send + Sync + 'static,
+        init: impl Fn() -> Accum + Send + Sync + 'scope,
+        process_item: impl Fn(&mut Accum, usize, &Input) + Send + Sync + 'scope,
+        finalize: impl Fn(Accum) -> Output + Send + Sync + 'scope,
         reduce: impl Fn(Output, Output) -> Output,
     ) -> Output {
         self.range_orchestrator.reset_ranges(input.len());
@@ -301,9 +301,9 @@ impl<'scope> ThreadPool<'scope> {
         *self.pipeline.write().unwrap() = Some(Box::new(PipelineImpl {
             input: SliceView::new(input),
             outputs: outputs.clone(),
-            init: Box::new(init),
-            process_item: Box::new(process_item),
-            finalize: Box::new(finalize),
+            init,
+            process_item,
+            finalize,
         }));
         log_debug!("[main thread, round {round:?}] Ready to compute a parallel pipeline.");
 
@@ -366,16 +366,28 @@ trait Pipeline {
     fn run(&self, worker_id: usize, range: &mut dyn Iterator<Item = usize>);
 }
 
-#[allow(clippy::type_complexity)]
-struct PipelineImpl<Input, Output, Accum> {
+struct PipelineImpl<
+    Input,
+    Output,
+    Accum,
+    Init: Fn() -> Accum,
+    ProcessItem: Fn(&mut Accum, usize, &Input),
+    Finalize: Fn(Accum) -> Output,
+> {
     input: SliceView<Input>,
     outputs: Arc<[Mutex<Option<Output>>]>,
-    init: Box<dyn Fn() -> Accum + Send + Sync>,
-    process_item: Box<dyn Fn(&mut Accum, usize, &Input) + Send + Sync>,
-    finalize: Box<dyn Fn(Accum) -> Output + Send + Sync>,
+    init: Init,
+    process_item: ProcessItem,
+    finalize: Finalize,
 }
 
-impl<Input, Output, Accum> Pipeline for PipelineImpl<Input, Output, Accum> {
+impl<Input, Output, Accum, Init, ProcessItem, Finalize> Pipeline
+    for PipelineImpl<Input, Output, Accum, Init, ProcessItem, Finalize>
+where
+    Init: Fn() -> Accum,
+    ProcessItem: Fn(&mut Accum, usize, &Input),
+    Finalize: Fn(Accum) -> Output,
+{
     fn run(&self, worker_id: usize, range: &mut dyn Iterator<Item = usize>) {
         // SAFETY: the underlying input slice is valid and not mutated for the whole
         // lifetime of this block.
