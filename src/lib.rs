@@ -75,6 +75,7 @@ mod test {
                 test_several_inputs,
                 test_several_functions,
                 test_several_accumulators,
+                test_several_input_types,
             );
         };
     }
@@ -221,7 +222,7 @@ mod test {
         // The scope should accept FnOnce() parameter. We test it with a closure that
         // captures and consumes a non-Copy type.
         let token = Box::new(());
-        pool_builder.scope::<(), (), ()>(|_| drop(token));
+        pool_builder.scope::<(), ()>(|_| drop(token));
     }
 
     fn test_local_sum(range_strategy: RangeStrategy) {
@@ -339,5 +340,76 @@ mod test {
         });
         assert_eq!(sum1, (INPUT_LEN * (INPUT_LEN + 1) / 2) & 0xffff_ffff);
         assert_eq!(sum2, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_several_input_types(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            range_strategy,
+        };
+        let (sum, sum_lengths) = pool_builder.scope(|thread_pool| {
+            // Several input types can be used successively.
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            let sum = thread_pool.pipeline(
+                &input,
+                || 0u64,
+                |acc, _, &x| *acc += x,
+                |acc| acc,
+                |a, b| a + b,
+            );
+
+            let input = (0..=INPUT_LEN)
+                .map(|x| format!("{x}"))
+                .collect::<Vec<String>>();
+            let sum_lengths = thread_pool.pipeline(
+                &input,
+                || 0usize,
+                |acc, _, x| *acc += x.len(),
+                |acc| acc as u64,
+                |a, b| a + b,
+            );
+
+            (sum, sum_lengths)
+        });
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+        assert_eq!(sum_lengths, expected_sum_lengths(INPUT_LEN));
+    }
+
+    const fn expected_sum_lengths(max: u64) -> u64 {
+        if max < 10 {
+            max + 1
+        } else {
+            let mut expected = 10;
+            let mut ipow = 10;
+            let mut i = 1;
+            loop {
+                if max / ipow >= 10 {
+                    expected += 9 * ipow * (i + 1);
+                } else if max >= ipow {
+                    expected += (max + 1 - ipow) * (i + 1);
+                    break;
+                } else {
+                    break;
+                }
+                ipow *= 10;
+                i += 1;
+                if i == 10 {
+                    break;
+                }
+            }
+            expected
+        }
+    }
+
+    #[test]
+    fn test_expected_sum_lengths() {
+        assert_eq!(expected_sum_lengths(0), 1);
+        assert_eq!(expected_sum_lengths(9), 10);
+        assert_eq!(expected_sum_lengths(10), 10 + 2);
+        assert_eq!(expected_sum_lengths(99), 10 + 90 * 2);
+        assert_eq!(expected_sum_lengths(100), 10 + 90 * 2 + 3);
+        assert_eq!(expected_sum_lengths(999), 10 + 90 * 2 + 900 * 3);
+        assert_eq!(expected_sum_lengths(1000), 10 + 90 * 2 + 900 * 3 + 4);
+        assert_eq!(expected_sum_lengths(9999), 10 + 90 * 2 + 900 * 3 + 9000 * 4);
     }
 }

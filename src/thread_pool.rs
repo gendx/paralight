@@ -64,10 +64,7 @@ impl ThreadPoolBuilder {
     /// });
     /// assert_eq!(sum, 5 * 11);
     /// ```
-    pub fn scope<Input: Sync, Output: Send, R>(
-        &self,
-        f: impl FnOnce(ThreadPool<Input, Output>) -> R,
-    ) -> R {
+    pub fn scope<Output: Send, R>(&self, f: impl FnOnce(ThreadPool<Output>) -> R) -> R {
         std::thread::scope(|scope| {
             let thread_pool = ThreadPool::new(scope, self.num_threads, self.range_strategy);
             f(thread_pool)
@@ -114,7 +111,7 @@ impl RoundColor {
 /// A thread pool tied to a scope, that can process inputs into outputs of the
 /// given types.
 #[allow(clippy::type_complexity)]
-pub struct ThreadPool<'scope, Input, Output> {
+pub struct ThreadPool<'scope, Output> {
     /// Handles to all the worker threads in the pool.
     threads: Vec<WorkerThreadHandle<'scope, Output>>,
     /// Number of worker threads active in the current round.
@@ -131,10 +128,8 @@ pub struct ThreadPool<'scope, Input, Output> {
     /// dynamic object to avoid making the range type a parameter of
     /// everything.
     range_orchestrator: Box<dyn RangeOrchestrator>,
-    /// Reference to the inputs to process.
-    input: Arc<RwLock<SliceView<Input>>>,
     /// Pipeline to map and reduce inputs into the output.
-    pipeline: Arc<RwLock<Option<Box<dyn Pipeline<Input, Output> + Send + Sync + 'scope>>>>,
+    pipeline: Arc<RwLock<Option<Box<dyn Pipeline<Output> + Send + Sync + 'scope>>>>,
 }
 
 /// Handle to a worker thread in the pool.
@@ -154,7 +149,7 @@ pub enum RangeStrategy {
     WorkStealing,
 }
 
-impl<'scope, Input: Sync + 'scope, Output: Send + 'scope> ThreadPool<'scope, Input, Output> {
+impl<'scope, Output: Send + 'scope> ThreadPool<'scope, Output> {
     /// Creates a new pool tied to the given scope, spawning the given number of
     /// worker threads.
     fn new<'env>(
@@ -192,7 +187,6 @@ impl<'scope, Input: Sync + 'scope, Output: Send + 'scope> ThreadPool<'scope, Inp
         let worker_status = Arc::new(Status::new(WorkerStatus::Round(color)));
         let main_status = Arc::new(Status::new(MainStatus::Waiting));
 
-        let input = Arc::new(RwLock::new(SliceView::new()));
         let pipeline = Arc::new(RwLock::new(None));
 
         #[cfg(any(
@@ -216,7 +210,6 @@ impl<'scope, Input: Sync + 'scope, Output: Send + 'scope> ThreadPool<'scope, Inp
                     worker_status: worker_status.clone(),
                     main_status: main_status.clone(),
                     range: range_factory.range(id),
-                    input: input.clone(),
                     output: output.clone(),
                     pipeline: pipeline.clone(),
                 };
@@ -257,7 +250,6 @@ impl<'scope, Input: Sync + 'scope, Output: Send + 'scope> ThreadPool<'scope, Inp
             worker_status,
             main_status,
             range_orchestrator: Box::new(range_factory.orchestrator()),
-            input,
             pipeline,
         }
     }
@@ -292,7 +284,7 @@ impl<'scope, Input: Sync + 'scope, Output: Send + 'scope> ThreadPool<'scope, Inp
     /// assert_eq!(sum, 5 * 11);
     /// # });
     /// ```
-    pub fn pipeline<Accum: 'scope>(
+    pub fn pipeline<Input: Sync + 'scope, Accum: 'scope>(
         &self,
         input: &[Input],
         init: impl Fn() -> Accum + Send + Sync + 'static,
@@ -309,8 +301,8 @@ impl<'scope, Input: Sync + 'scope, Output: Send + 'scope> ThreadPool<'scope, Inp
         round.toggle();
         self.round.set(round);
 
-        self.input.write().unwrap().set(input);
         *self.pipeline.write().unwrap() = Some(Box::new(PipelineImpl {
+            input: SliceView::new(input),
             init: Box::new(init),
             process_item: Box::new(process_item),
             finalize: Box::new(finalize),
@@ -341,7 +333,6 @@ impl<'scope, Input: Sync + 'scope, Output: Send + 'scope> ThreadPool<'scope, Inp
             "[main thread, round {round:?}] All threads have now finished computing this pipeline."
         );
         *self.pipeline.write().unwrap() = None;
-        self.input.write().unwrap().clear();
 
         self.threads
             .iter()
@@ -351,7 +342,7 @@ impl<'scope, Input: Sync + 'scope, Output: Send + 'scope> ThreadPool<'scope, Inp
     }
 }
 
-impl<Input, Output> Drop for ThreadPool<'_, Input, Output> {
+impl<Output> Drop for ThreadPool<'_, Output> {
     /// Joins all the threads in the pool.
     #[allow(clippy::single_match, clippy::unused_enumerate_index)]
     fn drop(&mut self) {
@@ -373,19 +364,23 @@ impl<Input, Output> Drop for ThreadPool<'_, Input, Output> {
     }
 }
 
-trait Pipeline<Input, Output> {
-    fn run(&self, input: &[Input], range: &mut dyn Iterator<Item = usize>) -> Output;
+trait Pipeline<Output> {
+    fn run(&self, range: &mut dyn Iterator<Item = usize>) -> Output;
 }
 
 #[allow(clippy::type_complexity)]
 struct PipelineImpl<Input, Output, Accum> {
+    input: SliceView<Input>,
     init: Box<dyn Fn() -> Accum + Send + Sync>,
     process_item: Box<dyn Fn(&mut Accum, usize, &Input) + Send + Sync>,
     finalize: Box<dyn Fn(Accum) -> Output + Send + Sync>,
 }
 
-impl<Input, Output, Accum> Pipeline<Input, Output> for PipelineImpl<Input, Output, Accum> {
-    fn run(&self, input: &[Input], range: &mut dyn Iterator<Item = usize>) -> Output {
+impl<Input, Output, Accum> Pipeline<Output> for PipelineImpl<Input, Output, Accum> {
+    fn run(&self, range: &mut dyn Iterator<Item = usize>) -> Output {
+        // SAFETY: the underlying input slice is valid and not mutated for the whole
+        // lifetime of this block.
+        let input = unsafe { self.input.get().unwrap() };
         let mut accumulator = (self.init)();
         for i in range {
             (self.process_item)(&mut accumulator, i, &input[i]);
@@ -396,7 +391,7 @@ impl<Input, Output, Accum> Pipeline<Input, Output> for PipelineImpl<Input, Outpu
 
 /// Context object owned by a worker thread.
 #[allow(clippy::type_complexity)]
-struct ThreadContext<'scope, Rn: Range, Input, Output> {
+struct ThreadContext<'scope, Rn: Range, Output> {
     /// Thread index.
     #[cfg(feature = "log")]
     id: usize,
@@ -410,15 +405,13 @@ struct ThreadContext<'scope, Rn: Range, Input, Output> {
     main_status: Arc<Status<MainStatus>>,
     /// Range of items that this worker thread needs to process.
     range: Rn,
-    /// Reference to the inputs to process.
-    input: Arc<RwLock<SliceView<Input>>>,
     /// Output that this thread writes to.
     output: Arc<Mutex<Option<Output>>>,
     /// Pipeline to map and reduce inputs into the output.
-    pipeline: Arc<RwLock<Option<Box<dyn Pipeline<Input, Output> + Send + Sync + 'scope>>>>,
+    pipeline: Arc<RwLock<Option<Box<dyn Pipeline<Output> + Send + Sync + 'scope>>>>,
 }
 
-impl<Rn: Range, Input, Output> ThreadContext<'_, Rn, Input, Output> {
+impl<Rn: Range, Output> ThreadContext<'_, Rn, Output> {
     /// Main function run by this thread.
     fn run(&self) {
         let mut round = RoundColor::Blue;
@@ -464,15 +457,9 @@ impl<Rn: Range, Input, Output> ThreadContext<'_, Rn, Input, Output> {
                     };
 
                     {
-                        let guard = self.input.read().unwrap();
-                        // SAFETY: the underlying input slice is valid and not mutated for the whole
-                        // lifetime of this block.
-                        let input = unsafe { guard.get().unwrap() };
-
-                        let pipeline_guard = self.pipeline.read().unwrap();
-                        let pipeline = pipeline_guard.as_ref().unwrap();
-                        *self.output.lock().unwrap() =
-                            Some(pipeline.run(input, &mut self.range.iter()));
+                        let guard = self.pipeline.read().unwrap();
+                        let pipeline = guard.as_ref().unwrap();
+                        *self.output.lock().unwrap() = Some(pipeline.run(&mut self.range.iter()));
                     }
 
                     // Explicit drop for clarity.

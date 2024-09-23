@@ -59,16 +59,29 @@ pub struct SliceView<T> {
 
 impl<T> SliceView<T> {
     /// Creates a new empty slice.
-    pub fn new() -> Self {
+    #[cfg(test)]
+    pub fn empty() -> Self {
         Self {
             ptr: std::ptr::null(),
             len: 0,
         }
     }
 
+    /// Creates a new view set to the given slice. Like with
+    /// [`set()`](Self::set), subsequent calls to [`get()`](Self::get) must
+    /// ensure that the obtained slice doesn't outlive the slice that was set
+    /// here.
+    pub fn new(slice: &[T]) -> Self {
+        Self {
+            ptr: slice.as_ptr(),
+            len: slice.len(),
+        }
+    }
+
     /// Sets the underlying value to the given slice. Subsequent calls to
     /// [`get()`](Self::get) must ensure that the obtained slice doesn't
     /// outlive the slice that was set here.
+    #[cfg(test)]
     pub fn set(&mut self, slice: &[T]) {
         self.ptr = slice.as_ptr();
         self.len = slice.len();
@@ -76,6 +89,7 @@ impl<T> SliceView<T> {
 
     /// Resets the underlying value to the empty slice. Subsequent calls to
     /// [`get()`](Self::get) will obtain [`None`].
+    #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.ptr = std::ptr::null();
         self.len = 0;
@@ -123,7 +137,7 @@ mod test {
 
     #[test]
     fn slice_view_basic_usage() {
-        let mut view = SliceView::new();
+        let mut view = SliceView::empty();
 
         let mut foo = [42; 5];
         view.set(&foo);
@@ -145,7 +159,7 @@ mod test {
     fn slice_view_multi_threaded() {
         const NUM_THREADS: usize = 2;
 
-        let view = Arc::new(RwLock::new(SliceView::new()));
+        let view = Arc::new(RwLock::new(SliceView::empty()));
         let steps: Arc<[_; 6]> = Arc::new(std::array::from_fn(|_| Barrier::new(NUM_THREADS + 1)));
 
         let main = std::thread::spawn({
@@ -221,7 +235,7 @@ mod test {
     #[ignore]
     #[test]
     fn slice_view_bad_mut() {
-        let mut view = SliceView::new();
+        let mut view = SliceView::empty();
         let mut foo = [42; 5];
         view.set(&foo);
         let bar = unsafe { view.get().unwrap() };
@@ -237,7 +251,7 @@ mod test {
     #[ignore]
     #[test]
     fn slice_view_bad_lifetime() {
-        let mut view = SliceView::new();
+        let mut view = SliceView::empty();
         {
             let foo = [42; 5];
             view.set(&foo);
