@@ -76,6 +76,7 @@ mod test {
                 test_several_functions,
                 test_several_accumulators,
                 test_several_input_types,
+                test_several_pipelines,
             );
         };
     }
@@ -222,7 +223,7 @@ mod test {
         // The scope should accept FnOnce() parameter. We test it with a closure that
         // captures and consumes a non-Copy type.
         let token = Box::new(());
-        pool_builder.scope::<(), ()>(|_| drop(token));
+        pool_builder.scope(|_| drop(token));
     }
 
     fn test_local_sum(range_strategy: RangeStrategy) {
@@ -373,6 +374,48 @@ mod test {
         });
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
         assert_eq!(sum_lengths, expected_sum_lengths(INPUT_LEN));
+    }
+
+    fn test_several_pipelines(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            range_strategy,
+        };
+        let (sum, sum_pairs) = pool_builder.scope(|thread_pool| {
+            // Pipelines with different types can be used successively.
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            let sum = thread_pool.pipeline(
+                &input,
+                || 0u64,
+                |acc, _, &x| *acc += x,
+                |acc| acc,
+                |a, b| a + b,
+            );
+
+            let input = (0..=INPUT_LEN)
+                .map(|i| (2 * i, 2 * i + 1))
+                .collect::<Vec<(u64, u64)>>();
+            let sum_pairs = thread_pool.pipeline(
+                &input,
+                || (0u64, 0u64),
+                |(a, b), _, &(x, y)| {
+                    *a += x;
+                    *b += y;
+                },
+                |acc| acc,
+                |(a, b), (x, y)| (a + x, b + y),
+            );
+
+            (sum, sum_pairs)
+        });
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+        assert_eq!(
+            sum_pairs,
+            (
+                INPUT_LEN * (INPUT_LEN + 1),
+                (INPUT_LEN + 1) * (INPUT_LEN + 1)
+            )
+        );
     }
 
     const fn expected_sum_lengths(max: u64) -> u64 {

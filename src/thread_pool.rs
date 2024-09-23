@@ -64,7 +64,7 @@ impl ThreadPoolBuilder {
     /// });
     /// assert_eq!(sum, 5 * 11);
     /// ```
-    pub fn scope<Output: Send, R>(&self, f: impl FnOnce(ThreadPool<Output>) -> R) -> R {
+    pub fn scope<R>(&self, f: impl FnOnce(ThreadPool) -> R) -> R {
         std::thread::scope(|scope| {
             let thread_pool = ThreadPool::new(scope, self.num_threads, self.range_strategy);
             f(thread_pool)
@@ -110,10 +110,9 @@ impl RoundColor {
 
 /// A thread pool tied to a scope, that can process inputs into outputs of the
 /// given types.
-#[allow(clippy::type_complexity)]
-pub struct ThreadPool<'scope, Output> {
+pub struct ThreadPool<'scope> {
     /// Handles to all the worker threads in the pool.
-    threads: Vec<WorkerThreadHandle<'scope, Output>>,
+    threads: Vec<WorkerThreadHandle<'scope>>,
     /// Number of worker threads active in the current round.
     num_active_threads: Arc<AtomicUsize>,
     /// Number of worker threads that panicked in the current round.
@@ -129,15 +128,13 @@ pub struct ThreadPool<'scope, Output> {
     /// everything.
     range_orchestrator: Box<dyn RangeOrchestrator>,
     /// Pipeline to map and reduce inputs into the output.
-    pipeline: Arc<RwLock<Option<Box<dyn Pipeline<Output> + Send + Sync + 'scope>>>>,
+    pipeline: Arc<RwLock<Option<Box<dyn Pipeline + Send + Sync + 'scope>>>>,
 }
 
 /// Handle to a worker thread in the pool.
-struct WorkerThreadHandle<'scope, Output> {
+struct WorkerThreadHandle<'scope> {
     /// Thread handle object.
     handle: ScopedJoinHandle<'scope, ()>,
-    /// Storage for this thread's computation output.
-    output: Arc<Mutex<Option<Output>>>,
 }
 
 /// Strategy to distribute ranges of work items among threads.
@@ -149,7 +146,7 @@ pub enum RangeStrategy {
     WorkStealing,
 }
 
-impl<'scope, Output: Send + 'scope> ThreadPool<'scope, Output> {
+impl<'scope> ThreadPool<'scope> {
     /// Creates a new pool tied to the given scope, spawning the given number of
     /// worker threads.
     fn new<'env>(
@@ -201,16 +198,13 @@ impl<'scope, Output: Send + 'scope> ThreadPool<'scope, Output> {
         log_warn!("Pinning threads to CPUs is not implemented on this platform.");
         let threads = (0..num_threads)
             .map(|id| {
-                let output = Arc::new(Mutex::new(None));
                 let context = ThreadContext {
-                    #[cfg(feature = "log")]
                     id,
                     num_active_threads: num_active_threads.clone(),
                     num_panicking_threads: num_panicking_threads.clone(),
                     worker_status: worker_status.clone(),
                     main_status: main_status.clone(),
                     range: range_factory.range(id),
-                    output: output.clone(),
                     pipeline: pipeline.clone(),
                 };
                 WorkerThreadHandle {
@@ -236,7 +230,6 @@ impl<'scope, Output: Send + 'scope> ThreadPool<'scope, Output> {
                         }
                         context.run()
                     }),
-                    output,
                 }
             })
             .collect();
@@ -284,7 +277,7 @@ impl<'scope, Output: Send + 'scope> ThreadPool<'scope, Output> {
     /// assert_eq!(sum, 5 * 11);
     /// # });
     /// ```
-    pub fn pipeline<Input: Sync + 'scope, Accum: 'scope>(
+    pub fn pipeline<Input: Sync + 'scope, Output: Send + 'scope, Accum: 'scope>(
         &self,
         input: &[Input],
         init: impl Fn() -> Accum + Send + Sync + 'static,
@@ -301,8 +294,13 @@ impl<'scope, Output: Send + 'scope> ThreadPool<'scope, Output> {
         round.toggle();
         self.round.set(round);
 
+        let outputs = (0..num_threads)
+            .map(|_| Mutex::new(None))
+            .collect::<Arc<[_]>>();
+
         *self.pipeline.write().unwrap() = Some(Box::new(PipelineImpl {
             input: SliceView::new(input),
+            outputs: outputs.clone(),
             init: Box::new(init),
             process_item: Box::new(process_item),
             finalize: Box::new(finalize),
@@ -334,15 +332,15 @@ impl<'scope, Output: Send + 'scope> ThreadPool<'scope, Output> {
         );
         *self.pipeline.write().unwrap() = None;
 
-        self.threads
+        outputs
             .iter()
-            .map(move |t| t.output.lock().unwrap().take().unwrap())
+            .map(move |output| output.lock().unwrap().take().unwrap())
             .reduce(reduce)
             .unwrap()
     }
 }
 
-impl<Output> Drop for ThreadPool<'_, Output> {
+impl Drop for ThreadPool<'_> {
     /// Joins all the threads in the pool.
     #[allow(clippy::single_match, clippy::unused_enumerate_index)]
     fn drop(&mut self) {
@@ -364,20 +362,21 @@ impl<Output> Drop for ThreadPool<'_, Output> {
     }
 }
 
-trait Pipeline<Output> {
-    fn run(&self, range: &mut dyn Iterator<Item = usize>) -> Output;
+trait Pipeline {
+    fn run(&self, worker_id: usize, range: &mut dyn Iterator<Item = usize>);
 }
 
 #[allow(clippy::type_complexity)]
 struct PipelineImpl<Input, Output, Accum> {
     input: SliceView<Input>,
+    outputs: Arc<[Mutex<Option<Output>>]>,
     init: Box<dyn Fn() -> Accum + Send + Sync>,
     process_item: Box<dyn Fn(&mut Accum, usize, &Input) + Send + Sync>,
     finalize: Box<dyn Fn(Accum) -> Output + Send + Sync>,
 }
 
-impl<Input, Output, Accum> Pipeline<Output> for PipelineImpl<Input, Output, Accum> {
-    fn run(&self, range: &mut dyn Iterator<Item = usize>) -> Output {
+impl<Input, Output, Accum> Pipeline for PipelineImpl<Input, Output, Accum> {
+    fn run(&self, worker_id: usize, range: &mut dyn Iterator<Item = usize>) {
         // SAFETY: the underlying input slice is valid and not mutated for the whole
         // lifetime of this block.
         let input = unsafe { self.input.get().unwrap() };
@@ -385,15 +384,14 @@ impl<Input, Output, Accum> Pipeline<Output> for PipelineImpl<Input, Output, Accu
         for i in range {
             (self.process_item)(&mut accumulator, i, &input[i]);
         }
-        (self.finalize)(accumulator)
+        let output = (self.finalize)(accumulator);
+        *self.outputs[worker_id].lock().unwrap() = Some(output);
     }
 }
 
 /// Context object owned by a worker thread.
-#[allow(clippy::type_complexity)]
-struct ThreadContext<'scope, Rn: Range, Output> {
+struct ThreadContext<'scope, Rn: Range> {
     /// Thread index.
-    #[cfg(feature = "log")]
     id: usize,
     /// Number of worker threads active in the current round.
     num_active_threads: Arc<AtomicUsize>,
@@ -405,13 +403,11 @@ struct ThreadContext<'scope, Rn: Range, Output> {
     main_status: Arc<Status<MainStatus>>,
     /// Range of items that this worker thread needs to process.
     range: Rn,
-    /// Output that this thread writes to.
-    output: Arc<Mutex<Option<Output>>>,
     /// Pipeline to map and reduce inputs into the output.
-    pipeline: Arc<RwLock<Option<Box<dyn Pipeline<Output> + Send + Sync + 'scope>>>>,
+    pipeline: Arc<RwLock<Option<Box<dyn Pipeline + Send + Sync + 'scope>>>>,
 }
 
-impl<Rn: Range, Output> ThreadContext<'_, Rn, Output> {
+impl<Rn: Range> ThreadContext<'_, Rn> {
     /// Main function run by this thread.
     fn run(&self) {
         let mut round = RoundColor::Blue;
@@ -459,7 +455,7 @@ impl<Rn: Range, Output> ThreadContext<'_, Rn, Output> {
                     {
                         let guard = self.pipeline.read().unwrap();
                         let pipeline = guard.as_ref().unwrap();
-                        *self.output.lock().unwrap() = Some(pipeline.run(&mut self.range.iter()));
+                        pipeline.run(self.id, &mut self.range.iter());
                     }
 
                     // Explicit drop for clarity.
