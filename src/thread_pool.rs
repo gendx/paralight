@@ -27,7 +27,6 @@ use nix::{
     sched::{sched_setaffinity, CpuSet},
     unistd::Pid,
 };
-use std::cell::Cell;
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
@@ -52,7 +51,7 @@ impl ThreadPoolBuilder {
     ///     range_strategy: RangeStrategy::WorkStealing,
     /// };
     ///
-    /// let sum = pool_builder.scope(|thread_pool| {
+    /// let sum = pool_builder.scope(|mut thread_pool| {
     ///     let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     ///     thread_pool.pipeline(
     ///         &input,
@@ -118,7 +117,7 @@ pub struct ThreadPool<'scope> {
     /// Number of worker threads that panicked in the current round.
     num_panicking_threads: Arc<AtomicUsize>,
     /// Color of the current round.
-    round: Cell<RoundColor>,
+    round: RoundColor,
     /// Status of the worker threads.
     worker_status: Arc<Status<WorkerStatus>>,
     /// Status of the main thread.
@@ -178,10 +177,10 @@ impl<'scope> ThreadPool<'scope> {
         RnFactory::Rn: 'scope + Send,
         RnFactory::Orchestrator: 'static,
     {
-        let color = RoundColor::Blue;
+        let round = RoundColor::Blue;
         let num_active_threads = Arc::new(AtomicUsize::new(0));
         let num_panicking_threads = Arc::new(AtomicUsize::new(0));
-        let worker_status = Arc::new(Status::new(WorkerStatus::Round(color)));
+        let worker_status = Arc::new(Status::new(WorkerStatus::Round(round)));
         let main_status = Arc::new(Status::new(MainStatus::Waiting));
 
         let pipeline = Arc::new(RwLock::new(None));
@@ -239,7 +238,7 @@ impl<'scope> ThreadPool<'scope> {
             threads,
             num_active_threads,
             num_panicking_threads,
-            round: Cell::new(color),
+            round,
             worker_status,
             main_status,
             range_orchestrator: Box::new(range_factory.orchestrator()),
@@ -265,7 +264,7 @@ impl<'scope> ThreadPool<'scope> {
     /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// # };
-    /// # pool_builder.scope(|thread_pool| {
+    /// # pool_builder.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let sum = thread_pool.pipeline(
     ///     &input,
@@ -278,7 +277,7 @@ impl<'scope> ThreadPool<'scope> {
     /// # });
     /// ```
     pub fn pipeline<Input: Sync + 'scope, Output: Send + 'scope, Accum: 'scope>(
-        &self,
+        &mut self,
         input: &[Input],
         init: impl Fn() -> Accum + Send + Sync + 'scope,
         process_item: impl Fn(&mut Accum, usize, &Input) + Send + Sync + 'scope,
@@ -290,9 +289,8 @@ impl<'scope> ThreadPool<'scope> {
         let num_threads = self.threads.len();
         self.num_active_threads.store(num_threads, Ordering::SeqCst);
 
-        let mut round = self.round.get();
-        round.toggle();
-        self.round.set(round);
+        self.round.toggle();
+        let round = self.round;
 
         let outputs = (0..num_threads)
             .map(|_| Mutex::new(None))

@@ -85,7 +85,7 @@ mod paralight {
             num_threads: NonZeroUsize::try_from(num_threads).unwrap(),
             range_strategy,
         };
-        pool_builder.scope(|thread_pool| {
+        pool_builder.scope(|mut thread_pool| {
             bencher.iter(|| {
                 thread_pool.pipeline(
                     black_box(input_slice),

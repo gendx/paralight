@@ -100,7 +100,7 @@ mod test {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
         };
-        let sum = pool_builder.scope(|thread_pool| {
+        let sum = pool_builder.scope(|mut thread_pool| {
             thread_pool.pipeline(
                 &input,
                 || 0u64,
@@ -118,7 +118,7 @@ mod test {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
         };
-        let (sum1, sum2) = pool_builder.scope(|thread_pool| {
+        let (sum1, sum2) = pool_builder.scope(|mut thread_pool| {
             // The same input can be processed multiple times on the thread pool.
             let sum1 = thread_pool.pipeline(
                 &input,
@@ -145,7 +145,7 @@ mod test {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
         };
-        let sum = pool_builder.scope(|thread_pool| {
+        let sum = pool_builder.scope(|mut thread_pool| {
             // The input can be local.
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
             thread_pool.pipeline(
@@ -170,7 +170,7 @@ mod test {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
         };
-        let sum = pool_builder.scope(|thread_pool| {
+        let sum = pool_builder.scope(|mut thread_pool| {
             // The input can be local.
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
             thread_pool.pipeline(
@@ -195,7 +195,7 @@ mod test {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
         };
-        let sum = pool_builder.scope(|thread_pool| {
+        let sum = pool_builder.scope(|mut thread_pool| {
             // The input can be local.
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
             thread_pool.pipeline(
@@ -231,7 +231,7 @@ mod test {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
         };
-        let sum = pool_builder.scope(|thread_pool| {
+        let sum = pool_builder.scope(|mut thread_pool| {
             // The input can be local.
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
             thread_pool.pipeline(
@@ -250,7 +250,7 @@ mod test {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
         };
-        let (sum1, sum2) = pool_builder.scope(|thread_pool| {
+        let (sum1, sum2) = pool_builder.scope(|mut thread_pool| {
             // Several inputs can be used successively.
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
             let sum1 = thread_pool.pipeline(
@@ -283,7 +283,7 @@ mod test {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
         };
-        let (sum, sum_squares) = pool_builder.scope(|thread_pool| {
+        let (sum, sum_squares) = pool_builder.scope(|mut thread_pool| {
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
             // Several functions can be computed successively.
             let sum = thread_pool.pipeline(
@@ -318,7 +318,7 @@ mod test {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
         };
-        let (sum1, sum2) = pool_builder.scope(|thread_pool| {
+        let (sum1, sum2) = pool_builder.scope(|mut thread_pool| {
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
             // Several accumulator types can be used successively.
             let sum1 = thread_pool.pipeline(
@@ -348,7 +348,7 @@ mod test {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
         };
-        let (sum, sum_lengths) = pool_builder.scope(|thread_pool| {
+        let (sum, sum_lengths) = pool_builder.scope(|mut thread_pool| {
             // Several input types can be used successively.
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
             let sum = thread_pool.pipeline(
@@ -381,7 +381,7 @@ mod test {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
         };
-        let (sum, sum_pairs) = pool_builder.scope(|thread_pool| {
+        let (sum, sum_pairs) = pool_builder.scope(|mut thread_pool| {
             // Pipelines with different types can be used successively.
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
             let sum = thread_pool.pipeline(

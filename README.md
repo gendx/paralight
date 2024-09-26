@@ -24,7 +24,7 @@ let pool_builder = ThreadPoolBuilder {
 
 // Create a scoped thread pool.
 let sum = pool_builder.scope(
-    |thread_pool| {
+    |mut thread_pool| {
         // Compute the sum of a slice.
         let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
         thread_pool.pipeline(

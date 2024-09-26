@@ -83,7 +83,7 @@ mod paralight {
             num_threads: NonZeroUsize::try_from(NUM_THREADS).unwrap(),
             range_strategy,
         };
-        pool_builder.scope(move |thread_pool| {
+        pool_builder.scope(move |mut thread_pool| {
             bencher
                 .counter(BytesCount::of_many::<u64>(len))
                 .bench_local(|| {
