@@ -156,9 +156,9 @@ mod test {
                 $range_strategy,
                 test_sum_integers,
                 test_sum_twice,
-                test_one_panic => fail("A worker thread panicked!"),
-                test_some_panics => fail("A worker thread panicked!"),
-                test_many_panics => fail("A worker thread panicked!"),
+                test_one_panic => fail("worker thread(s) panicked!"),
+                test_some_panics => fail("worker thread(s) panicked!"),
+                test_many_panics => fail("worker thread(s) panicked!"),
                 test_fn_once,
                 test_local_sum,
                 test_several_inputs,
@@ -218,7 +218,6 @@ mod test {
     }
 
     fn test_one_panic(range_strategy: RangeStrategy) {
-        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
@@ -226,6 +225,8 @@ mod test {
         let sum = pool_builder.scope(
             || SumAccumulatorOnePanic,
             |thread_pool| {
+                // The input can be local.
+                let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
                 thread_pool
                     .process_inputs(&input)
                     .reduce(|a, b| a + b)
@@ -236,7 +237,6 @@ mod test {
     }
 
     fn test_some_panics(range_strategy: RangeStrategy) {
-        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
@@ -244,6 +244,8 @@ mod test {
         let sum = pool_builder.scope(
             || SumAccumulatorSomePanics,
             |thread_pool| {
+                // The input can be local.
+                let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
                 thread_pool
                     .process_inputs(&input)
                     .reduce(|a, b| a + b)
@@ -254,7 +256,6 @@ mod test {
     }
 
     fn test_many_panics(range_strategy: RangeStrategy) {
-        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
@@ -262,6 +263,8 @@ mod test {
         let sum = pool_builder.scope(
             || SumAccumulatorManyPanics,
             |thread_pool| {
+                // The input can be local.
+                let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
                 thread_pool
                     .process_inputs(&input)
                     .reduce(|a, b| a + b)

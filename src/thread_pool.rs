@@ -101,22 +101,20 @@ impl ThreadPoolBuilder {
 }
 
 /// Status of the main thread.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MainStatus {
     /// The main thread is waiting for the worker threads to finish a round.
     Waiting,
     /// The main thread is ready to prepare the next round.
     Ready,
-    /// One of the worker threads panicked.
-    WorkerPanic,
 }
 
 /// Status sent to the worker threads.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum WorkerStatus {
-    /// The threads need to compute a round of the given color.
+    /// The worker threads need to compute a pipeline round of the given color.
     Round(RoundColor),
-    /// There is nothing more to do and the threads must exit.
+    /// There is nothing more to do and the worker threads must exit.
     Finished,
 }
 
@@ -163,16 +161,6 @@ impl<T> Status<T> {
         Ok(())
     }
 
-    /// If the predicate is true on this status, sets the status to the given
-    /// value and notifies one waiting thread.
-    fn notify_one_if(&self, predicate: impl Fn(&T) -> bool, t: T) {
-        let mut locked = self.mutex.lock().unwrap();
-        if predicate(&*locked) {
-            *locked = t;
-            self.condvar.notify_one();
-        }
-    }
-
     /// Sets the status to the given value and notifies all waiting threads.
     fn notify_all(&self, t: T) {
         *self.mutex.lock().unwrap() = t;
@@ -197,6 +185,8 @@ pub struct ThreadPool<'scope, Input, Output> {
     threads: Vec<WorkerThreadHandle<'scope, Output>>,
     /// Number of worker threads active in the current round.
     num_active_threads: Arc<AtomicUsize>,
+    /// Number of worker threads that panicked in the current round.
+    num_panicking_threads: Arc<AtomicUsize>,
     /// Color of the current round.
     round: Cell<RoundColor>,
     /// Status of the worker threads.
@@ -270,6 +260,7 @@ impl<'scope, Input: Sync + 'scope, Output: Send + 'scope> ThreadPool<'scope, Inp
     {
         let color = RoundColor::Blue;
         let num_active_threads = Arc::new(AtomicUsize::new(0));
+        let num_panicking_threads = Arc::new(AtomicUsize::new(0));
         let worker_status = Arc::new(Status::new(WorkerStatus::Round(color)));
         let main_status = Arc::new(Status::new(MainStatus::Waiting));
 
@@ -292,6 +283,7 @@ impl<'scope, Input: Sync + 'scope, Output: Send + 'scope> ThreadPool<'scope, Inp
                     #[cfg(feature = "log")]
                     id,
                     num_active_threads: num_active_threads.clone(),
+                    num_panicking_threads: num_panicking_threads.clone(),
                     worker_status: worker_status.clone(),
                     main_status: main_status.clone(),
                     range: range_factory.range(id),
@@ -331,6 +323,7 @@ impl<'scope, Input: Sync + 'scope, Output: Send + 'scope> ThreadPool<'scope, Inp
         Self {
             threads,
             num_active_threads,
+            num_panicking_threads,
             round: Cell::new(color),
             worker_status,
             main_status,
@@ -352,23 +345,31 @@ impl<'scope, Input: Sync + 'scope, Output: Send + 'scope> ThreadPool<'scope, Inp
         self.round.set(round);
 
         self.input.write().unwrap().set(input);
-        log_debug!("[main thread, round {round:?}] Ready to compute a round.");
+        log_debug!("[main thread, round {round:?}] Ready to compute a parallel pipeline.");
 
         self.worker_status.notify_all(WorkerStatus::Round(round));
 
-        log_debug!("[main thread, round {round:?}] Waiting for all threads to finish this round.");
+        log_debug!("[main thread, round {round:?}] Waiting for all threads to finish computing this pipeline.");
 
         let mut guard = self
             .main_status
             .wait_while(|status| *status == MainStatus::Waiting);
-        if *guard == MainStatus::WorkerPanic {
-            log_error!("[main thread] A worker thread panicked!");
-            panic!("A worker thread panicked!");
+        assert_eq!(*guard, MainStatus::Ready);
+
+        let num_panicking_threads = self.num_panicking_threads.load(Ordering::SeqCst);
+        if num_panicking_threads != 0 {
+            log_error!(
+                "[main thread, round {round:?}] {num_panicking_threads} worker thread(s) panicked!"
+            );
+            panic!("{num_panicking_threads} worker thread(s) panicked!");
         }
+
         *guard = MainStatus::Waiting;
         drop(guard);
 
-        log_debug!("[main thread, round {round:?}] All threads have now finished this round.");
+        log_debug!(
+            "[main thread, round {round:?}] All threads have now finished computing this pipeline."
+        );
         self.input.write().unwrap().clear();
 
         self.threads
@@ -428,6 +429,8 @@ struct ThreadContext<Rn: Range, Input, Output, Accum: ThreadAccumulator<Input, O
     id: usize,
     /// Number of worker threads active in the current round.
     num_active_threads: Arc<AtomicUsize>,
+    /// Number of worker threads that panicked in the current round.
+    num_panicking_threads: Arc<AtomicUsize>,
     /// Status of the worker threads.
     worker_status: Arc<Status<WorkerStatus>>,
     /// Status of the main thread.
@@ -475,13 +478,20 @@ impl<Rn: Range, Input, Output, Accum: ThreadAccumulator<Input, Output>>
                         self.id
                     );
 
-                    // Computing a round may panic, and we want to notify the main thread in that
-                    // case to avoid a deadlock.
-                    let panic_notifier = PanicNotifier {
+                    // Regardless of the pipeline computation status (success or panic), we want to
+                    // notify the main thread that this thread has finished working with the
+                    // pipeline object. This happens when the notifier is dropped (whether at the
+                    // end of this scope or when a panic is unwound).
+                    let notifier = Notifier {
                         #[cfg(feature = "log")]
                         id: self.id,
+                        #[cfg(feature = "log")]
+                        round,
+                        num_active_threads: &self.num_active_threads,
+                        num_panicking_threads: &self.num_panicking_threads,
                         main_status: &self.main_status,
                     };
+
                     {
                         let mut accumulator = self.accumulator.init();
                         let guard = self.input.read().unwrap();
@@ -495,68 +505,78 @@ impl<Rn: Range, Input, Output, Accum: ThreadAccumulator<Input, Output>>
                         drop(guard);
                         *self.output.lock().unwrap() = Some(self.accumulator.finalize(accumulator));
                     }
-                    std::mem::forget(panic_notifier);
 
-                    let thread_count = self.num_active_threads.fetch_sub(1, Ordering::SeqCst);
-                    assert!(thread_count > 0);
-                    log_debug!(
-                        "[thread {}, round {round:?}] Decremented the counter: {}.",
-                        self.id,
-                        thread_count - 1
-                    );
-                    if thread_count == 1 {
-                        // We're the last thread.
-                        log_debug!(
-                            "[thread {}, round {round:?}] We're the last thread. Notifying the main thread.",
-                            self.id
-                        );
-
-                        self.main_status.notify_one_if(
-                            |&status| status == MainStatus::Waiting,
-                            MainStatus::Ready,
-                        );
-
-                        log_debug!(
-                            "[thread {}, round {round:?}] Notified the main thread.",
-                            self.id
-                        );
-                    } else {
-                        log_debug!(
-                            "[thread {}, round {round:?}] Waiting for other threads to finish.",
-                            self.id
-                        );
-                    }
+                    // Explicit drop for clarity.
+                    drop(notifier);
                 }
             }
         }
     }
 }
 
-/// Object whose destructor notifies the main thread that a panic happened.
-///
-/// The way to use this is to create an instance before a section that may
-/// panic, and to [`std::mem::forget()`] it at the end of the section. That way:
-/// - If a panic happens, the [`std::mem::forget()`] call will be skipped but
-///   the destructor will run due to RAII.
-/// - If no panic happens, the destructor won't run because this object will be
-///   forgotten.
-struct PanicNotifier<'a> {
+/// Object whose destructor notifies the main thread that a worker thread has
+/// finished its computing round (or has panicked).
+struct Notifier<'a> {
     /// Thread index.
     #[cfg(feature = "log")]
     id: usize,
+    /// Color of the current round.
+    #[cfg(feature = "log")]
+    round: RoundColor,
+    /// Number of worker threads active in the current round.
+    num_active_threads: &'a AtomicUsize,
+    /// Number of worker threads that panicked in the current round.
+    num_panicking_threads: &'a AtomicUsize,
     /// Status of the main thread.
     main_status: &'a Status<MainStatus>,
 }
 
-impl Drop for PanicNotifier<'_> {
+impl Drop for Notifier<'_> {
     fn drop(&mut self) {
-        log_error!(
-            "[thread {}] Detected panic in this thread, notifying the main thread",
-            self.id
-        );
-        if let Err(_e) = self.main_status.try_notify_one(MainStatus::WorkerPanic) {
+        #[cfg(feature = "log")]
+        let round = self.round;
+
+        // Computing a pipeline may panic, and we want to notify the main thread in that
+        // case to avoid using garbage output.
+        if std::thread::panicking() {
             log_error!(
-                "[thread {}] Failed to notify the main thread, the mutex was poisoned: {_e:?}",
+                "[thread {}] Detected panic in this thread, notifying the main thread",
+                self.id
+            );
+            self.num_panicking_threads.fetch_add(1, Ordering::SeqCst);
+        }
+
+        let thread_count = self.num_active_threads.fetch_sub(1, Ordering::SeqCst);
+        assert!(thread_count > 0);
+        log_debug!(
+            "[thread {}, round {round:?}] Decremented the number of active threads: {}.",
+            self.id,
+            thread_count - 1
+        );
+
+        if thread_count == 1 {
+            // We're the last thread.
+            log_debug!(
+                "[thread {}, round {round:?}] We're the last thread. Waking up the main thread.",
+                self.id
+            );
+
+            match self.main_status.try_notify_one(MainStatus::Ready) {
+                Ok(_) => log_debug!(
+                    "[thread {}, round {round:?}] Notified the main thread.",
+                    self.id
+                ),
+                Err(_e) => {
+                    log_error!(
+                        "[thread {}] Failed to notify the main thread, the mutex was poisoned: {_e:?}",
+                        self.id
+                    );
+                    panic!("Failed to notify the main thread, the mutex was poisoned: {_e:?}");
+                }
+            }
+        } else {
+            log_debug!(
+                "[thread {}, round {round:?}] Waiting for other threads to finish.",
                 self.id
             );
         }
