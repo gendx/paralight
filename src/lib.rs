@@ -14,6 +14,7 @@
     clippy::multiple_unsafe_ops_per_block
 )]
 #![cfg_attr(not(test), forbid(clippy::undocumented_unsafe_blocks))]
+#![cfg_attr(all(test, feature = "nightly_tests"), feature(negative_impls))]
 
 mod macros;
 mod range;
@@ -27,10 +28,12 @@ pub use thread_pool::{RangeStrategy, ThreadPool, ThreadPoolBuilder};
 mod test {
     use super::*;
     use std::num::NonZeroUsize;
+    use std::rc::Rc;
 
     macro_rules! expand_tests {
         ( $range_strategy:expr, ) => {};
-        ( $range_strategy:expr, $case:ident, $( $others:tt )* ) => {
+        ( $range_strategy:expr, $( #[ $attrs:meta ] )* $case:ident, $( $others:tt )* ) => {
+            $( #[$attrs] )*
             #[test]
             fn $case() {
                 for _ in 0..ITERATIONS {
@@ -40,7 +43,8 @@ mod test {
 
             expand_tests!($range_strategy, $($others)*);
         };
-        ( $range_strategy:expr, $case:ident => fail($msg:expr), $( $others:tt )* ) => {
+        ( $range_strategy:expr, $( #[ $attrs:meta ] )* $case:ident => fail($msg:expr), $( $others:tt )* ) => {
+            $( #[$attrs] )*
             #[test]
             #[should_panic(expected = $msg)]
             fn $case() {
@@ -79,6 +83,17 @@ mod test {
                 test_several_input_types,
                 test_several_pipelines,
                 test_capture_environment,
+                #[cfg(feature = "nightly_tests")]
+                test_non_send_functions,
+                #[cfg(feature = "nightly_tests")]
+                test_non_send_input,
+                #[cfg(feature = "nightly_tests")]
+                test_non_sync_output,
+                #[cfg(feature = "nightly_tests")]
+                test_non_send_accumulator,
+                #[cfg(feature = "nightly_tests")]
+                test_non_sync_accumulator,
+                test_non_send_sync_accumulator,
             );
         };
     }
@@ -438,6 +453,176 @@ mod test {
                 |acc, _, x| *acc += *x * *one_ref,
                 |acc| acc * *one_ref,
                 |a, b| (a + b) * *one_ref,
+            )
+        });
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    #[cfg(feature = "nightly_tests")]
+    struct NotSend(u64);
+    #[cfg(feature = "nightly_tests")]
+    impl NotSend {
+        fn get(&self) -> u64 {
+            self.0
+        }
+    }
+    #[cfg(feature = "nightly_tests")]
+    impl !Send for NotSend {}
+
+    #[cfg(feature = "nightly_tests")]
+    struct NotSync(u64);
+    #[cfg(feature = "nightly_tests")]
+    impl !Sync for NotSync {}
+
+    #[cfg(feature = "nightly_tests")]
+    fn test_non_send_functions(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            range_strategy,
+        };
+        let (sum1, sum2, sum3, sum4) = pool_builder.scope(|mut thread_pool| {
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            // Non-Send functions can be used in the pipeline.
+            let init = NotSend(0);
+            let sum1 = thread_pool.pipeline(
+                &input,
+                move || init.get(),
+                |acc, _, x| *acc += *x,
+                |acc| acc,
+                |a, b| a + b,
+            );
+
+            let one = NotSend(1);
+            let sum2 = thread_pool.pipeline(
+                &input,
+                || 0u64,
+                move |acc, _, x| *acc += *x * one.get(),
+                |acc| acc,
+                |a, b| a + b,
+            );
+
+            let one = NotSend(1);
+            let sum3 = thread_pool.pipeline(
+                &input,
+                || 0u64,
+                |acc, _, x| *acc += *x,
+                move |acc| acc * one.get(),
+                |a, b| a + b,
+            );
+
+            let zero = NotSend(0);
+            let sum4 = thread_pool.pipeline(
+                &input,
+                || 0u64,
+                |acc, _, x| *acc += *x,
+                |acc| acc,
+                move |a, b| a + b + zero.get(),
+            );
+
+            (sum1, sum2, sum3, sum4)
+        });
+        assert_eq!(sum1, INPUT_LEN * (INPUT_LEN + 1) / 2);
+        assert_eq!(sum2, INPUT_LEN * (INPUT_LEN + 1) / 2);
+        assert_eq!(sum3, INPUT_LEN * (INPUT_LEN + 1) / 2);
+        assert_eq!(sum4, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    #[cfg(feature = "nightly_tests")]
+    fn test_non_send_input(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            range_strategy,
+        };
+        let sum = pool_builder.scope(|mut thread_pool| {
+            // A non-Send input can be used in the pipeline.
+            let input = (0..=INPUT_LEN).map(NotSend).collect::<Vec<NotSend>>();
+            thread_pool.pipeline(
+                &input,
+                || 0u64,
+                |acc, _, x| *acc += x.get(),
+                |acc| acc,
+                |a, b| a + b,
+            )
+        });
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    #[cfg(feature = "nightly_tests")]
+    fn test_non_sync_output(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            range_strategy,
+        };
+        let sum = pool_builder.scope(|mut thread_pool| {
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            // A non-Sync output can be used in the pipeline.
+            thread_pool
+                .pipeline(
+                    &input,
+                    || 0u64,
+                    |acc, _, x| *acc += *x,
+                    NotSync,
+                    |a, b| NotSync(a.0 + b.0),
+                )
+                .0
+        });
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    #[cfg(feature = "nightly_tests")]
+    fn test_non_send_accumulator(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            range_strategy,
+        };
+        let sum = pool_builder.scope(|mut thread_pool| {
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            // A non-Send accumulator can be used in the pipeline.
+            thread_pool.pipeline(
+                &input,
+                || NotSend(0u64),
+                |acc, _, x| acc.0 += *x,
+                |acc| acc.0,
+                |a, b| a + b,
+            )
+        });
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    #[cfg(feature = "nightly_tests")]
+    fn test_non_sync_accumulator(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            range_strategy,
+        };
+        let sum = pool_builder.scope(move |mut thread_pool| {
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            // A non-Sync accumulator can be used in the pipeline.
+            thread_pool.pipeline(
+                &input,
+                || NotSync(0u64),
+                |acc, _, x| acc.0 += *x,
+                |acc| acc.0,
+                |a, b| a + b,
+            )
+        });
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_non_send_sync_accumulator(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            range_strategy,
+        };
+        let sum = pool_builder.scope(move |mut thread_pool| {
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            // A neither Send nor Sync accumulator can be used in the pipeline.
+            thread_pool.pipeline(
+                &input,
+                || Rc::new(0u64),
+                |acc, _, x| *Rc::get_mut(acc).unwrap() += *x,
+                |acc| *acc,
+                |a, b| a + b,
             )
         });
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);

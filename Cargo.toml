@@ -16,6 +16,7 @@ rust-version = "1.75.0"
 default = []
 log = ["dep:log"]
 log_parallelism = ["log"]
+nightly_tests = []
 
 [dependencies]
 log = { optional = true, version = "0.4" }

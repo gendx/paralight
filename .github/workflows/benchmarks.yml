@@ -12,6 +12,12 @@ jobs:
           - beta
           - nightly
           - 1.77.0  # MSRV for tests
+        include:
+          - test_features: ""
+          - all_test_features: ""
+          - rust: nightly
+            test_features: ",nightly_tests"
+            all_test_features: "--features=nightly_tests"
       fail-fast: false
     runs-on: ${{ matrix.os }}
     env:
@@ -23,10 +29,8 @@ jobs:
           toolchain: ${{ matrix.rust }}
 
       - name: Build (no default features)
-        run: cargo bench --no-run --verbose --all --no-default-features
+        run: cargo bench --no-run --verbose --all --no-default-features ${{ matrix.all_test_features }}
       - name: Build (log feature)
-        run: cargo bench --no-run --verbose --all --no-default-features --features=log
-      - name: Build (all features)
-        run: cargo bench --no-run --verbose --all --all-features
-      - name: Build (default features)
-        run: cargo bench --no-run --verbose --all
+        run: cargo bench --no-run --verbose --all --no-default-features --features=log${{ matrix.test_features }}
+      - name: Build (log_parallelism feature)
+        run: cargo bench --no-run --verbose --all --no-default-features --features=log_parallelism${{ matrix.test_features }}

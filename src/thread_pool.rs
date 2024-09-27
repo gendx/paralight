@@ -85,7 +85,7 @@ pub struct ThreadPool<'scope, 'env: 'scope> {
     /// everything.
     range_orchestrator: Box<dyn RangeOrchestrator>,
     /// Pipeline to map and reduce inputs into the output.
-    pipeline: Lender<dyn Pipeline + Send + Sync + 'scope>,
+    pipeline: Lender<dyn Pipeline + Sync + 'scope>,
     /// Lifetime of the environment outside of the thread scope. See
     /// [`std::thread::scope()`].
     _phantom: PhantomData<&'env ()>,
@@ -228,9 +228,9 @@ impl<'scope, 'env: 'scope> ThreadPool<'scope, 'env> {
     pub fn pipeline<Input: Sync + 'scope, Output: Send + 'scope, Accum: 'scope>(
         &mut self,
         input: &[Input],
-        init: impl Fn() -> Accum + Send + Sync + 'scope,
-        process_item: impl Fn(&mut Accum, usize, &Input) + Send + Sync + 'scope,
-        finalize: impl Fn(Accum) -> Output + Send + Sync + 'scope,
+        init: impl Fn() -> Accum + Sync + 'scope,
+        process_item: impl Fn(&mut Accum, usize, &Input) + Sync + 'scope,
+        finalize: impl Fn(Accum) -> Output + Sync + 'scope,
         reduce: impl Fn(Output, Output) -> Output,
     ) -> Output {
         self.range_orchestrator.reset_ranges(input.len());
@@ -323,7 +323,7 @@ struct ThreadContext<'scope, Rn: Range> {
     /// Range of items that this worker thread needs to process.
     range: Rn,
     /// Pipeline to map and reduce inputs into the output.
-    pipeline: Borrower<dyn Pipeline + Send + Sync + 'scope>,
+    pipeline: Borrower<dyn Pipeline + Sync + 'scope>,
 }
 
 impl<Rn: Range> ThreadContext<'_, Rn> {
