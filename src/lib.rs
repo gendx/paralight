@@ -78,6 +78,7 @@ mod test {
                 test_several_accumulators,
                 test_several_input_types,
                 test_several_pipelines,
+                test_capture_environment,
             );
         };
     }
@@ -417,6 +418,29 @@ mod test {
                 (INPUT_LEN + 1) * (INPUT_LEN + 1)
             )
         );
+    }
+
+    fn test_capture_environment(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            range_strategy,
+        };
+        // Pipelines can capture from the environment outside of the scoped thread pool.
+        let zero = 0u64;
+        let zero_ref = &zero;
+        let one = 1u64;
+        let one_ref = &one;
+        let sum = pool_builder.scope(|mut thread_pool| {
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            thread_pool.pipeline(
+                &input,
+                || *zero_ref,
+                |acc, _, x| *acc += *x * *one_ref,
+                |acc| acc * *one_ref,
+                |a, b| (a + b) * *one_ref,
+            )
+        });
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
     const fn expected_sum_lengths(max: u64) -> u64 {

@@ -28,6 +28,7 @@ use nix::{
     sched::{sched_setaffinity, CpuSet},
     unistd::Pid,
 };
+use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 use std::thread::{Scope, ScopedJoinHandle};
@@ -63,7 +64,7 @@ impl ThreadPoolBuilder {
     /// });
     /// assert_eq!(sum, 5 * 11);
     /// ```
-    pub fn scope<R>(&self, f: impl FnOnce(ThreadPool) -> R) -> R {
+    pub fn scope<'env, R>(&'env self, f: impl FnOnce(ThreadPool<'_, 'env>) -> R + 'env) -> R {
         std::thread::scope(|scope| {
             let thread_pool = ThreadPool::new(scope, self.num_threads, self.range_strategy);
             f(thread_pool)
@@ -73,7 +74,10 @@ impl ThreadPoolBuilder {
 
 /// A thread pool tied to a scope, that can process inputs into outputs of the
 /// given types.
-pub struct ThreadPool<'scope> {
+///
+/// See [`std::thread::scope()`] for what scoped threads mean and what the
+/// `'scope` and `'env` lifetimes refer to.
+pub struct ThreadPool<'scope, 'env: 'scope> {
     /// Handles to all the worker threads in the pool.
     threads: Vec<WorkerThreadHandle<'scope>>,
     /// Orchestrator for the work ranges distributed to the threads. This is a
@@ -82,6 +86,9 @@ pub struct ThreadPool<'scope> {
     range_orchestrator: Box<dyn RangeOrchestrator>,
     /// Pipeline to map and reduce inputs into the output.
     pipeline: Lender<Box<dyn Pipeline + Send + Sync + 'scope>>,
+    /// Lifetime of the environment outside of the thread scope. See
+    /// [`std::thread::scope()`].
+    _phantom: PhantomData<&'env ()>,
 }
 
 /// Handle to a worker thread in the pool.
@@ -99,10 +106,10 @@ pub enum RangeStrategy {
     WorkStealing,
 }
 
-impl<'scope> ThreadPool<'scope> {
+impl<'scope, 'env: 'scope> ThreadPool<'scope, 'env> {
     /// Creates a new pool tied to the given scope, spawning the given number of
     /// worker threads.
-    fn new<'env>(
+    fn new(
         thread_scope: &'scope Scope<'scope, 'env>,
         num_threads: NonZeroUsize,
         range_strategy: RangeStrategy,
@@ -122,7 +129,7 @@ impl<'scope> ThreadPool<'scope> {
         }
     }
 
-    fn new_with_factory<'env, RnFactory: RangeFactory>(
+    fn new_with_factory<RnFactory: RangeFactory>(
         thread_scope: &'scope Scope<'scope, 'env>,
         num_threads: usize,
         range_factory: RnFactory,
@@ -184,6 +191,7 @@ impl<'scope> ThreadPool<'scope> {
             threads,
             range_orchestrator: Box::new(range_factory.orchestrator()),
             pipeline: lender,
+            _phantom: PhantomData,
         }
     }
 
@@ -248,7 +256,7 @@ impl<'scope> ThreadPool<'scope> {
     }
 }
 
-impl Drop for ThreadPool<'_> {
+impl Drop for ThreadPool<'_, '_> {
     /// Joins all the threads in the pool.
     #[allow(clippy::single_match, clippy::unused_enumerate_index)]
     fn drop(&mut self) {
