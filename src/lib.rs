@@ -17,6 +17,7 @@
 
 mod macros;
 mod range;
+mod sync;
 mod thread_pool;
 mod util;
 

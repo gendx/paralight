@@ -11,9 +11,10 @@
 use super::range::{
     FixedRangeFactory, Range, RangeFactory, RangeOrchestrator, WorkStealingRangeFactory,
 };
+use super::sync::{make_lending_group, Borrower, Lender, WorkerState};
+use super::util::SliceView;
 use crate::macros::{log_debug, log_error, log_warn};
 // Platforms that support `libc::sched_setaffinity()`.
-use super::util::{SliceView, Status};
 #[cfg(all(
     not(miri),
     any(
@@ -28,8 +29,7 @@ use nix::{
     unistd::Pid,
 };
 use std::num::NonZeroUsize;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex};
 use std::thread::{Scope, ScopedJoinHandle};
 
 /// A builder for [`ThreadPool`].
@@ -71,63 +71,17 @@ impl ThreadPoolBuilder {
     }
 }
 
-/// Status of the main thread.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum MainStatus {
-    /// The main thread is waiting for the worker threads to finish a round.
-    Waiting,
-    /// The main thread is ready to prepare the next round.
-    Ready,
-}
-
-/// Status sent to the worker threads.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum WorkerStatus {
-    /// The worker threads need to compute a pipeline round of the given color.
-    Round(RoundColor),
-    /// There is nothing more to do and the worker threads must exit.
-    Finished,
-}
-
-/// An 2-element enumeration to distinguish successive rounds. The "colors" are
-/// only illustrative.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RoundColor {
-    Blue,
-    Red,
-}
-
-impl RoundColor {
-    /// Flips to the other color.
-    fn toggle(&mut self) {
-        *self = match self {
-            RoundColor::Blue => RoundColor::Red,
-            RoundColor::Red => RoundColor::Blue,
-        }
-    }
-}
-
 /// A thread pool tied to a scope, that can process inputs into outputs of the
 /// given types.
 pub struct ThreadPool<'scope> {
     /// Handles to all the worker threads in the pool.
     threads: Vec<WorkerThreadHandle<'scope>>,
-    /// Number of worker threads active in the current round.
-    num_active_threads: Arc<AtomicUsize>,
-    /// Number of worker threads that panicked in the current round.
-    num_panicking_threads: Arc<AtomicUsize>,
-    /// Color of the current round.
-    round: RoundColor,
-    /// Status of the worker threads.
-    worker_status: Arc<Status<WorkerStatus>>,
-    /// Status of the main thread.
-    main_status: Arc<Status<MainStatus>>,
     /// Orchestrator for the work ranges distributed to the threads. This is a
     /// dynamic object to avoid making the range type a parameter of
     /// everything.
     range_orchestrator: Box<dyn RangeOrchestrator>,
     /// Pipeline to map and reduce inputs into the output.
-    pipeline: Arc<RwLock<Option<Box<dyn Pipeline + Send + Sync + 'scope>>>>,
+    pipeline: Lender<Box<dyn Pipeline + Send + Sync + 'scope>>,
 }
 
 /// Handle to a worker thread in the pool.
@@ -177,13 +131,7 @@ impl<'scope> ThreadPool<'scope> {
         RnFactory::Rn: 'scope + Send,
         RnFactory::Orchestrator: 'static,
     {
-        let round = RoundColor::Blue;
-        let num_active_threads = Arc::new(AtomicUsize::new(0));
-        let num_panicking_threads = Arc::new(AtomicUsize::new(0));
-        let worker_status = Arc::new(Status::new(WorkerStatus::Round(round)));
-        let main_status = Arc::new(Status::new(MainStatus::Waiting));
-
-        let pipeline = Arc::new(RwLock::new(None));
+        let (lender, borrowers) = make_lending_group(num_threads);
 
         #[cfg(any(
             miri,
@@ -195,16 +143,14 @@ impl<'scope> ThreadPool<'scope> {
             ))
         ))]
         log_warn!("Pinning threads to CPUs is not implemented on this platform.");
-        let threads = (0..num_threads)
-            .map(|id| {
-                let context = ThreadContext {
+        let threads = borrowers
+            .into_iter()
+            .enumerate()
+            .map(|(id, borrower)| {
+                let mut context = ThreadContext {
                     id,
-                    num_active_threads: num_active_threads.clone(),
-                    num_panicking_threads: num_panicking_threads.clone(),
-                    worker_status: worker_status.clone(),
-                    main_status: main_status.clone(),
                     range: range_factory.range(id),
-                    pipeline: pipeline.clone(),
+                    pipeline: borrower,
                 };
                 WorkerThreadHandle {
                     handle: thread_scope.spawn(move || {
@@ -236,13 +182,8 @@ impl<'scope> ThreadPool<'scope> {
 
         Self {
             threads,
-            num_active_threads,
-            num_panicking_threads,
-            round,
-            worker_status,
-            main_status,
             range_orchestrator: Box::new(range_factory.orchestrator()),
-            pipeline,
+            pipeline: lender,
         }
     }
 
@@ -287,48 +228,17 @@ impl<'scope> ThreadPool<'scope> {
         self.range_orchestrator.reset_ranges(input.len());
 
         let num_threads = self.threads.len();
-        self.num_active_threads.store(num_threads, Ordering::SeqCst);
-
-        self.round.toggle();
-        let round = self.round;
-
         let outputs = (0..num_threads)
             .map(|_| Mutex::new(None))
             .collect::<Arc<[_]>>();
 
-        *self.pipeline.write().unwrap() = Some(Box::new(PipelineImpl {
+        self.pipeline.lend(Box::new(PipelineImpl {
             input: SliceView::new(input),
             outputs: outputs.clone(),
             init,
             process_item,
             finalize,
         }));
-        log_debug!("[main thread, round {round:?}] Ready to compute a parallel pipeline.");
-
-        self.worker_status.notify_all(WorkerStatus::Round(round));
-
-        log_debug!("[main thread, round {round:?}] Waiting for all threads to finish computing this pipeline.");
-
-        let mut guard = self
-            .main_status
-            .wait_while(|status| *status == MainStatus::Waiting);
-        assert_eq!(*guard, MainStatus::Ready);
-
-        let num_panicking_threads = self.num_panicking_threads.load(Ordering::SeqCst);
-        if num_panicking_threads != 0 {
-            log_error!(
-                "[main thread, round {round:?}] {num_panicking_threads} worker thread(s) panicked!"
-            );
-            panic!("{num_panicking_threads} worker thread(s) panicked!");
-        }
-
-        *guard = MainStatus::Waiting;
-        drop(guard);
-
-        log_debug!(
-            "[main thread, round {round:?}] All threads have now finished computing this pipeline."
-        );
-        *self.pipeline.write().unwrap() = None;
 
         outputs
             .iter()
@@ -342,8 +252,7 @@ impl Drop for ThreadPool<'_> {
     /// Joins all the threads in the pool.
     #[allow(clippy::single_match, clippy::unused_enumerate_index)]
     fn drop(&mut self) {
-        log_debug!("[main thread] Notifying threads to finish...");
-        self.worker_status.notify_all(WorkerStatus::Finished);
+        self.pipeline.finish_workers();
 
         log_debug!("[main thread] Joining threads in the pool...");
         for (_i, t) in self.threads.drain(..).enumerate() {
@@ -403,144 +312,22 @@ where
 struct ThreadContext<'scope, Rn: Range> {
     /// Thread index.
     id: usize,
-    /// Number of worker threads active in the current round.
-    num_active_threads: Arc<AtomicUsize>,
-    /// Number of worker threads that panicked in the current round.
-    num_panicking_threads: Arc<AtomicUsize>,
-    /// Status of the worker threads.
-    worker_status: Arc<Status<WorkerStatus>>,
-    /// Status of the main thread.
-    main_status: Arc<Status<MainStatus>>,
     /// Range of items that this worker thread needs to process.
     range: Rn,
     /// Pipeline to map and reduce inputs into the output.
-    pipeline: Arc<RwLock<Option<Box<dyn Pipeline + Send + Sync + 'scope>>>>,
+    pipeline: Borrower<Box<dyn Pipeline + Send + Sync + 'scope>>,
 }
 
 impl<Rn: Range> ThreadContext<'_, Rn> {
     /// Main function run by this thread.
-    fn run(&self) {
-        let mut round = RoundColor::Blue;
+    fn run(&mut self) {
         loop {
-            round.toggle();
-            log_debug!(
-                "[thread {}, round {round:?}] Waiting for start signal",
-                self.id
-            );
-
-            let worker_status: WorkerStatus =
-                *self.worker_status.wait_while(|status| match status {
-                    WorkerStatus::Finished => false,
-                    WorkerStatus::Round(r) => *r != round,
-                });
-            match worker_status {
-                WorkerStatus::Finished => {
-                    log_debug!(
-                        "[thread {}, round {round:?}] Received finish signal",
-                        self.id
-                    );
-                    break;
-                }
-                WorkerStatus::Round(r) => {
-                    assert_eq!(round, r);
-                    log_debug!(
-                        "[thread {}, round {round:?}] Received start signal. Processing...",
-                        self.id
-                    );
-
-                    // Regardless of the pipeline computation status (success or panic), we want to
-                    // notify the main thread that this thread has finished working with the
-                    // pipeline object. This happens when the notifier is dropped (whether at the
-                    // end of this scope or when a panic is unwound).
-                    let notifier = Notifier {
-                        #[cfg(feature = "log")]
-                        id: self.id,
-                        #[cfg(feature = "log")]
-                        round,
-                        num_active_threads: &self.num_active_threads,
-                        num_panicking_threads: &self.num_panicking_threads,
-                        main_status: &self.main_status,
-                    };
-
-                    {
-                        let guard = self.pipeline.read().unwrap();
-                        let pipeline = guard.as_ref().unwrap();
-                        pipeline.run(self.id, &mut self.range.iter());
-                    }
-
-                    // Explicit drop for clarity.
-                    drop(notifier);
-                }
+            match self.pipeline.borrow(|pipeline| {
+                pipeline.run(self.id, &mut self.range.iter());
+            }) {
+                WorkerState::Finished => break,
+                WorkerState::Ready => continue,
             }
-        }
-    }
-}
-
-/// Object whose destructor notifies the main thread that a worker thread has
-/// finished its computing round (or has panicked).
-struct Notifier<'a> {
-    /// Thread index.
-    #[cfg(feature = "log")]
-    id: usize,
-    /// Color of the current round.
-    #[cfg(feature = "log")]
-    round: RoundColor,
-    /// Number of worker threads active in the current round.
-    num_active_threads: &'a AtomicUsize,
-    /// Number of worker threads that panicked in the current round.
-    num_panicking_threads: &'a AtomicUsize,
-    /// Status of the main thread.
-    main_status: &'a Status<MainStatus>,
-}
-
-impl Drop for Notifier<'_> {
-    fn drop(&mut self) {
-        #[cfg(feature = "log")]
-        let round = self.round;
-
-        // Computing a pipeline may panic, and we want to notify the main thread in that
-        // case to avoid using garbage output.
-        if std::thread::panicking() {
-            log_error!(
-                "[thread {}] Detected panic in this thread, notifying the main thread",
-                self.id
-            );
-            self.num_panicking_threads.fetch_add(1, Ordering::SeqCst);
-        }
-
-        let thread_count = self.num_active_threads.fetch_sub(1, Ordering::SeqCst);
-        assert!(thread_count > 0);
-        log_debug!(
-            "[thread {}, round {round:?}] Decremented the number of active threads: {}.",
-            self.id,
-            thread_count - 1
-        );
-
-        if thread_count == 1 {
-            // We're the last thread.
-            log_debug!(
-                "[thread {}, round {round:?}] We're the last thread. Waking up the main thread.",
-                self.id
-            );
-
-            match self.main_status.try_notify_one(MainStatus::Ready) {
-                Ok(_) => log_debug!(
-                    "[thread {}, round {round:?}] Notified the main thread.",
-                    self.id
-                ),
-                Err(_e) => {
-                    log_error!(
-                        "[thread {}] Failed to notify the main thread, the mutex was poisoned: {_e:?}",
-                        self.id
-                    );
-                    panic!("Failed to notify the main thread, the mutex was poisoned: {_e:?}");
-                }
-            }
-        } else {
-            log_debug!(
-                "[thread {}, round {round:?}] Waiting for other threads to finish.",
-                self.id
-            );
         }
     }
 }
