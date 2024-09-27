@@ -85,7 +85,7 @@ pub struct ThreadPool<'scope, 'env: 'scope> {
     /// everything.
     range_orchestrator: Box<dyn RangeOrchestrator>,
     /// Pipeline to map and reduce inputs into the output.
-    pipeline: Lender<Box<dyn Pipeline + Send + Sync + 'scope>>,
+    pipeline: Lender<dyn Pipeline + Send + Sync + 'scope>,
     /// Lifetime of the environment outside of the thread scope. See
     /// [`std::thread::scope()`].
     _phantom: PhantomData<&'env ()>,
@@ -240,13 +240,13 @@ impl<'scope, 'env: 'scope> ThreadPool<'scope, 'env> {
             .map(|_| Mutex::new(None))
             .collect::<Arc<[_]>>();
 
-        self.pipeline.lend(Box::new(PipelineImpl {
+        self.pipeline.lend(&PipelineImpl {
             input: SliceView::new(input),
             outputs: outputs.clone(),
             init,
             process_item,
             finalize,
-        }));
+        });
 
         outputs
             .iter()
@@ -304,7 +304,7 @@ where
     Finalize: Fn(Accum) -> Output,
 {
     fn run(&self, worker_id: usize, range: &mut dyn Iterator<Item = usize>) {
-        // SAFETY: the underlying input slice is valid and not mutated for the whole
+        // SAFETY: The underlying input slice is valid and not mutated for the whole
         // lifetime of this block.
         let input = unsafe { self.input.get().unwrap() };
         let mut accumulator = (self.init)();
@@ -323,7 +323,7 @@ struct ThreadContext<'scope, Rn: Range> {
     /// Range of items that this worker thread needs to process.
     range: Rn,
     /// Pipeline to map and reduce inputs into the output.
-    pipeline: Borrower<Box<dyn Pipeline + Send + Sync + 'scope>>,
+    pipeline: Borrower<dyn Pipeline + Send + Sync + 'scope>,
 }
 
 impl<Rn: Range> ThreadContext<'_, Rn> {

@@ -8,7 +8,7 @@
 
 //! Synchronization primitives
 
-use super::util::Status;
+use super::util::{Status, View};
 use crate::macros::{log_debug, log_error};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
@@ -60,14 +60,14 @@ impl RoundColor {
 }
 
 /// Create a [`Lender`] paired with `num_threads` [`Borrower`]s.
-pub fn make_lending_group<T>(num_threads: usize) -> (Lender<T>, Vec<Borrower<T>>) {
+pub fn make_lending_group<T: ?Sized>(num_threads: usize) -> (Lender<T>, Vec<Borrower<T>>) {
     let round = RoundColor::Blue;
     let num_active_threads = Arc::new(AtomicUsize::new(0));
     let num_panicking_threads = Arc::new(AtomicUsize::new(0));
     let worker_status = Arc::new(Status::new(WorkerStatus::Round(round)));
     let main_status = Arc::new(Status::new(MainStatus::Waiting));
 
-    let value = Arc::new(RwLock::new(None));
+    let value = Arc::new(RwLock::new(View::empty()));
 
     let borrowers = (0..num_threads)
         .map(|_id| Borrower {
@@ -97,7 +97,7 @@ pub fn make_lending_group<T>(num_threads: usize) -> (Lender<T>, Vec<Borrower<T>>
 
 /// Context for the main thread to lend values of type `T` to the worker
 /// threads.
-pub struct Lender<T> {
+pub struct Lender<T: ?Sized> {
     /// Number of worker threads in the pool.
     num_threads: usize,
     /// Number of worker threads active in the current round.
@@ -111,20 +111,23 @@ pub struct Lender<T> {
     /// Status of the main thread.
     main_status: Arc<Status<MainStatus>>,
     /// Value shared with the worker threads.
-    value: Arc<RwLock<Option<T>>>,
+    value: Arc<RwLock<View<T>>>,
 }
 
-impl<T> Lender<T> {
+impl<T: ?Sized> Lender<T> {
     /// Lend the given value to the worker threads, waiting for the worker
     /// threads to be done borrowing it.
-    pub fn lend(&mut self, value: T) {
+    pub fn lend(&mut self, value: &T) {
         self.num_active_threads
             .store(self.num_threads, Ordering::SeqCst);
 
         self.round.toggle();
         let round = self.round;
 
-        *self.value.write().unwrap() = Some(value);
+        // Safety note: The reference set here is valid until the call to `clear()` at
+        // the end of this function, which is after all the worker threads are done
+        // reading it (as synchronized with `main_status`).
+        self.value.write().unwrap().set(value);
         log_debug!("[main thread, round {round:?}] Ready to compute a parallel pipeline.");
 
         self.worker_status.notify_all(WorkerStatus::Round(round));
@@ -150,7 +153,10 @@ impl<T> Lender<T> {
         log_debug!(
             "[main thread, round {round:?}] All threads have now finished computing this pipeline."
         );
-        *self.value.write().unwrap() = None;
+        // Safety note: the reference (previously set at the beginning of this function)
+        // is cleared here after all the worker threads are done reading it (as
+        // synchronized with `main_status`).
+        self.value.write().unwrap().clear();
     }
 
     /// Notify the worker threads to exit.
@@ -162,7 +168,7 @@ impl<T> Lender<T> {
 
 /// Context for a worker thread to borrow values of type `T` from the main
 /// thread.
-pub struct Borrower<T> {
+pub struct Borrower<T: ?Sized> {
     /// Thread index.
     #[cfg(feature = "log")]
     id: usize,
@@ -177,10 +183,10 @@ pub struct Borrower<T> {
     /// Status of the main thread.
     main_status: Arc<Status<MainStatus>>,
     /// Value shared by the main thread.
-    value: Arc<RwLock<Option<T>>>,
+    value: Arc<RwLock<View<T>>>,
 }
 
-impl<T> Borrower<T> {
+impl<T: ?Sized> Borrower<T> {
     /// Wait for the main thread to lend a value, and runs the given function
     /// `f` on that value.
     ///
@@ -232,7 +238,13 @@ impl<T> Borrower<T> {
 
                 {
                     let guard = self.value.read().unwrap();
-                    let value = guard.as_ref().unwrap();
+                    // SAFETY:
+                    // - The output lifetime doesn't outlive the underlying `T`, as the main thread
+                    //   waits until the [`Notifier`]s from all worker threads are dropped before
+                    //   exiting the [`lend()`] function.
+                    // - The underlying `T` isn't mutated during this scope: all the threads only
+                    //   manipulate immutable references to it.
+                    let value = unsafe { guard.get().unwrap() };
                     f(value);
                 }
 
