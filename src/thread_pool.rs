@@ -78,14 +78,120 @@ impl ThreadPoolBuilder {
 /// See [`std::thread::scope()`] for what scoped threads mean and what the
 /// `'scope` and `'env` lifetimes refer to.
 pub struct ThreadPool<'scope, 'env: 'scope> {
+    inner: ThreadPoolEnum<'scope, 'env>,
+}
+
+impl<'scope, 'env: 'scope> ThreadPool<'scope, 'env> {
+    /// Creates a new pool tied to the given scope, spawning the given number of
+    /// worker threads.
+    fn new(
+        thread_scope: &'scope Scope<'scope, 'env>,
+        num_threads: NonZeroUsize,
+        range_strategy: RangeStrategy,
+    ) -> Self {
+        Self {
+            inner: ThreadPoolEnum::new(thread_scope, num_threads, range_strategy),
+        }
+    }
+
+    /// Processes an input slice in parallel and returns the aggregated output.
+    ///
+    /// # Parameters
+    ///
+    /// - `input` slice to process in parallel,
+    /// - `init` function to create a new (per-thread) accumulator,
+    /// - `process_item` function to accumulate an item from the slice into the
+    ///   accumulator,
+    /// - `finalize` function to transform an accumulator into an output,
+    /// - `reduce` function to reduce a pair of outputs into one output.
+    ///
+    /// ```rust
+    /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
+    /// # use std::num::NonZeroUsize;
+    /// # let pool_builder = ThreadPoolBuilder {
+    /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// # };
+    /// # pool_builder.scope(|mut thread_pool| {
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum = thread_pool.pipeline(
+    ///     &input,
+    ///     || 0u64,
+    ///     |acc, _, x| *acc += *x,
+    ///     |acc| acc,
+    ///     |a, b| a + b,
+    /// );
+    /// assert_eq!(sum, 5 * 11);
+    /// # });
+    /// ```
+    pub fn pipeline<Input: Sync, Output: Send, Accum>(
+        &mut self,
+        input: &[Input],
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(&mut Accum, usize, &Input) + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+    ) -> Output {
+        self.inner
+            .pipeline(input, init, process_item, finalize, reduce)
+    }
+}
+
+enum ThreadPoolEnum<'scope, 'env: 'scope> {
+    Fixed(ThreadPoolImpl<'scope, 'env, FixedRangeFactory>),
+    WorkStealing(ThreadPoolImpl<'scope, 'env, WorkStealingRangeFactory>),
+}
+
+impl<'scope, 'env: 'scope> ThreadPoolEnum<'scope, 'env> {
+    /// Creates a new pool tied to the given scope, spawning the given number of
+    /// worker threads.
+    fn new(
+        thread_scope: &'scope Scope<'scope, 'env>,
+        num_threads: NonZeroUsize,
+        range_strategy: RangeStrategy,
+    ) -> Self {
+        let num_threads: usize = num_threads.into();
+        match range_strategy {
+            RangeStrategy::Fixed => ThreadPoolEnum::Fixed(ThreadPoolImpl::new(
+                thread_scope,
+                num_threads,
+                FixedRangeFactory::new(num_threads),
+            )),
+            RangeStrategy::WorkStealing => ThreadPoolEnum::WorkStealing(ThreadPoolImpl::new(
+                thread_scope,
+                num_threads,
+                WorkStealingRangeFactory::new(num_threads),
+            )),
+        }
+    }
+
+    /// Processes an input slice in parallel and returns the aggregated output.
+    fn pipeline<Input: Sync, Output: Send, Accum>(
+        &mut self,
+        input: &[Input],
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(&mut Accum, usize, &Input) + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+    ) -> Output {
+        match self {
+            ThreadPoolEnum::Fixed(inner) => {
+                inner.pipeline(input, init, process_item, finalize, reduce)
+            }
+            ThreadPoolEnum::WorkStealing(inner) => {
+                inner.pipeline(input, init, process_item, finalize, reduce)
+            }
+        }
+    }
+}
+
+struct ThreadPoolImpl<'scope, 'env: 'scope, F: RangeFactory> {
     /// Handles to all the worker threads in the pool.
     threads: Vec<WorkerThreadHandle<'scope>>,
-    /// Orchestrator for the work ranges distributed to the threads. This is a
-    /// dynamic object to avoid making the range type a parameter of
-    /// everything.
-    range_orchestrator: Box<dyn RangeOrchestrator>,
+    /// Orchestrator for the work ranges distributed to the threads.
+    range_orchestrator: F::Orchestrator,
     /// Pipeline to map and reduce inputs into the output.
-    pipeline: Lender<DynLifetimeSyncPipeline>,
+    pipeline: Lender<DynLifetimeSyncPipeline<F::Range>>,
     /// Lifetime of the environment outside of the thread scope. See
     /// [`std::thread::scope()`].
     _phantom: PhantomData<&'env ()>,
@@ -106,37 +212,12 @@ pub enum RangeStrategy {
     WorkStealing,
 }
 
-impl<'scope, 'env: 'scope> ThreadPool<'scope, 'env> {
+impl<'scope, 'env: 'scope, F: RangeFactory> ThreadPoolImpl<'scope, 'env, F> {
     /// Creates a new pool tied to the given scope, spawning the given number of
     /// worker threads.
-    fn new(
-        thread_scope: &'scope Scope<'scope, 'env>,
-        num_threads: NonZeroUsize,
-        range_strategy: RangeStrategy,
-    ) -> Self {
-        let num_threads: usize = num_threads.into();
-        match range_strategy {
-            RangeStrategy::Fixed => Self::new_with_factory(
-                thread_scope,
-                num_threads,
-                FixedRangeFactory::new(num_threads),
-            ),
-            RangeStrategy::WorkStealing => Self::new_with_factory(
-                thread_scope,
-                num_threads,
-                WorkStealingRangeFactory::new(num_threads),
-            ),
-        }
-    }
-
-    fn new_with_factory<RnFactory: RangeFactory>(
-        thread_scope: &'scope Scope<'scope, 'env>,
-        num_threads: usize,
-        range_factory: RnFactory,
-    ) -> Self
+    fn new(thread_scope: &'scope Scope<'scope, 'env>, num_threads: usize, range_factory: F) -> Self
     where
-        RnFactory::Rn: 'scope + Send,
-        RnFactory::Orchestrator: 'static,
+        F::Range: Send + 'scope,
     {
         let (lender, borrowers) = make_lending_group(num_threads);
 
@@ -189,43 +270,14 @@ impl<'scope, 'env: 'scope> ThreadPool<'scope, 'env> {
 
         Self {
             threads,
-            range_orchestrator: Box::new(range_factory.orchestrator()),
+            range_orchestrator: range_factory.orchestrator(),
             pipeline: lender,
             _phantom: PhantomData,
         }
     }
 
     /// Processes an input slice in parallel and returns the aggregated output.
-    ///
-    /// # Parameters
-    ///
-    /// - `input` slice to process in parallel,
-    /// - `init` function to create a new (per-thread) accumulator,
-    /// - `process_item` function to accumulate an item from the slice into the
-    ///   accumulator,
-    /// - `finalize` function to transform an accumulator into an output,
-    /// - `reduce` function to reduce a pair of outputs into one output.
-    ///
-    /// ```rust
-    /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
-    /// # use std::num::NonZeroUsize;
-    /// # let pool_builder = ThreadPoolBuilder {
-    /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
-    /// #     range_strategy: RangeStrategy::WorkStealing,
-    /// # };
-    /// # pool_builder.scope(|mut thread_pool| {
-    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    /// let sum = thread_pool.pipeline(
-    ///     &input,
-    ///     || 0u64,
-    ///     |acc, _, x| *acc += *x,
-    ///     |acc| acc,
-    ///     |a, b| a + b,
-    /// );
-    /// assert_eq!(sum, 5 * 11);
-    /// # });
-    /// ```
-    pub fn pipeline<Input: Sync, Output: Send, Accum>(
+    fn pipeline<Input: Sync, Output: Send, Accum>(
         &mut self,
         input: &[Input],
         init: impl Fn() -> Accum + Sync,
@@ -256,7 +308,7 @@ impl<'scope, 'env: 'scope> ThreadPool<'scope, 'env> {
     }
 }
 
-impl Drop for ThreadPool<'_, '_> {
+impl<F: RangeFactory> Drop for ThreadPoolImpl<'_, '_, F> {
     /// Joins all the threads in the pool.
     #[allow(clippy::single_match, clippy::unused_enumerate_index)]
     fn drop(&mut self) {
@@ -277,18 +329,18 @@ impl Drop for ThreadPool<'_, '_> {
     }
 }
 
-trait Pipeline {
-    fn run(&self, worker_id: usize, range: &mut dyn Iterator<Item = usize>);
+trait Pipeline<R: Range> {
+    fn run(&self, worker_id: usize, range: &R);
 }
 
-/// An intermediate struct representing a `dyn Pipeline + Sync` with variable
+/// An intermediate struct representing a `dyn Pipeline<R> + Sync` with variable
 /// lifetime. Because Rust doesn't directly support higher-kinded types, we use
 /// the generic associated type of the [`LifetimeParameterized`] trait as a
 /// proxy.
-struct DynLifetimeSyncPipeline;
+struct DynLifetimeSyncPipeline<R: Range>(PhantomData<R>);
 
-impl LifetimeParameterized for DynLifetimeSyncPipeline {
-    type T<'a> = dyn Pipeline + Sync + 'a;
+impl<R: Range> LifetimeParameterized for DynLifetimeSyncPipeline<R> {
+    type T<'a> = dyn Pipeline<R> + Sync + 'a;
 }
 
 struct PipelineImpl<
@@ -306,19 +358,20 @@ struct PipelineImpl<
     finalize: Finalize,
 }
 
-impl<Input, Output, Accum, Init, ProcessItem, Finalize> Pipeline
+impl<R, Input, Output, Accum, Init, ProcessItem, Finalize> Pipeline<R>
     for PipelineImpl<Input, Output, Accum, Init, ProcessItem, Finalize>
 where
+    R: Range,
     Init: Fn() -> Accum,
     ProcessItem: Fn(&mut Accum, usize, &Input),
     Finalize: Fn(Accum) -> Output,
 {
-    fn run(&self, worker_id: usize, range: &mut dyn Iterator<Item = usize>) {
+    fn run(&self, worker_id: usize, range: &R) {
         // SAFETY: The underlying input slice is valid and not mutated for the whole
         // lifetime of this block.
         let input = unsafe { self.input.get().unwrap() };
         let mut accumulator = (self.init)();
-        for i in range {
+        for i in range.iter() {
             (self.process_item)(&mut accumulator, i, &input[i]);
         }
         let output = (self.finalize)(accumulator);
@@ -327,21 +380,21 @@ where
 }
 
 /// Context object owned by a worker thread.
-struct ThreadContext<Rn: Range> {
+struct ThreadContext<R: Range> {
     /// Thread index.
     id: usize,
     /// Range of items that this worker thread needs to process.
-    range: Rn,
+    range: R,
     /// Pipeline to map and reduce inputs into the output.
-    pipeline: Borrower<DynLifetimeSyncPipeline>,
+    pipeline: Borrower<DynLifetimeSyncPipeline<R>>,
 }
 
-impl<Rn: Range> ThreadContext<Rn> {
+impl<R: Range> ThreadContext<R> {
     /// Main function run by this thread.
     fn run(&mut self) {
         loop {
             match self.pipeline.borrow(|pipeline| {
-                pipeline.run(self.id, &mut self.range.iter());
+                pipeline.run(self.id, &self.range);
             }) {
                 WorkerState::Finished => break,
                 WorkerState::Ready => continue,

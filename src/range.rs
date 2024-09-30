@@ -18,7 +18,7 @@ use std::sync::Mutex;
 
 /// A factory for handing out ranges of items to various threads.
 pub trait RangeFactory {
-    type Rn: Range;
+    type Range: Range;
     type Orchestrator: RangeOrchestrator;
 
     /// Creates a new factory for a range split across the given number of
@@ -30,7 +30,7 @@ pub trait RangeFactory {
     fn orchestrator(self) -> Self::Orchestrator;
 
     /// Returns the range for the given thread.
-    fn range(&self, thread_id: usize) -> Self::Rn;
+    fn range(&self, thread_id: usize) -> Self::Range;
 }
 
 /// An orchestrator for the ranges given to all the threads.
@@ -63,7 +63,7 @@ pub struct FixedRangeFactory {
 }
 
 impl RangeFactory for FixedRangeFactory {
-    type Rn = FixedRange;
+    type Range = FixedRange;
     type Orchestrator = FixedRangeOrchestrator;
 
     fn new(num_threads: usize) -> Self {
@@ -135,7 +135,7 @@ pub struct WorkStealingRangeFactory {
 }
 
 impl RangeFactory for WorkStealingRangeFactory {
-    type Rn = WorkStealingRange;
+    type Range = WorkStealingRange;
     type Orchestrator = WorkStealingRangeOrchestrator;
 
     fn new(num_threads: usize) -> Self {
