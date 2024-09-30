@@ -94,6 +94,10 @@ mod test {
                 #[cfg(feature = "nightly_tests")]
                 test_non_sync_accumulator,
                 test_non_send_sync_accumulator,
+                test_local_lifetime_functions,
+                test_local_lifetime_input,
+                test_local_lifetime_output,
+                test_local_lifetime_accumulator,
             );
         };
     }
@@ -622,6 +626,128 @@ mod test {
                 || Rc::new(0u64),
                 |acc, _, x| *Rc::get_mut(acc).unwrap() += *x,
                 |acc| *acc,
+                |a, b| a + b,
+            )
+        });
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_local_lifetime_functions(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            range_strategy,
+        };
+        let (sum1, sum2, sum3, sum4) = pool_builder.scope(|mut thread_pool| {
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            // The pipeline functions can borrow local values (and therefore have a local
+            // lifetime).
+            let zero = 0;
+            let one = 1;
+
+            let sum1 = thread_pool.pipeline(
+                &input,
+                || zero,
+                |acc, _, x| *acc += *x,
+                |acc| acc,
+                |a, b| a + b,
+            );
+
+            let sum2 = thread_pool.pipeline(
+                &input,
+                || 0u64,
+                |acc, _, x| *acc += *x * one,
+                |acc| acc,
+                |a, b| a + b,
+            );
+
+            let sum3 = thread_pool.pipeline(
+                &input,
+                || 0u64,
+                |acc, _, x| *acc += *x,
+                |acc| acc * one,
+                |a, b| a + b,
+            );
+
+            let sum4 = thread_pool.pipeline(
+                &input,
+                || 0u64,
+                |acc, _, x| *acc += *x,
+                |acc| acc,
+                |a, b| a + b + zero,
+            );
+
+            (sum1, sum2, sum3, sum4)
+        });
+        assert_eq!(sum1, INPUT_LEN * (INPUT_LEN + 1) / 2);
+        assert_eq!(sum2, INPUT_LEN * (INPUT_LEN + 1) / 2);
+        assert_eq!(sum3, INPUT_LEN * (INPUT_LEN + 1) / 2);
+        assert_eq!(sum4, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_local_lifetime_input(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            range_strategy,
+        };
+        let sum = pool_builder.scope(|mut thread_pool| {
+            // The pipeline input can borrow local values (and therefore have a local
+            // lifetime).
+            let token = ();
+            let token_ref = &token;
+            let input = (0..=INPUT_LEN)
+                .map(|x| (x, token_ref))
+                .collect::<Vec<(u64, _)>>();
+            thread_pool.pipeline(
+                &input,
+                || 0u64,
+                |acc, _, x| *acc += x.0,
+                |acc| acc,
+                |a, b| a + b,
+            )
+        });
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_local_lifetime_output(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            range_strategy,
+        };
+        let sum = pool_builder.scope(|mut thread_pool| {
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            // The pipeline output can borrow local values (and therefore have a local
+            // lifetime).
+            let token = ();
+            let token_ref = &token;
+            thread_pool
+                .pipeline(
+                    &input,
+                    || 0u64,
+                    |acc, _, x| *acc += *x,
+                    |acc| (acc, token_ref),
+                    |a, b| (a.0 + b.0, a.1),
+                )
+                .0
+        });
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_local_lifetime_accumulator(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            range_strategy,
+        };
+        let sum = pool_builder.scope(|mut thread_pool| {
+            // The pipeline accumulator can borrow local values (and therefore have a local
+            // lifetime).
+            let token = ();
+            let token_ref = &token;
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            thread_pool.pipeline(
+                &input,
+                || (0u64, token_ref),
+                |acc, _, x| acc.0 += *x,
+                |acc| acc.0,
                 |a, b| a + b,
             )
         });

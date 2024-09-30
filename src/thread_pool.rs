@@ -12,7 +12,7 @@ use super::range::{
     FixedRangeFactory, Range, RangeFactory, RangeOrchestrator, WorkStealingRangeFactory,
 };
 use super::sync::{make_lending_group, Borrower, Lender, WorkerState};
-use super::util::SliceView;
+use super::util::{LifetimeParameterized, SliceView};
 use crate::macros::{log_debug, log_error, log_warn};
 // Platforms that support `libc::sched_setaffinity()`.
 #[cfg(all(
@@ -85,7 +85,7 @@ pub struct ThreadPool<'scope, 'env: 'scope> {
     /// everything.
     range_orchestrator: Box<dyn RangeOrchestrator>,
     /// Pipeline to map and reduce inputs into the output.
-    pipeline: Lender<dyn Pipeline + Sync + 'scope>,
+    pipeline: Lender<DynLifetimeSyncPipeline>,
     /// Lifetime of the environment outside of the thread scope. See
     /// [`std::thread::scope()`].
     _phantom: PhantomData<&'env ()>,
@@ -225,12 +225,12 @@ impl<'scope, 'env: 'scope> ThreadPool<'scope, 'env> {
     /// assert_eq!(sum, 5 * 11);
     /// # });
     /// ```
-    pub fn pipeline<Input: Sync + 'scope, Output: Send + 'scope, Accum: 'scope>(
+    pub fn pipeline<Input: Sync, Output: Send, Accum>(
         &mut self,
         input: &[Input],
-        init: impl Fn() -> Accum + Sync + 'scope,
-        process_item: impl Fn(&mut Accum, usize, &Input) + Sync + 'scope,
-        finalize: impl Fn(Accum) -> Output + Sync + 'scope,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(&mut Accum, usize, &Input) + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
     ) -> Output {
         self.range_orchestrator.reset_ranges(input.len());
@@ -281,6 +281,16 @@ trait Pipeline {
     fn run(&self, worker_id: usize, range: &mut dyn Iterator<Item = usize>);
 }
 
+/// An intermediate struct representing a `dyn Pipeline + Sync` with variable
+/// lifetime. Because Rust doesn't directly support higher-kinded types, we use
+/// the generic associated type of the [`LifetimeParameterized`] trait as a
+/// proxy.
+struct DynLifetimeSyncPipeline;
+
+impl LifetimeParameterized for DynLifetimeSyncPipeline {
+    type T<'a> = dyn Pipeline + Sync + 'a;
+}
+
 struct PipelineImpl<
     Input,
     Output,
@@ -317,16 +327,16 @@ where
 }
 
 /// Context object owned by a worker thread.
-struct ThreadContext<'scope, Rn: Range> {
+struct ThreadContext<Rn: Range> {
     /// Thread index.
     id: usize,
     /// Range of items that this worker thread needs to process.
     range: Rn,
     /// Pipeline to map and reduce inputs into the output.
-    pipeline: Borrower<dyn Pipeline + Sync + 'scope>,
+    pipeline: Borrower<DynLifetimeSyncPipeline>,
 }
 
-impl<Rn: Range> ThreadContext<'_, Rn> {
+impl<Rn: Range> ThreadContext<Rn> {
     /// Main function run by this thread.
     fn run(&mut self) {
         loop {

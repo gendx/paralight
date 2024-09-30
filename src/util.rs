@@ -51,13 +51,22 @@ impl<T> Status<T> {
     }
 }
 
-/// A lifetime-erased reference. This acts as a [`&T`](reference) but whose
-/// lifetime can be adjusted via the `unsafe` function [`get()`](Self::get).
-pub struct View<T: ?Sized> {
-    ptr: Option<NonNull<T>>,
+/// A Proxy trait for types that have a lifetime parameter.
+///
+/// Because Rust doesn't directly support higher-kinded types, we use a generic
+/// associated type with a lifetime parameter to represent that.
+pub trait LifetimeParameterized {
+    type T<'a>: ?Sized;
 }
 
-impl<T: ?Sized> View<T> {
+/// A lifetime-erased reference, where the underlying type is generic over a
+/// lifetime. This acts as a [`&'a T<'a>`](reference) but whose lifetime can be
+/// adjusted via the `unsafe` function [`get()`](Self::get).
+pub struct DynLifetimeView<T: LifetimeParameterized> {
+    ptr: Option<NonNull<T::T<'static>>>,
+}
+
+impl<T: LifetimeParameterized> DynLifetimeView<T> {
     /// Creates a new empty reference.
     pub fn empty() -> Self {
         Self { ptr: None }
@@ -66,8 +75,10 @@ impl<T: ?Sized> View<T> {
     /// Sets the underlying value to the given reference. Subsequent calls to
     /// [`get()`](Self::get) must ensure that the obtained reference doesn't
     /// outlive the reference that was set here.
-    pub fn set(&mut self, value: &T) {
-        self.ptr = Some(NonNull::from(value));
+    // The cast is necessary because the lifetime is coerced to 'static.
+    #[allow(clippy::unnecessary_cast)]
+    pub fn set(&mut self, value: &T::T<'_>) {
+        self.ptr = NonNull::new(NonNull::from(value).as_ptr() as *mut T::T<'static>);
     }
 
     /// Clears the underlying reference. Subsequent calls to
@@ -84,30 +95,32 @@ impl<T: ?Sized> View<T> {
     ///
     /// The underlying object must be valid and not mutated during the whole
     /// output lifetime.
-    pub unsafe fn get(&self) -> Option<&T> {
-        self.ptr.map(|ptr| {
+    // The cast is necessary because the lifetime is coerced to 'a.
+    #[allow(clippy::unnecessary_cast)]
+    pub unsafe fn get<'a>(&self) -> Option<&'a T::T<'a>> {
+        self.ptr.map(|static_ptr| {
+            let ptr = static_ptr.as_ptr() as *mut T::T<'a>;
             // SAFETY:
             // - This pointer points to a valid initialized `T`, as previously set via
             //   `set()`.
-            // - The underlying `T` outlives the output lifetime outlives, as ensured by the
-            //   caller.
+            // - The underlying `T` outlives the output lifetime, as ensured by the caller.
             // - The underlying `T` isn't mutated during the whole output lifetime, as
             //   ensured by the caller.
-            unsafe { ptr.as_ref() }
+            unsafe { &*ptr }
         })
     }
 }
 
 /// SAFETY:
 ///
-/// A [`View`] acts as a [`&T`](reference). Therefore it is [`Send`] if and only
-/// if `T` is [`Sync`].
-unsafe impl<T: ?Sized + Sync> Send for View<T> {}
+/// A [`DynLifetimeView`] acts as a [`&'a T<'a>`](reference). Therefore it is
+/// [`Send`] if and only if `T<'_>` is [`Sync`].
+unsafe impl<T: LifetimeParameterized> Send for DynLifetimeView<T> where for<'a> T::T<'a>: Sync {}
 /// SAFETY:
 ///
-/// A [`View`] acts as a [`&T`](reference). Therefore it is [`Sync`] if and only
-/// if `T` is [`Sync`].
-unsafe impl<T: ?Sized + Sync> Sync for View<T> {}
+/// A [`DynLifetimeView`] acts as a [`&'a T<'a>`](reference). Therefore it is
+/// [`Sync`] if and only if `T<'_>` is [`Sync`].
+unsafe impl<T: LifetimeParameterized> Sync for DynLifetimeView<T> where for<'a> T::T<'a>: Sync {}
 
 /// A lifetime-erased slice. This acts as a [`&[T]`](slice) but whose lifetime
 /// can be adjusted via the `unsafe` function [`get()`](Self::get).
@@ -194,9 +207,15 @@ mod test {
     use super::*;
     use std::sync::{Arc, Barrier, RwLock};
 
+    // A type that doesn't have a lifetime parameter trivially implements
+    // `LifetimeParameterized`.
+    impl LifetimeParameterized for i32 {
+        type T<'a> = Self;
+    }
+
     #[test]
     fn view_basic_usage() {
-        let mut view = View::empty();
+        let mut view = DynLifetimeView::<i32>::empty();
 
         let mut foo = 42;
         view.set(&foo);
@@ -218,7 +237,7 @@ mod test {
     fn view_multi_threaded() {
         const NUM_THREADS: usize = 2;
 
-        let view = Arc::new(RwLock::new(View::empty()));
+        let view = Arc::new(RwLock::new(DynLifetimeView::<i32>::empty()));
         let steps: Arc<[_; 6]> = Arc::new(std::array::from_fn(|_| Barrier::new(NUM_THREADS + 1)));
 
         let main = std::thread::spawn({
@@ -295,7 +314,7 @@ mod test {
     #[test]
     #[allow(unused_assignments)]
     fn view_bad_mut() {
-        let mut view = View::empty();
+        let mut view = DynLifetimeView::<i32>::empty();
         let mut foo = 42;
         view.set(&foo);
         let bar = unsafe { view.get().unwrap() };
@@ -311,7 +330,7 @@ mod test {
     #[ignore]
     #[test]
     fn view_bad_lifetime() {
-        let mut view = View::empty();
+        let mut view = DynLifetimeView::<i32>::empty();
         {
             let foo = 42;
             view.set(&foo);
@@ -320,6 +339,147 @@ mod test {
         // anymore.
         let bar = unsafe { view.get().unwrap() };
         assert_ne!(*bar, 42);
+    }
+
+    impl LifetimeParameterized for &i32 {
+        type T<'a> = &'a i32;
+    }
+
+    #[test]
+    fn dyn_lifetime_view_basic_usage() {
+        let mut view = DynLifetimeView::<&i32>::empty();
+
+        let x = 42;
+        let mut foo = &x;
+        view.set(&foo);
+        let bar = unsafe { view.get().unwrap() };
+        assert_eq!(**bar, 42);
+
+        let y = 1;
+        foo = &y;
+        view.set(&foo);
+        let bar = unsafe { view.get().unwrap() };
+        assert_eq!(**bar, 1);
+
+        let z = 123;
+        let abc = &z;
+        view.set(&abc);
+        let bar = unsafe { view.get().unwrap() };
+        assert_eq!(**bar, 123);
+    }
+
+    #[test]
+    fn dyn_lifetime_view_multi_threaded() {
+        const NUM_THREADS: usize = 2;
+
+        let view = Arc::new(RwLock::new(DynLifetimeView::<&i32>::empty()));
+        let steps: Arc<[_; 6]> = Arc::new(std::array::from_fn(|_| Barrier::new(NUM_THREADS + 1)));
+
+        let main = std::thread::spawn({
+            let view = view.clone();
+            let steps = steps.clone();
+            move || {
+                let x = 42;
+                let mut foo = &x;
+                view.write().unwrap().set(&foo);
+
+                steps[0].wait();
+
+                steps[1].wait();
+
+                let y = 1;
+                foo = &y;
+                view.write().unwrap().set(&foo);
+
+                steps[2].wait();
+
+                steps[3].wait();
+
+                let z = 123;
+                let abc = &z;
+                view.write().unwrap().set(&abc);
+
+                steps[4].wait();
+
+                steps[5].wait();
+            }
+        });
+
+        let threads: [_; NUM_THREADS] = std::array::from_fn(move |_| {
+            std::thread::spawn({
+                let view = view.clone();
+                let steps = steps.clone();
+                move || {
+                    steps[0].wait();
+
+                    let guard = view.read().unwrap();
+                    let reference = unsafe { guard.get().unwrap() };
+                    assert_eq!(**reference, 42);
+                    drop(guard);
+
+                    steps[1].wait();
+
+                    steps[2].wait();
+
+                    let guard = view.read().unwrap();
+                    let reference = unsafe { guard.get().unwrap() };
+                    assert_eq!(**reference, 1);
+                    drop(guard);
+
+                    steps[3].wait();
+
+                    steps[4].wait();
+
+                    let guard = view.read().unwrap();
+                    let reference = unsafe { guard.get().unwrap() };
+                    assert_eq!(**reference, 123);
+                    drop(guard);
+
+                    steps[5].wait();
+                }
+            })
+        });
+
+        main.join().unwrap();
+        for t in threads {
+            t.join().unwrap();
+        }
+    }
+
+    // This ignored test showcases how to misuse the unsafe API by mutating a value
+    // while it is referenced. Running it under Miri returns a failure.
+    #[ignore]
+    #[test]
+    #[allow(unused_assignments)]
+    fn dyn_lifetime_view_bad_mut() {
+        let mut view = DynLifetimeView::<&i32>::empty();
+        let x = 42;
+        let mut foo = &x;
+        view.set(&foo);
+        let bar = unsafe { view.get().unwrap() };
+        let y = 1;
+        // Undefined behavior: This mutates `foo` while a reference to it `bar` is
+        // active.
+        foo = &y;
+        assert_eq!(**bar, 1);
+    }
+
+    // This ignored test showcases how to misuse the unsafe API by obtaining a
+    // reference whose lifetime extends beyond the underlying value's. Running it
+    // under Miri returns a failure.
+    #[ignore]
+    #[test]
+    fn dyn_lifetime_view_bad_lifetime() {
+        let x = 42;
+        let mut view = DynLifetimeView::<&i32>::empty();
+        {
+            let foo = &x;
+            view.set(&foo);
+        }
+        // Undefined behavior: This obtains a reference to `foo` which isn't live
+        // anymore.
+        let bar = unsafe { view.get().unwrap() };
+        assert_eq!(**bar, 42);
     }
 
     #[test]

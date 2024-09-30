@@ -8,7 +8,7 @@
 
 //! Synchronization primitives
 
-use super::util::{Status, View};
+use super::util::{DynLifetimeView, LifetimeParameterized, Status};
 use crate::macros::{log_debug, log_error};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
@@ -60,14 +60,16 @@ impl RoundColor {
 }
 
 /// Create a [`Lender`] paired with `num_threads` [`Borrower`]s.
-pub fn make_lending_group<T: ?Sized>(num_threads: usize) -> (Lender<T>, Vec<Borrower<T>>) {
+pub fn make_lending_group<T: LifetimeParameterized>(
+    num_threads: usize,
+) -> (Lender<T>, Vec<Borrower<T>>) {
     let round = RoundColor::Blue;
     let num_active_threads = Arc::new(AtomicUsize::new(0));
     let num_panicking_threads = Arc::new(AtomicUsize::new(0));
     let worker_status = Arc::new(Status::new(WorkerStatus::Round(round)));
     let main_status = Arc::new(Status::new(MainStatus::Waiting));
 
-    let value = Arc::new(RwLock::new(View::empty()));
+    let value = Arc::new(RwLock::new(DynLifetimeView::empty()));
 
     let borrowers = (0..num_threads)
         .map(|_id| Borrower {
@@ -97,7 +99,7 @@ pub fn make_lending_group<T: ?Sized>(num_threads: usize) -> (Lender<T>, Vec<Borr
 
 /// Context for the main thread to lend values of type `T` to the worker
 /// threads.
-pub struct Lender<T: ?Sized> {
+pub struct Lender<T: LifetimeParameterized> {
     /// Number of worker threads in the pool.
     num_threads: usize,
     /// Number of worker threads active in the current round.
@@ -111,13 +113,13 @@ pub struct Lender<T: ?Sized> {
     /// Status of the main thread.
     main_status: Arc<Status<MainStatus>>,
     /// Value shared with the worker threads.
-    value: Arc<RwLock<View<T>>>,
+    value: Arc<RwLock<DynLifetimeView<T>>>,
 }
 
-impl<T: ?Sized> Lender<T> {
+impl<T: LifetimeParameterized> Lender<T> {
     /// Lend the given value to the worker threads, waiting for the worker
     /// threads to be done borrowing it.
-    pub fn lend(&mut self, value: &T) {
+    pub fn lend(&mut self, value: &T::T<'_>) {
         self.num_active_threads
             .store(self.num_threads, Ordering::SeqCst);
 
@@ -168,7 +170,7 @@ impl<T: ?Sized> Lender<T> {
 
 /// Context for a worker thread to borrow values of type `T` from the main
 /// thread.
-pub struct Borrower<T: ?Sized> {
+pub struct Borrower<T: LifetimeParameterized> {
     /// Thread index.
     #[cfg(feature = "log")]
     id: usize,
@@ -183,10 +185,10 @@ pub struct Borrower<T: ?Sized> {
     /// Status of the main thread.
     main_status: Arc<Status<MainStatus>>,
     /// Value shared by the main thread.
-    value: Arc<RwLock<View<T>>>,
+    value: Arc<RwLock<DynLifetimeView<T>>>,
 }
 
-impl<T: ?Sized> Borrower<T> {
+impl<T: LifetimeParameterized> Borrower<T> {
     /// Wait for the main thread to lend a value, and runs the given function
     /// `f` on that value.
     ///
@@ -194,7 +196,7 @@ impl<T: ?Sized> Borrower<T> {
     ///   [`WorkerState::Ready`] after running `f`.
     /// - If the main thread calls [`Lender::finish_workers()`], this returns
     ///   [`WorkerState::Finished`] and doesn't run `f`.
-    pub fn borrow(&mut self, f: impl FnOnce(&T)) -> WorkerState {
+    pub fn borrow(&mut self, f: impl FnOnce(&T::T<'_>)) -> WorkerState {
         self.round.toggle();
         let round = self.round;
 
