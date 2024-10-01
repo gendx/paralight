@@ -375,115 +375,147 @@ impl Iterator for WorkStealingRangeIterator {
     fn next(&mut self) -> Option<usize> {
         let my_atomic_range: &AtomicRange = &self.ranges[self.id];
         let mut my_range: PackedRange = my_atomic_range.load();
-        loop {
-            if !my_range.is_empty() {
-                let (taken, my_new_range) = my_range.increment_start();
-                match my_atomic_range.compare_exchange(my_range, my_new_range) {
-                    Ok(()) => {
-                        #[cfg(feature = "log_parallelism")]
-                        {
-                            self.stats.increments += 1;
-                            log_trace!(
-                                "[thread {}] Incremented range to {}..{}.",
-                                self.id,
-                                my_new_range.start(),
-                                my_new_range.end()
-                            );
-                        }
-                        return Some(taken as usize);
-                    }
-                    Err(range) => {
-                        my_range = range;
-                        #[cfg(feature = "log_parallelism")]
-                        {
-                            self.stats.failed_increments += 1;
-                            log_debug!(
-                                "[thread {}] Failed to increment range, new range is {}..{}.",
-                                self.id,
-                                range.start(),
-                                range.end()
-                            );
-                        }
-                        continue;
-                    }
-                }
-            } else {
-                #[cfg(feature = "log_parallelism")]
-                log_debug!(
-                    "[thread {}] Range {}..{} is empty, scanning other threads.",
-                    self.id,
-                    my_range.start(),
-                    my_range.end()
-                );
-                let range_count = self.ranges.len();
 
-                #[cfg(feature = "log_parallelism")]
-                {
-                    self.stats.other_loads += range_count as u64 - 1;
-                }
-                let mut other_ranges = vec![PackedRange::default(); range_count];
-                for (i, range) in other_ranges.iter_mut().enumerate() {
-                    if i == self.id {
-                        continue;
+        // First phase: try to increment this thread's own range. Retries are needed in
+        // case another thread stole part of the range.
+        while !my_range.is_empty() {
+            let (taken, my_new_range) = my_range.increment_start();
+            match my_atomic_range.compare_exchange(my_range, my_new_range) {
+                // Increment succeeded.
+                Ok(()) => {
+                    #[cfg(feature = "log_parallelism")]
+                    {
+                        self.stats.increments += 1;
+                        log_trace!(
+                            "[thread {}] Incremented range to {}..{}.",
+                            self.id,
+                            my_new_range.start(),
+                            my_new_range.end()
+                        );
                     }
-                    *range = self.ranges[i].load();
+                    return Some(taken as usize);
                 }
-
-                let mut max_index = 0;
-                let mut max_range = PackedRange::default();
-                for (i, range) in other_ranges.iter().enumerate() {
-                    if i == self.id {
-                        continue;
+                // Increment failed: retry with an updated range.
+                Err(range) => {
+                    my_range = range;
+                    #[cfg(feature = "log_parallelism")]
+                    {
+                        self.stats.failed_increments += 1;
+                        log_debug!(
+                            "[thread {}] Failed to increment range, new range is {}..{}.",
+                            self.id,
+                            range.start(),
+                            range.end()
+                        );
                     }
-                    if range.len() > max_range.len() {
-                        max_index = i;
-                        max_range = *range;
-                    }
+                    continue;
                 }
-
-                while !max_range.is_empty() {
-                    // Steal some work.
-                    let (remaining, stolen) = max_range.split();
-                    match self.ranges[max_index].compare_exchange(max_range, remaining) {
-                        Ok(()) => {
-                            let (taken, my_new_range) = stolen.increment_start();
-                            my_atomic_range.store(my_new_range);
-                            #[cfg(feature = "log_parallelism")]
-                            {
-                                self.stats.thefts += 1;
-                            }
-                            return Some(taken as usize);
-                        }
-                        Err(range) => {
-                            other_ranges[max_index] = range;
-                            #[cfg(feature = "log_parallelism")]
-                            {
-                                self.stats.failed_thefts += 1;
-                            }
-                            // Re-compute max_index.
-                            max_range = range;
-                            for (i, range) in other_ranges.iter().enumerate() {
-                                if i == self.id {
-                                    continue;
-                                }
-                                if range.len() > max_range.len() {
-                                    max_index = i;
-                                    max_range = *range;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                #[cfg(feature = "log_parallelism")]
-                {
-                    log_debug!("[thread {}] Didn't find anything to steal", self.id);
-                    *self.global_stats.lock().unwrap() += &self.stats;
-                }
-                // Didn't manage to steal anything.
-                return None;
             }
         }
+
+        // Second phase: the range is empty, try to steal a range from another thread.
+        self.steal(
+            #[cfg(feature = "log_parallelism")]
+            my_range,
+        )
+    }
+}
+
+impl WorkStealingRangeIterator {
+    /// Helper function for the iterator implementation, to steal a range from
+    /// another thread when this thread's range is empty.
+    fn steal(
+        &mut self,
+        #[cfg(feature = "log_parallelism")] my_range: PackedRange,
+    ) -> Option<usize> {
+        let my_atomic_range: &AtomicRange = &self.ranges[self.id];
+
+        #[cfg(feature = "log_parallelism")]
+        log_debug!(
+            "[thread {}] Range {}..{} is empty, scanning other threads.",
+            self.id,
+            my_range.start(),
+            my_range.end()
+        );
+        let range_count = self.ranges.len();
+
+        // Read a snapshot of the other threads' ranges, to identify the best one to
+        // steal (the largest one). This is only used as a hint, and therefore it's fine
+        // that the underlying values may be concurrently modified by the other threads
+        // and that the snapshot becomes (slightly) out-of-date.
+        let mut other_ranges = vec![PackedRange::default(); range_count];
+        for (i, range) in other_ranges.iter_mut().enumerate() {
+            if i == self.id {
+                continue;
+            }
+            *range = self.ranges[i].load();
+        }
+        #[cfg(feature = "log_parallelism")]
+        {
+            self.stats.other_loads += range_count as u64 - 1;
+        }
+
+        // Identify the thread with the largest range.
+        let mut max_index = 0;
+        let mut max_range = PackedRange::default();
+        for (i, range) in other_ranges.iter().enumerate() {
+            if i == self.id {
+                continue;
+            }
+            if range.len() > max_range.len() {
+                max_index = i;
+                max_range = *range;
+            }
+        }
+
+        // Try to steal another thread's range. Retries are needed in case the target
+        // thread incremented its range or if another thread stole part of the
+        // target thread's range.
+        while !max_range.is_empty() {
+            // Try to steal half of the range.
+            let (remaining, stolen) = max_range.split();
+            match self.ranges[max_index].compare_exchange(max_range, remaining) {
+                // Theft succeeded.
+                Ok(()) => {
+                    // Take the first item, and place the rest in this thread's own range.
+                    let (taken, my_new_range) = stolen.increment_start();
+                    my_atomic_range.store(my_new_range);
+                    #[cfg(feature = "log_parallelism")]
+                    {
+                        self.stats.thefts += 1;
+                    }
+                    return Some(taken as usize);
+                }
+                // Theft failed: update the range and retry.
+                Err(range) => {
+                    other_ranges[max_index] = range;
+                    #[cfg(feature = "log_parallelism")]
+                    {
+                        self.stats.failed_thefts += 1;
+                    }
+
+                    // Re-compute the largest range.
+                    max_range = range;
+                    for (i, range) in other_ranges.iter().enumerate() {
+                        if i == self.id {
+                            continue;
+                        }
+                        if range.len() > max_range.len() {
+                            max_index = i;
+                            max_range = *range;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Didn't manage to steal anything: exit the iterator.
+        #[cfg(feature = "log_parallelism")]
+        {
+            log_debug!("[thread {}] Didn't find anything to steal", self.id);
+            *self.global_stats.lock().unwrap() += &self.stats;
+        }
+        None
     }
 }
 
