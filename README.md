@@ -3,10 +3,10 @@
 [![Crate](https://img.shields.io/crates/v/paralight.svg?logo=rust)](https://crates.io/crates/paralight)
 [![Documentation](https://img.shields.io/docsrs/paralight?logo=rust)](https://docs.rs/paralight)
 [![Minimum Rust 1.75.0](https://img.shields.io/badge/rust-1.75.0%2B-orange.svg?logo=rust)](https://releases.rs/docs/1.75.0/)
-[![Dependencies](https://deps.rs/repo/github/gendx/paralight/status.svg)](https://deps.rs/repo/github/gendx/paralight)
-[![Lines of Code](https://www.aschey.tech/tokei/github/gendx/paralight?category=code)](https://github.com/gendx/paralight)
-[![Build Status](https://github.com/gendx/paralight/workflows/Build/badge.svg)](https://github.com/gendx/paralight/actions/workflows/build.yml)
-[![Test Status](https://github.com/gendx/paralight/workflows/Tests/badge.svg)](https://github.com/gendx/paralight/actions/workflows/tests.yml)
+[![Dependencies](https://deps.rs/crate/paralight/0.0.2/status.svg)](https://deps.rs/crate/paralight/0.0.2)
+[![Lines of Code](https://tokei.rs/b1/github/gendx/paralight?style=flat&category=code&branch=0.0.2)](https://github.com/gendx/paralight)
+[![Build Status](https://github.com/gendx/paralight/actions/workflows/build.yml/badge.svg?branch=0.0.2)](https://github.com/gendx/paralight/actions/workflows/build.yml)
+[![Test Status](https://github.com/gendx/paralight/actions/workflows/tests.yml/badge.svg?branch=0.0.2)](https://github.com/gendx/paralight/actions/workflows/tests.yml)
 
 This library allows you to distribute computation over slices among multiple
 threads. Each thread processes a subset of the items, and a final step reduces
