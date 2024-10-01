@@ -161,7 +161,7 @@ impl<T> SliceView<T> {
 
     /// Resets the underlying value to the empty slice. Subsequent calls to
     /// [`get()`](Self::get) will obtain [`None`].
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn clear(&mut self) {
         self.ptr = std::ptr::null();
         self.len = 0;
@@ -500,6 +500,15 @@ mod test {
         view.set(&abc);
         let bar = unsafe { view.get().unwrap() };
         assert_eq!(bar, [123; 10]);
+
+        let empty = [];
+        view.set(&empty);
+        let bar = unsafe { view.get().unwrap() };
+        assert_eq!(bar, []);
+
+        view.clear();
+        let bar = unsafe { view.get() };
+        assert_eq!(bar, None);
     }
 
     #[test]
@@ -507,7 +516,7 @@ mod test {
         const NUM_THREADS: usize = 2;
 
         let view = Arc::new(RwLock::new(SliceView::empty()));
-        let steps: Arc<[_; 6]> = Arc::new(std::array::from_fn(|_| Barrier::new(NUM_THREADS + 1)));
+        let steps: Arc<[_; 10]> = Arc::new(std::array::from_fn(|_| Barrier::new(NUM_THREADS + 1)));
 
         let main = std::thread::spawn({
             let view = view.clone();
@@ -533,6 +542,19 @@ mod test {
                 steps[4].wait();
 
                 steps[5].wait();
+
+                let empty = [];
+                view.write().unwrap().set(&empty);
+
+                steps[6].wait();
+
+                steps[7].wait();
+
+                view.write().unwrap().clear();
+
+                steps[8].wait();
+
+                steps[9].wait();
             }
         });
 
@@ -567,6 +589,24 @@ mod test {
                     drop(guard);
 
                     steps[5].wait();
+
+                    steps[6].wait();
+
+                    let guard = view.read().unwrap();
+                    let slice = unsafe { guard.get().unwrap() };
+                    assert_eq!(slice, []);
+                    drop(guard);
+
+                    steps[7].wait();
+
+                    steps[8].wait();
+
+                    let guard = view.read().unwrap();
+                    let slice = unsafe { guard.get() };
+                    assert_eq!(slice, None);
+                    drop(guard);
+
+                    steps[9].wait();
                 }
             })
         });
