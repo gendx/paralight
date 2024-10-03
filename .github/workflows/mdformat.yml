@@ -1,0 +1,21 @@
+on: [push, pull_request]
+name: Markdown formatting
+jobs:
+  mdformat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Install mdformat
+        run: |
+          python -m pip install --upgrade pip
+          pip install mdformat
+
+      - name: Markdown formatting diff
+        run: |
+          find . -type f -name "*.md" -print0 | xargs -0i bash -c 'echo "Checking file: ${1}"; cat "${1}" | mdformat --wrap 80 - | diff "${1}" -' funcname "{}"
+
+      - name: Check Markdown formatting
+        run: mdformat --wrap 80 --check .

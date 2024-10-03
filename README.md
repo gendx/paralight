@@ -48,10 +48,12 @@ Come back to check when future versions are published!
 ## Work-stealing strategy
 
 Paralight offers two strategies to distribute computation among threads:
-- [`RangeStrategy::Fixed`] splits the input evenly and hands out a fixed
-  sequential range of items to each thread,
-- [`RangeStrategy::WorkStealing`] starts with the fixed distribution, but lets
-  each thread steal items from others once it is done computing its items.
+
+- [`RangeStrategy::Fixed`](RangeStrategy::Fixed) splits the input evenly and
+  hands out a fixed sequential range of items to each thread,
+- [`RangeStrategy::WorkStealing`](RangeStrategy::WorkStealing) starts with the
+  fixed distribution, but lets each thread steal items from others once it is
+  done computing its items.
 
 Note: In work-stealing mode, each thread processes an arbitrary subset of items
 in arbitrary order, meaning that the reduction operation must be both
@@ -87,7 +89,8 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md) for details.
 
 ## License
 
-This software is distributed under the terms of both the [MIT
-license](LICENSE-MIT) and the [Apache License (Version 2.0)](LICENSE-APACHE).
+This software is distributed under the terms of both the
+[MIT license](LICENSE-MIT) and the
+[Apache License (Version 2.0)](LICENSE-APACHE).
 
 See [`LICENSE`](LICENSE) for details.
