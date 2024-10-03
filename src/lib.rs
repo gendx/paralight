@@ -25,7 +25,7 @@ pub use core::{RangeStrategy, ThreadPool, ThreadPoolBuilder};
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::iter::{IntoParallelIterator, ParallelIterator};
+    use crate::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
     use std::num::NonZeroUsize;
     use std::rc::Rc;
 
@@ -99,6 +99,7 @@ mod test {
                 test_local_lifetime_output,
                 test_local_lifetime_accumulator,
                 test_adaptor_par_iter,
+                test_adaptor_map,
             );
         };
     }
@@ -788,6 +789,33 @@ mod test {
             )
         });
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_adaptor_map(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            range_strategy,
+        };
+        let (sum1, sum2) = pool_builder.scope(|mut thread_pool| {
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+
+            let sum1 = input.par_iter(&mut thread_pool).map(|&x| x * 42).pipeline(
+                || 0u64,
+                |acc, _, x| *acc += *x,
+                |acc| acc,
+                |a, b| a + b,
+            );
+
+            let sum2 = input
+                .par_iter(&mut thread_pool)
+                .map(|&x| x * 6)
+                .map(|&x| x * 7)
+                .pipeline(|| 0u64, |acc, _, x| *acc += *x, |acc| acc, |a, b| a + b);
+
+            (sum1, sum2)
+        });
+        assert_eq!(sum1, 42 * INPUT_LEN * (INPUT_LEN + 1) / 2);
+        assert_eq!(sum2, 42 * INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
     const fn expected_sum_lengths(max: u64) -> u64 {

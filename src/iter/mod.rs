@@ -122,3 +122,69 @@ impl<'pool, 'scope: 'pool, 'data, T: Sync> ParallelIterator
             .pipeline(self.slice, init, process_item, finalize, reduce)
     }
 }
+
+/// Additional methods provided for types that implement [`ParallelIterator`].
+pub trait ParallelIteratorExt: ParallelIterator {
+    /// Applies the function `f` to each item of this iterator, returning a
+    /// parallel iterator with the mapped items.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
+    /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
+    /// # use std::num::NonZeroUsize;
+    /// # let pool = ThreadPoolBuilder {
+    /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// # };
+    /// # pool.scope(|mut thread_pool| {
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum = input.par_iter(&mut thread_pool).map(|&x| x * 2).pipeline(
+    ///     || 0u64,
+    ///     |acc, _, x| *acc += *x,
+    ///     |acc| acc,
+    ///     |a, b| a + b,
+    /// );
+    /// assert_eq!(sum, 10 * 11);
+    /// # });
+    /// ```
+    fn map<T, F>(self, f: F) -> Map<Self, F>
+    where
+        T: Sync,
+        F: Fn(&Self::Item) -> T + Sync,
+    {
+        Map { inner: self, f }
+    }
+}
+
+impl<T: ParallelIterator> ParallelIteratorExt for T {}
+
+/// This struct is created by the [`map()`](ParallelIteratorExt::map) method on
+/// [`ParallelIteratorExt`].
+#[must_use = "iterator adaptors are lazy"]
+pub struct Map<Inner: ParallelIterator, F> {
+    inner: Inner,
+    f: F,
+}
+
+impl<Inner: ParallelIterator, T, F> ParallelIterator for Map<Inner, F>
+where
+    T: Sync,
+    F: Fn(&Inner::Item) -> T + Sync,
+{
+    type Item = T;
+
+    fn pipeline<Output: Send, Accum>(
+        self,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(&mut Accum, usize, &Self::Item) + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+    ) -> Output {
+        self.inner.pipeline(
+            init,
+            |accum, index, input| process_item(accum, index, &(self.f)(input)),
+            finalize,
+            reduce,
+        )
+    }
+}
