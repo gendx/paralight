@@ -64,7 +64,7 @@ impl ThreadPoolBuilder {
     /// });
     /// assert_eq!(sum, 5 * 11);
     /// ```
-    pub fn scope<'env, R>(&'env self, f: impl FnOnce(ThreadPool<'_, 'env>) -> R + 'env) -> R {
+    pub fn scope<R>(&self, f: impl FnOnce(ThreadPool) -> R) -> R {
         std::thread::scope(|scope| {
             let thread_pool = ThreadPool::new(scope, self.num_threads, self.range_strategy);
             f(thread_pool)
@@ -76,16 +76,16 @@ impl ThreadPoolBuilder {
 /// given types.
 ///
 /// See [`std::thread::scope()`] for what scoped threads mean and what the
-/// `'scope` and `'env` lifetimes refer to.
-pub struct ThreadPool<'scope, 'env: 'scope> {
-    inner: ThreadPoolEnum<'scope, 'env>,
+/// `'scope` lifetime refers to.
+pub struct ThreadPool<'scope> {
+    inner: ThreadPoolEnum<'scope>,
 }
 
-impl<'scope, 'env: 'scope> ThreadPool<'scope, 'env> {
+impl<'scope> ThreadPool<'scope> {
     /// Creates a new pool tied to the given scope, spawning the given number of
     /// worker threads.
     fn new(
-        thread_scope: &'scope Scope<'scope, 'env>,
+        thread_scope: &'scope Scope<'scope, '_>,
         num_threads: NonZeroUsize,
         range_strategy: RangeStrategy,
     ) -> Self {
@@ -137,16 +137,16 @@ impl<'scope, 'env: 'scope> ThreadPool<'scope, 'env> {
     }
 }
 
-enum ThreadPoolEnum<'scope, 'env: 'scope> {
-    Fixed(ThreadPoolImpl<'scope, 'env, FixedRangeFactory>),
-    WorkStealing(ThreadPoolImpl<'scope, 'env, WorkStealingRangeFactory>),
+enum ThreadPoolEnum<'scope> {
+    Fixed(ThreadPoolImpl<'scope, FixedRangeFactory>),
+    WorkStealing(ThreadPoolImpl<'scope, WorkStealingRangeFactory>),
 }
 
-impl<'scope, 'env: 'scope> ThreadPoolEnum<'scope, 'env> {
+impl<'scope> ThreadPoolEnum<'scope> {
     /// Creates a new pool tied to the given scope, spawning the given number of
     /// worker threads.
     fn new(
-        thread_scope: &'scope Scope<'scope, 'env>,
+        thread_scope: &'scope Scope<'scope, '_>,
         num_threads: NonZeroUsize,
         range_strategy: RangeStrategy,
     ) -> Self {
@@ -185,16 +185,13 @@ impl<'scope, 'env: 'scope> ThreadPoolEnum<'scope, 'env> {
     }
 }
 
-struct ThreadPoolImpl<'scope, 'env: 'scope, F: RangeFactory> {
+struct ThreadPoolImpl<'scope, F: RangeFactory> {
     /// Handles to all the worker threads in the pool.
     threads: Vec<WorkerThreadHandle<'scope>>,
     /// Orchestrator for the work ranges distributed to the threads.
     range_orchestrator: F::Orchestrator,
     /// Pipeline to map and reduce inputs into the output.
     pipeline: Lender<DynLifetimeSyncPipeline<F::Range>>,
-    /// Lifetime of the environment outside of the thread scope. See
-    /// [`std::thread::scope()`].
-    _phantom: PhantomData<&'env ()>,
 }
 
 /// Handle to a worker thread in the pool.
@@ -212,10 +209,10 @@ pub enum RangeStrategy {
     WorkStealing,
 }
 
-impl<'scope, 'env: 'scope, F: RangeFactory> ThreadPoolImpl<'scope, 'env, F> {
+impl<'scope, F: RangeFactory> ThreadPoolImpl<'scope, F> {
     /// Creates a new pool tied to the given scope, spawning the given number of
     /// worker threads.
-    fn new(thread_scope: &'scope Scope<'scope, 'env>, num_threads: usize, range_factory: F) -> Self
+    fn new(thread_scope: &'scope Scope<'scope, '_>, num_threads: usize, range_factory: F) -> Self
     where
         F::Range: Send + 'scope,
     {
@@ -272,7 +269,6 @@ impl<'scope, 'env: 'scope, F: RangeFactory> ThreadPoolImpl<'scope, 'env, F> {
             threads,
             range_orchestrator: range_factory.orchestrator(),
             pipeline: lender,
-            _phantom: PhantomData,
         }
     }
 
@@ -308,7 +304,7 @@ impl<'scope, 'env: 'scope, F: RangeFactory> ThreadPoolImpl<'scope, 'env, F> {
     }
 }
 
-impl<F: RangeFactory> Drop for ThreadPoolImpl<'_, '_, F> {
+impl<F: RangeFactory> Drop for ThreadPoolImpl<'_, F> {
     /// Joins all the threads in the pool.
     #[allow(clippy::single_match, clippy::unused_enumerate_index)]
     fn drop(&mut self) {
