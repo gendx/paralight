@@ -59,6 +59,7 @@ mod paralight {
     use super::{LENGTHS, NUM_THREADS};
     use divan::counter::BytesCount;
     use divan::{black_box, Bencher};
+    use paralight::iter::{IntoParallelIterator, ParallelIterator};
     use paralight::{RangeStrategy, ThreadPoolBuilder};
     use std::num::NonZeroUsize;
 
@@ -87,8 +88,7 @@ mod paralight {
             bencher
                 .counter(BytesCount::of_many::<u64>(len))
                 .bench_local(|| {
-                    thread_pool.pipeline(
-                        black_box(input_slice),
+                    black_box(input_slice).par_iter(&mut thread_pool).pipeline(
                         || 0u64,
                         |acc, _, x| *acc += *x,
                         |acc| acc,

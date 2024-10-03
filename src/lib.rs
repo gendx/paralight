@@ -16,17 +16,16 @@
 #![cfg_attr(not(test), forbid(clippy::undocumented_unsafe_blocks))]
 #![cfg_attr(all(test, feature = "nightly_tests"), feature(negative_impls))]
 
+mod core;
+pub mod iter;
 mod macros;
-mod range;
-mod sync;
-mod thread_pool;
-mod util;
 
-pub use thread_pool::{RangeStrategy, ThreadPool, ThreadPoolBuilder};
+pub use core::{RangeStrategy, ThreadPool, ThreadPoolBuilder};
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::iter::{IntoParallelIterator, ParallelIterator};
     use std::num::NonZeroUsize;
     use std::rc::Rc;
 
@@ -99,6 +98,7 @@ mod test {
                 test_local_lifetime_input,
                 test_local_lifetime_output,
                 test_local_lifetime_accumulator,
+                test_adaptor_par_iter,
             );
         };
     }
@@ -767,6 +767,23 @@ mod test {
                 || (0u64, token_ref),
                 |acc, _, x| acc.0 += *x,
                 |acc| acc.0,
+                |a, b| a + b,
+            )
+        });
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_adaptor_par_iter(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            range_strategy,
+        };
+        let sum = pool_builder.scope(|mut thread_pool| {
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            input.par_iter(&mut thread_pool).pipeline(
+                || 0u64,
+                |acc, _, x| *acc += *x,
+                |acc| acc,
                 |a, b| a + b,
             )
         });

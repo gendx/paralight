@@ -45,6 +45,7 @@ impl ThreadPoolBuilder {
     /// Spawn a scoped thread pool.
     ///
     /// ```rust
+    /// # use paralight::iter::{IntoParallelIterator, ParallelIterator};
     /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
     /// # use std::num::NonZeroUsize;
     /// let pool_builder = ThreadPoolBuilder {
@@ -54,8 +55,7 @@ impl ThreadPoolBuilder {
     ///
     /// let sum = pool_builder.scope(|mut thread_pool| {
     ///     let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    ///     thread_pool.pipeline(
-    ///         &input,
+    ///     input.par_iter(&mut thread_pool).pipeline(
     ///         || 0u64,
     ///         |acc, _, x| *acc += *x,
     ///         |acc| acc,
