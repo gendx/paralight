@@ -12,7 +12,7 @@ use super::range::{
     FixedRangeFactory, Range, RangeFactory, RangeOrchestrator, WorkStealingRangeFactory,
 };
 use super::sync::{make_lending_group, Borrower, Lender, WorkerState};
-use super::util::{LifetimeParameterized, SliceView};
+use super::util::LifetimeParameterized;
 use crate::macros::{log_debug, log_error, log_warn};
 // Platforms that support `libc::sched_setaffinity()`.
 #[cfg(all(
@@ -293,7 +293,7 @@ impl<'scope, 'env: 'scope, F: RangeFactory> ThreadPoolImpl<'scope, 'env, F> {
             .collect::<Arc<[_]>>();
 
         self.pipeline.lend(&PipelineImpl {
-            input: SliceView::new(input),
+            input,
             outputs: outputs.clone(),
             init,
             process_item,
@@ -344,6 +344,7 @@ impl<R: Range> LifetimeParameterized for DynLifetimeSyncPipeline<R> {
 }
 
 struct PipelineImpl<
+    'data,
     Input,
     Output,
     Accum,
@@ -351,7 +352,7 @@ struct PipelineImpl<
     ProcessItem: Fn(&mut Accum, usize, &Input),
     Finalize: Fn(Accum) -> Output,
 > {
-    input: SliceView<Input>,
+    input: &'data [Input],
     outputs: Arc<[Mutex<Option<Output>>]>,
     init: Init,
     process_item: ProcessItem,
@@ -359,7 +360,7 @@ struct PipelineImpl<
 }
 
 impl<R, Input, Output, Accum, Init, ProcessItem, Finalize> Pipeline<R>
-    for PipelineImpl<Input, Output, Accum, Init, ProcessItem, Finalize>
+    for PipelineImpl<'_, Input, Output, Accum, Init, ProcessItem, Finalize>
 where
     R: Range,
     Init: Fn() -> Accum,
@@ -369,10 +370,9 @@ where
     fn run(&self, worker_id: usize, range: &R) {
         // SAFETY: The underlying input slice is valid and not mutated for the whole
         // lifetime of this block.
-        let input = unsafe { self.input.get().unwrap() };
         let mut accumulator = (self.init)();
         for i in range.iter() {
-            (self.process_item)(&mut accumulator, i, &input[i]);
+            (self.process_item)(&mut accumulator, i, &self.input[i]);
         }
         let output = (self.finalize)(accumulator);
         *self.outputs[worker_id].lock().unwrap() = Some(output);
