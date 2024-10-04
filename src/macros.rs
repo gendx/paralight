@@ -79,10 +79,6 @@ macro_rules! log_warn {
     };
 }
 
-pub(crate) use log_debug;
-pub(crate) use log_error;
+pub(crate) use {log_debug, log_error, log_warn};
 #[cfg(feature = "log_parallelism")]
-pub(crate) use log_info;
-#[cfg(feature = "log_parallelism")]
-pub(crate) use log_trace;
-pub(crate) use log_warn;
+pub(crate) use {log_info, log_trace};
