@@ -345,7 +345,7 @@ pub struct WorkStealingStats {
 }
 
 #[cfg(feature = "log_parallelism")]
-impl<'a> AddAssign<&'a WorkStealingStats> for WorkStealingStats {
+impl AddAssign<&WorkStealingStats> for WorkStealingStats {
     fn add_assign(&mut self, other: &WorkStealingStats) {
         self.increments += other.increments;
         self.failed_increments += other.failed_increments;
