@@ -796,12 +796,12 @@ mod test {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
         };
-        let (sum1, sum2) = pool_builder.scope(|mut thread_pool| {
+        let (sum1, sum2, sum3) = pool_builder.scope(|mut thread_pool| {
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
 
             let sum1 = input.par_iter(&mut thread_pool).map(|&x| x * 42).pipeline(
                 || 0u64,
-                |acc, _, x| *acc += *x,
+                |acc, _, x| *acc += x,
                 |acc| acc,
                 |a, b| a + b,
             );
@@ -809,13 +809,21 @@ mod test {
             let sum2 = input
                 .par_iter(&mut thread_pool)
                 .map(|&x| x * 6)
-                .map(|&x| x * 7)
+                .map(|x| x * 7)
+                .pipeline(|| 0u64, |acc, _, x| *acc += x, |acc| acc, |a, b| a + b);
+
+            let sum3 = input
+                .par_iter(&mut thread_pool)
+                // Mapping to a non-Send non-Sync type is fine, as the item stays on the same thread
+                // and isn't shared with other threads.
+                .map(|&x| Rc::new(x))
                 .pipeline(|| 0u64, |acc, _, x| *acc += *x, |acc| acc, |a, b| a + b);
 
-            (sum1, sum2)
+            (sum1, sum2, sum3)
         });
         assert_eq!(sum1, 42 * INPUT_LEN * (INPUT_LEN + 1) / 2);
         assert_eq!(sum2, 42 * INPUT_LEN * (INPUT_LEN + 1) / 2);
+        assert_eq!(sum3, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
     const fn expected_sum_lengths(max: u64) -> u64 {

@@ -45,7 +45,7 @@ pub trait IntoParallelIterator {
 /// An iterator to process items in parallel.
 pub trait ParallelIterator: Sized {
     /// The type of items that this parallel iterator produces.
-    type Item: Sync;
+    type Item;
 
     /// Runs the pipeline defined by the given functions on this iterator.
     ///
@@ -79,7 +79,7 @@ pub trait ParallelIterator: Sized {
     fn pipeline<Output: Send, Accum>(
         self,
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(&mut Accum, usize, &Self::Item) + Sync,
+        process_item: impl Fn(&mut Accum, usize, Self::Item) + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
     ) -> Output;
@@ -109,12 +109,12 @@ impl<'data, T: Sync> IntoParallelIterator for &'data [T] {
 impl<'pool, 'scope: 'pool, 'data, T: Sync> ParallelIterator
     for SliceParallelIterator<'pool, 'scope, 'data, T>
 {
-    type Item = T;
+    type Item = &'data T;
 
     fn pipeline<Output: Send, Accum>(
         self,
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(&mut Accum, usize, &Self::Item) + Sync,
+        process_item: impl Fn(&mut Accum, usize, Self::Item) + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
     ) -> Output {
@@ -132,25 +132,32 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # use paralight::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
     /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
     /// # use std::num::NonZeroUsize;
+    /// # use std::rc::Rc;
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// # };
     /// # pool.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    /// let sum = input.par_iter(&mut thread_pool).map(|&x| x * 2).pipeline(
+    /// let double_sum = input.par_iter(&mut thread_pool).map(|&x| x * 2).pipeline(
     ///     || 0u64,
-    ///     |acc, _, x| *acc += *x,
+    ///     |acc, _, x| *acc += x,
     ///     |acc| acc,
     ///     |a, b| a + b,
     /// );
-    /// assert_eq!(sum, 10 * 11);
+    /// assert_eq!(double_sum, 10 * 11);
+    ///
+    /// // Mapping to a non-Send non-Sync item is fine.
+    /// let sum = input
+    ///     .par_iter(&mut thread_pool)
+    ///     .map(|&x| Rc::new(x))
+    ///     .pipeline(|| 0u64, |acc, _, x| *acc += *x, |acc| acc, |a, b| a + b);
+    /// assert_eq!(sum, 5 * 11);
     /// # });
     /// ```
     fn map<T, F>(self, f: F) -> Map<Self, F>
     where
-        T: Sync,
-        F: Fn(&Self::Item) -> T + Sync,
+        F: Fn(Self::Item) -> T + Sync,
     {
         Map { inner: self, f }
     }
@@ -168,21 +175,20 @@ pub struct Map<Inner: ParallelIterator, F> {
 
 impl<Inner: ParallelIterator, T, F> ParallelIterator for Map<Inner, F>
 where
-    T: Sync,
-    F: Fn(&Inner::Item) -> T + Sync,
+    F: Fn(Inner::Item) -> T + Sync,
 {
     type Item = T;
 
     fn pipeline<Output: Send, Accum>(
         self,
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(&mut Accum, usize, &Self::Item) + Sync,
+        process_item: impl Fn(&mut Accum, usize, Self::Item) + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
     ) -> Output {
         self.inner.pipeline(
             init,
-            |accum, index, input| process_item(accum, index, &(self.f)(input)),
+            |accum, index, input| process_item(accum, index, (self.f)(input)),
             finalize,
             reduce,
         )

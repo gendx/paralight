@@ -124,11 +124,11 @@ impl<'scope> ThreadPool<'scope> {
     /// assert_eq!(sum, 5 * 11);
     /// # });
     /// ```
-    pub fn pipeline<Input: Sync, Output: Send, Accum>(
+    pub fn pipeline<'data, Input: Sync, Output: Send, Accum>(
         &mut self,
-        input: &[Input],
+        input: &'data [Input],
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(&mut Accum, usize, &Input) + Sync,
+        process_item: impl Fn(&mut Accum, usize, &'data Input) + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
     ) -> Output {
@@ -166,11 +166,11 @@ impl<'scope> ThreadPoolEnum<'scope> {
     }
 
     /// Processes an input slice in parallel and returns the aggregated output.
-    fn pipeline<Input: Sync, Output: Send, Accum>(
+    pub fn pipeline<'data, Input: Sync, Output: Send, Accum>(
         &mut self,
-        input: &[Input],
+        input: &'data [Input],
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(&mut Accum, usize, &Input) + Sync,
+        process_item: impl Fn(&mut Accum, usize, &'data Input) + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
     ) -> Output {
@@ -273,11 +273,11 @@ impl<'scope, F: RangeFactory> ThreadPoolImpl<'scope, F> {
     }
 
     /// Processes an input slice in parallel and returns the aggregated output.
-    fn pipeline<Input: Sync, Output: Send, Accum>(
+    pub fn pipeline<'data, Input: Sync, Output: Send, Accum>(
         &mut self,
-        input: &[Input],
+        input: &'data [Input],
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(&mut Accum, usize, &Input) + Sync,
+        process_item: impl Fn(&mut Accum, usize, &'data Input) + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
     ) -> Output {
@@ -345,7 +345,7 @@ struct PipelineImpl<
     Output,
     Accum,
     Init: Fn() -> Accum,
-    ProcessItem: Fn(&mut Accum, usize, &Input),
+    ProcessItem: Fn(&mut Accum, usize, &'data Input),
     Finalize: Fn(Accum) -> Output,
 > {
     input: &'data [Input],
@@ -355,12 +355,12 @@ struct PipelineImpl<
     finalize: Finalize,
 }
 
-impl<R, Input, Output, Accum, Init, ProcessItem, Finalize> Pipeline<R>
-    for PipelineImpl<'_, Input, Output, Accum, Init, ProcessItem, Finalize>
+impl<'data, R, Input, Output, Accum, Init, ProcessItem, Finalize> Pipeline<R>
+    for PipelineImpl<'data, Input, Output, Accum, Init, ProcessItem, Finalize>
 where
     R: Range,
     Init: Fn() -> Accum,
-    ProcessItem: Fn(&mut Accum, usize, &Input),
+    ProcessItem: Fn(&mut Accum, usize, &'data Input),
     Finalize: Fn(Accum) -> Output,
 {
     fn run(&self, worker_id: usize, range: &R) {
