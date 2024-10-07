@@ -26,8 +26,10 @@ pub use core::{RangeStrategy, ThreadPool, ThreadPoolBuilder};
 mod test {
     use super::*;
     use crate::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
+    use std::collections::HashSet;
     use std::num::NonZeroUsize;
     use std::rc::Rc;
+    use std::sync::Mutex;
 
     macro_rules! expand_tests {
         ( $range_strategy:expr, ) => {};
@@ -100,6 +102,7 @@ mod test {
                 test_local_lifetime_accumulator,
                 test_adaptor_par_iter,
                 test_adaptor_filter,
+                test_adaptor_for_each,
                 test_adaptor_map,
             );
         };
@@ -805,6 +808,22 @@ mod test {
                 .pipeline(|| 0u64, |acc, _, x| *acc += *x, |acc| acc, |a, b| a + b)
         });
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN / 2 + 1) / 2);
+    }
+
+    fn test_adaptor_for_each(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            range_strategy,
+        };
+        let set = pool_builder.scope(|mut thread_pool| {
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            let set = Mutex::new(HashSet::new());
+            input.par_iter(&mut thread_pool).for_each(|&x| {
+                set.lock().unwrap().insert(x);
+            });
+            set.into_inner().unwrap()
+        });
+        assert_eq!(set, (0..=INPUT_LEN).collect());
     }
 
     fn test_adaptor_map(range_strategy: RangeStrategy) {

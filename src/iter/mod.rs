@@ -152,6 +152,39 @@ pub trait ParallelIteratorExt: ParallelIterator {
         Filter { inner: self, f }
     }
 
+    /// Runs `f` on each item of this parallel iterator.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
+    /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
+    /// # use std::collections::HashSet;
+    /// # use std::num::NonZeroUsize;
+    /// # use std::sync::Mutex;
+    /// # let pool = ThreadPoolBuilder {
+    /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// # };
+    /// # pool.scope(|mut thread_pool| {
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let set = Mutex::new(HashSet::new());
+    /// input.par_iter(&mut thread_pool).for_each(|&x| {
+    ///     set.lock().unwrap().insert(x);
+    /// });
+    /// assert_eq!(set.into_inner().unwrap(), (1..=10).collect());
+    /// # });
+    /// ```
+    fn for_each<F>(self, f: F)
+    where
+        F: Fn(Self::Item) + Sync,
+    {
+        self.pipeline(
+            /* init */ || (),
+            /* process_item */ |&mut (), _index, item| f(item),
+            /* finalize */ |()| (),
+            /* reduce */ |(), ()| (),
+        )
+    }
+
     /// Applies the function `f` to each item of this iterator, returning a
     /// parallel iterator with the mapped items.
     ///
