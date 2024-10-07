@@ -26,6 +26,7 @@ pub use core::{RangeStrategy, ThreadPool, ThreadPoolBuilder};
 mod test {
     use super::*;
     use crate::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
+    use std::cell::Cell;
     use std::collections::HashSet;
     use std::num::NonZeroUsize;
     use std::rc::Rc;
@@ -89,11 +90,9 @@ mod test {
                 test_non_send_functions,
                 #[cfg(feature = "nightly_tests")]
                 test_non_send_input,
-                #[cfg(feature = "nightly_tests")]
                 test_non_sync_output,
                 #[cfg(feature = "nightly_tests")]
                 test_non_send_accumulator,
-                #[cfg(feature = "nightly_tests")]
                 test_non_sync_accumulator,
                 test_non_send_sync_accumulator,
                 test_local_lifetime_functions,
@@ -498,11 +497,6 @@ mod test {
     impl !Send for NotSend {}
 
     #[cfg(feature = "nightly_tests")]
-    struct NotSync(u64);
-    #[cfg(feature = "nightly_tests")]
-    impl !Sync for NotSync {}
-
-    #[cfg(feature = "nightly_tests")]
     fn test_non_send_functions(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
@@ -575,7 +569,6 @@ mod test {
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    #[cfg(feature = "nightly_tests")]
     fn test_non_sync_output(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
@@ -589,10 +582,10 @@ mod test {
                     &input,
                     || 0u64,
                     |acc, _, x| *acc += *x,
-                    NotSync,
-                    |a, b| NotSync(a.0 + b.0),
+                    Cell::new,
+                    |a, b| Cell::new(a.get() + b.get()),
                 )
-                .0
+                .get()
         });
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
@@ -617,7 +610,6 @@ mod test {
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    #[cfg(feature = "nightly_tests")]
     fn test_non_sync_accumulator(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
@@ -628,9 +620,9 @@ mod test {
             // A non-Sync accumulator can be used in the pipeline.
             thread_pool.pipeline(
                 &input,
-                || NotSync(0u64),
-                |acc, _, x| acc.0 += *x,
-                |acc| acc.0,
+                || Cell::new(0u64),
+                |acc, _, x| *acc.get_mut() += *x,
+                |acc| acc.get(),
                 |a, b| a + b,
             )
         });
