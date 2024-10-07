@@ -15,7 +15,7 @@ threads. Each thread processes a subset of the items, and a final step reduces
 the outputs from all threads into a single result.
 
 ```rust
-use paralight::iter::{IntoParallelIterator, ParallelIterator};
+use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
 use paralight::{RangeStrategy, ThreadPoolBuilder};
 use std::num::NonZeroUsize;
 
@@ -30,12 +30,10 @@ let sum = pool_builder.scope(
     |mut thread_pool| {
         // Compute the sum of a slice.
         let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        input.par_iter(&mut thread_pool).pipeline(
-            /* init */ || 0u64,
-            /* process_item */ |acc, _, x| *acc += *x,
-            /* finalize */ |acc| acc,
-            /* reduce */ |a, b| a + b,
-        )
+        input
+            .par_iter(&mut thread_pool)
+            .map(|&x| x)
+            .reduce(|| 0, |x, y| x + y)
     },
 );
 assert_eq!(sum, 5 * 11);

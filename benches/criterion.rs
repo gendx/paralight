@@ -70,7 +70,7 @@ mod rayon {
 /// Benchmarks using Paralight.
 mod paralight {
     use criterion::{black_box, Bencher};
-    use paralight::iter::{IntoParallelIterator, ParallelIterator};
+    use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
     use paralight::{RangeStrategy, ThreadPoolBuilder};
     use std::num::NonZeroUsize;
 
@@ -88,12 +88,10 @@ mod paralight {
         };
         pool_builder.scope(|mut thread_pool| {
             bencher.iter(|| {
-                black_box(input_slice).par_iter(&mut thread_pool).pipeline(
-                    || 0u64,
-                    |acc, _, x| *acc += *x,
-                    |acc| acc,
-                    |a, b| a + b,
-                )
+                black_box(input_slice)
+                    .par_iter(&mut thread_pool)
+                    .map(|&x| x)
+                    .reduce(|| 0, |x, y| x + y)
             });
         });
     }

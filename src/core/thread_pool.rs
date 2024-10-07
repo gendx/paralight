@@ -45,7 +45,7 @@ impl ThreadPoolBuilder {
     /// Spawn a scoped thread pool.
     ///
     /// ```rust
-    /// # use paralight::iter::{IntoParallelIterator, ParallelIterator};
+    /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
     /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
     /// # use std::num::NonZeroUsize;
     /// let pool_builder = ThreadPoolBuilder {
@@ -55,12 +55,10 @@ impl ThreadPoolBuilder {
     ///
     /// let sum = pool_builder.scope(|mut thread_pool| {
     ///     let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    ///     input.par_iter(&mut thread_pool).pipeline(
-    ///         || 0u64,
-    ///         |acc, _, x| *acc += *x,
-    ///         |acc| acc,
-    ///         |a, b| a + b,
-    ///     )
+    ///     input
+    ///         .par_iter(&mut thread_pool)
+    ///         .map(|&x| x)
+    ///         .reduce(|| 0, |x, y| x + y)
     /// });
     /// assert_eq!(sum, 5 * 11);
     /// ```
@@ -117,7 +115,7 @@ impl<'scope> ThreadPool<'scope> {
     /// let sum = thread_pool.pipeline(
     ///     &input,
     ///     || 0u64,
-    ///     |acc, _, x| *acc += *x,
+    ///     |acc, _, x| acc + *x,
     ///     |acc| acc,
     ///     |a, b| a + b,
     /// );
@@ -128,7 +126,7 @@ impl<'scope> ThreadPool<'scope> {
         &mut self,
         input: &'data [Input],
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(&mut Accum, usize, &'data Input) + Sync,
+        process_item: impl Fn(Accum, usize, &'data Input) -> Accum + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
     ) -> Output {
@@ -170,7 +168,7 @@ impl<'scope> ThreadPoolEnum<'scope> {
         &mut self,
         input: &'data [Input],
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(&mut Accum, usize, &'data Input) + Sync,
+        process_item: impl Fn(Accum, usize, &'data Input) -> Accum + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
     ) -> Output {
@@ -277,7 +275,7 @@ impl<'scope, F: RangeFactory> ThreadPoolImpl<'scope, F> {
         &mut self,
         input: &'data [Input],
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(&mut Accum, usize, &'data Input) + Sync,
+        process_item: impl Fn(Accum, usize, &'data Input) -> Accum + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
     ) -> Output {
@@ -345,7 +343,7 @@ struct PipelineImpl<
     Output,
     Accum,
     Init: Fn() -> Accum,
-    ProcessItem: Fn(&mut Accum, usize, &'data Input),
+    ProcessItem: Fn(Accum, usize, &'data Input) -> Accum,
     Finalize: Fn(Accum) -> Output,
 > {
     input: &'data [Input],
@@ -360,7 +358,7 @@ impl<'data, R, Input, Output, Accum, Init, ProcessItem, Finalize> Pipeline<R>
 where
     R: Range,
     Init: Fn() -> Accum,
-    ProcessItem: Fn(&mut Accum, usize, &'data Input),
+    ProcessItem: Fn(Accum, usize, &'data Input) -> Accum,
     Finalize: Fn(Accum) -> Output,
 {
     fn run(&self, worker_id: usize, range: &R) {
@@ -368,7 +366,7 @@ where
         // lifetime of this block.
         let mut accumulator = (self.init)();
         for i in range.iter() {
-            (self.process_item)(&mut accumulator, i, &self.input[i]);
+            accumulator = (self.process_item)(accumulator, i, &self.input[i]);
         }
         let output = (self.finalize)(accumulator);
         *self.outputs[worker_id].lock().unwrap() = Some(output);

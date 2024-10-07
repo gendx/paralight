@@ -18,7 +18,7 @@ pub trait IntoParallelIterator {
     /// Converts `self` into a parallel iterator.
     ///
     /// ```rust
-    /// # use paralight::iter::{IntoParallelIterator, ParallelIterator};
+    /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
     /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
     /// # use std::num::NonZeroUsize;
     /// # let pool_builder = ThreadPoolBuilder {
@@ -27,12 +27,10 @@ pub trait IntoParallelIterator {
     /// # };
     /// # pool_builder.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    /// let sum = input.par_iter(&mut thread_pool).pipeline(
-    ///     || 0u64,
-    ///     |acc, _, x| *acc += *x,
-    ///     |acc| acc,
-    ///     |a, b| a + b,
-    /// );
+    /// let sum = input
+    ///     .par_iter(&mut thread_pool)
+    ///     .map(|&x| x)
+    ///     .reduce(|| 0, |x, y| x + y);
     /// assert_eq!(sum, 5 * 11);
     /// # });
     /// ```
@@ -42,7 +40,9 @@ pub trait IntoParallelIterator {
     ) -> Self::ParIter<'pool, 'scope>;
 }
 
-/// An iterator to process items in parallel.
+/// An iterator to process items in parallel. The [`ParallelIteratorExt`] trait
+/// provides additional methods (iterator adaptors) as an extension of this
+/// trait.
 pub trait ParallelIterator: Sized {
     /// The type of items that this parallel iterator produces.
     type Item;
@@ -58,7 +58,7 @@ pub trait ParallelIterator: Sized {
     /// - `reduce` function to reduce a pair of outputs into one output.
     ///
     /// ```rust
-    /// # use paralight::iter::{IntoParallelIterator, ParallelIterator};
+    /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
     /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
     /// # use std::num::NonZeroUsize;
     /// # let pool_builder = ThreadPoolBuilder {
@@ -67,19 +67,17 @@ pub trait ParallelIterator: Sized {
     /// # };
     /// # pool_builder.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    /// let sum = input.par_iter(&mut thread_pool).pipeline(
-    ///     || 0u64,
-    ///     |acc, _, x| *acc += *x,
-    ///     |acc| acc,
-    ///     |a, b| a + b,
-    /// );
+    /// let sum = input
+    ///     .par_iter(&mut thread_pool)
+    ///     .map(|&x| x)
+    ///     .reduce(|| 0, |x, y| x + y);
     /// assert_eq!(sum, 5 * 11);
     /// # });
     /// ```
     fn pipeline<Output: Send, Accum>(
         self,
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(&mut Accum, usize, Self::Item) + Sync,
+        process_item: impl Fn(Accum, usize, Self::Item) -> Accum + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
     ) -> Output;
@@ -114,7 +112,7 @@ impl<'pool, 'scope: 'pool, 'data, T: Sync> ParallelIterator
     fn pipeline<Output: Send, Accum>(
         self,
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(&mut Accum, usize, Self::Item) + Sync,
+        process_item: impl Fn(Accum, usize, Self::Item) -> Accum + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
     ) -> Output {
@@ -129,7 +127,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// predicate `f` returns `true`.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
     /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
     /// # use std::num::NonZeroUsize;
     /// # let pool = ThreadPoolBuilder {
@@ -141,7 +139,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let sum_even = input
     ///     .par_iter(&mut thread_pool)
     ///     .filter(|&&x| x % 2 == 0)
-    ///     .pipeline(|| 0u64, |acc, _, x| *acc += *x, |acc| acc, |a, b| a + b);
+    ///     .map(|&x| x)
+    ///     .reduce(|| 0, |x, y| x + y);
     /// assert_eq!(sum_even, 5 * 6);
     /// # });
     /// ```
@@ -155,7 +154,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// Runs `f` on each item of this parallel iterator.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
     /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
     /// # use std::collections::HashSet;
     /// # use std::num::NonZeroUsize;
@@ -179,7 +178,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     {
         self.pipeline(
             /* init */ || (),
-            /* process_item */ |&mut (), _index, item| f(item),
+            /* process_item */ |(), _index, item| f(item),
             /* finalize */ |()| (),
             /* reduce */ |(), ()| (),
         )
@@ -187,6 +186,27 @@ pub trait ParallelIteratorExt: ParallelIterator {
 
     /// Applies the function `f` to each item of this iterator, returning a
     /// parallel iterator with the mapped items.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
+    /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
+    /// # use std::num::NonZeroUsize;
+    /// # let pool = ThreadPoolBuilder {
+    /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// # };
+    /// # pool.scope(|mut thread_pool| {
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let double_sum = input
+    ///     .par_iter(&mut thread_pool)
+    ///     .map(|&x| x * 2)
+    ///     .reduce(|| 0, |x, y| x + y);
+    /// assert_eq!(double_sum, 10 * 11);
+    /// # });
+    /// ```
+    ///
+    /// Mapping to a non-[`Send`] non-[`Sync`] type such as [`Rc`](std::rc::Rc)
+    /// is fine.
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
@@ -199,19 +219,10 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # };
     /// # pool.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    /// let double_sum = input.par_iter(&mut thread_pool).map(|&x| x * 2).pipeline(
-    ///     || 0u64,
-    ///     |acc, _, x| *acc += x,
-    ///     |acc| acc,
-    ///     |a, b| a + b,
-    /// );
-    /// assert_eq!(double_sum, 10 * 11);
-    ///
-    /// // Mapping to a non-Send non-Sync item is fine.
     /// let sum = input
     ///     .par_iter(&mut thread_pool)
     ///     .map(|&x| Rc::new(x))
-    ///     .pipeline(|| 0u64, |acc, _, x| *acc += *x, |acc| acc, |a, b| a + b);
+    ///     .pipeline(|| 0u64, |acc, _, x| acc + *x, |acc| acc, |a, b| a + b);
     /// assert_eq!(sum, 5 * 11);
     /// # });
     /// ```
@@ -220,6 +231,64 @@ pub trait ParallelIteratorExt: ParallelIterator {
         F: Fn(Self::Item) -> T + Sync,
     {
         Map { inner: self, f }
+    }
+
+    /// Reduces the items produced by this iterator into a single item, using
+    /// `f` to collapse pairs of items.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
+    /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
+    /// # use std::num::NonZeroUsize;
+    /// # let pool = ThreadPoolBuilder {
+    /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// # };
+    /// # pool.scope(|mut thread_pool| {
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum = input
+    ///     .par_iter(&mut thread_pool)
+    ///     .map(|&x| x)
+    ///     .reduce(|| 0, |x, y| x + y);
+    /// assert_eq!(sum, 5 * 11);
+    /// # });
+    /// ```
+    ///
+    /// Under the hood, each worker thread may call `init` and `f` in arbitrary
+    /// order, therefore this method is mainly useful under the following
+    /// conditions.
+    /// - The reduction function `f` should be both [commutative](https://en.wikipedia.org/wiki/Commutative_property)
+    ///   and [associative](https://en.wikipedia.org/wiki/Associative_property),
+    ///   otherwise the result isn't deterministic. For example, addition on
+    ///   floating-point numbers (e.g. [`f32`], [`f64`]) is commutative but not
+    ///   associative.
+    /// - The `init` function should return a neutral (a.k.a. identity) element
+    ///   with respect to `f`, that may be inserted anywhere in the computation.
+    ///   In particular, `reduce()` returns `init()` if the iterator is empty.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
+    /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
+    /// # use std::num::NonZeroUsize;
+    /// # let pool = ThreadPoolBuilder {
+    /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// # };
+    /// # pool.scope(|mut thread_pool| {
+    /// let sum = []
+    ///     .par_iter(&mut thread_pool)
+    ///     .map(|&x| x)
+    ///     .reduce(|| 0, |x, y| x + y);
+    /// assert_eq!(sum, 0);
+    /// # });
+    /// ```
+    fn reduce<Init, F>(self, init: Init, f: F) -> Self::Item
+    where
+        Init: Fn() -> Self::Item + Sync,
+        F: Fn(Self::Item, Self::Item) -> Self::Item + Sync,
+        Self::Item: Send,
+    {
+        self.pipeline(init, |acc, _index, item| f(acc, item), |acc| acc, &f)
     }
 }
 
@@ -242,7 +311,7 @@ where
     fn pipeline<Output: Send, Accum>(
         self,
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(&mut Accum, usize, Self::Item) + Sync,
+        process_item: impl Fn(Accum, usize, Self::Item) -> Accum + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
     ) -> Output {
@@ -251,6 +320,8 @@ where
             |accum, index, item| {
                 if (self.f)(&item) {
                     process_item(accum, index, item)
+                } else {
+                    accum
                 }
             },
             finalize,
@@ -276,7 +347,7 @@ where
     fn pipeline<Output: Send, Accum>(
         self,
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(&mut Accum, usize, Self::Item) + Sync,
+        process_item: impl Fn(Accum, usize, Self::Item) -> Accum + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
     ) -> Output {

@@ -103,6 +103,7 @@ mod test {
                 test_adaptor_filter,
                 test_adaptor_for_each,
                 test_adaptor_map,
+                test_adaptor_reduce,
             );
         };
     }
@@ -130,7 +131,7 @@ mod test {
             thread_pool.pipeline(
                 &input,
                 || 0u64,
-                |acc, _, x| *acc += *x,
+                |acc, _, x| acc + *x,
                 |acc| acc,
                 |a, b| a + b,
             )
@@ -149,14 +150,14 @@ mod test {
             let sum1 = thread_pool.pipeline(
                 &input,
                 || 0u64,
-                |acc, _, x| *acc += *x,
+                |acc, _, x| acc + *x,
                 |acc| acc,
                 |a, b| a + b,
             );
             let sum2 = thread_pool.pipeline(
                 &input,
                 || 0u64,
-                |acc, _, x| *acc += *x,
+                |acc, _, x| acc + *x,
                 |acc| acc,
                 |a, b| a + b,
             );
@@ -181,7 +182,7 @@ mod test {
                     if *x == 0 {
                         panic!("arithmetic panic");
                     } else {
-                        *acc += *x;
+                        acc + *x
                     }
                 },
                 |acc| acc,
@@ -206,7 +207,7 @@ mod test {
                     if *x % 123 == 0 {
                         panic!("arithmetic panic");
                     } else {
-                        *acc += *x;
+                        acc + *x
                     }
                 },
                 |acc| acc,
@@ -231,7 +232,7 @@ mod test {
                     if *x % 2 == 0 {
                         panic!("arithmetic panic");
                     } else {
-                        *acc += *x;
+                        acc + *x
                     }
                 },
                 |acc| acc,
@@ -263,7 +264,7 @@ mod test {
             thread_pool.pipeline(
                 &input,
                 || 0u64,
-                |acc, _, x| *acc += *x,
+                |acc, _, x| acc + *x,
                 |acc| acc,
                 |a, b| a + b,
             )
@@ -281,7 +282,7 @@ mod test {
             thread_pool.pipeline(
                 &[],
                 || 0u64,
-                |acc, _, x: &u64| *acc += *x,
+                |acc, _, x: &u64| acc + *x,
                 |acc| acc,
                 |a, b| a + b,
             )
@@ -300,7 +301,7 @@ mod test {
             let sum1 = thread_pool.pipeline(
                 &input,
                 || 0u64,
-                |acc, _, x| *acc += *x,
+                |acc, _, x| acc + *x,
                 |acc| acc,
                 |a, b| a + b,
             );
@@ -309,7 +310,7 @@ mod test {
             let sum2 = thread_pool.pipeline(
                 &input,
                 || 0u64,
-                |acc, _, x| *acc += *x,
+                |acc, _, x| acc + *x,
                 |acc| acc,
                 |a, b| a + b,
             );
@@ -333,7 +334,7 @@ mod test {
             let sum = thread_pool.pipeline(
                 &input,
                 || 0u64,
-                |acc, _, x| *acc += *x,
+                |acc, _, x| acc + *x,
                 |acc| acc,
                 |a, b| a + b,
             );
@@ -341,7 +342,7 @@ mod test {
             let sum_squares = thread_pool.pipeline(
                 &input,
                 || 0u64,
-                |acc, _, &x| *acc += x * x,
+                |acc, _, &x| acc + x * x,
                 |acc| acc,
                 |a, b| a + b,
             );
@@ -368,7 +369,7 @@ mod test {
             let sum1 = thread_pool.pipeline(
                 &input,
                 || 0u32,
-                |acc, _, &x| *acc += x as u32,
+                |acc, _, &x| acc + x as u32,
                 |acc| acc as u64,
                 |a, b| (a + b) & 0xffff_ffff,
             );
@@ -376,7 +377,7 @@ mod test {
             let sum2 = thread_pool.pipeline(
                 &input,
                 || 0u64,
-                |acc, _, x| *acc += *x,
+                |acc, _, x| acc + *x,
                 |acc| acc,
                 |a, b| a + b,
             );
@@ -398,7 +399,7 @@ mod test {
             let sum = thread_pool.pipeline(
                 &input,
                 || 0u64,
-                |acc, _, &x| *acc += x,
+                |acc, _, &x| acc + x,
                 |acc| acc,
                 |a, b| a + b,
             );
@@ -409,7 +410,7 @@ mod test {
             let sum_lengths = thread_pool.pipeline(
                 &input,
                 || 0usize,
-                |acc, _, x| *acc += x.len(),
+                |acc, _, x| acc + x.len(),
                 |acc| acc as u64,
                 |a, b| a + b,
             );
@@ -431,7 +432,7 @@ mod test {
             let sum = thread_pool.pipeline(
                 &input,
                 || 0u64,
-                |acc, _, &x| *acc += x,
+                |acc, _, &x| acc + x,
                 |acc| acc,
                 |a, b| a + b,
             );
@@ -442,10 +443,7 @@ mod test {
             let sum_pairs = thread_pool.pipeline(
                 &input,
                 || (0u64, 0u64),
-                |(a, b), _, &(x, y)| {
-                    *a += x;
-                    *b += y;
-                },
+                |(a, b), _, &(x, y)| (a + x, b + y),
                 |acc| acc,
                 |(a, b), (x, y)| (a + x, b + y),
             );
@@ -477,7 +475,7 @@ mod test {
             thread_pool.pipeline(
                 &input,
                 || *zero_ref,
-                |acc, _, x| *acc += *x * *one_ref,
+                |acc, _, x| acc + *x * *one_ref,
                 |acc| acc * *one_ref,
                 |a, b| (a + b) * *one_ref,
             )
@@ -509,7 +507,7 @@ mod test {
             let sum1 = thread_pool.pipeline(
                 &input,
                 move || init.get(),
-                |acc, _, x| *acc += *x,
+                |acc, _, x| acc + *x,
                 |acc| acc,
                 |a, b| a + b,
             );
@@ -518,7 +516,7 @@ mod test {
             let sum2 = thread_pool.pipeline(
                 &input,
                 || 0u64,
-                move |acc, _, x| *acc += *x * one.get(),
+                move |acc, _, x| acc + *x * one.get(),
                 |acc| acc,
                 |a, b| a + b,
             );
@@ -527,7 +525,7 @@ mod test {
             let sum3 = thread_pool.pipeline(
                 &input,
                 || 0u64,
-                |acc, _, x| *acc += *x,
+                |acc, _, x| acc + *x,
                 move |acc| acc * one.get(),
                 |a, b| a + b,
             );
@@ -536,7 +534,7 @@ mod test {
             let sum4 = thread_pool.pipeline(
                 &input,
                 || 0u64,
-                |acc, _, x| *acc += *x,
+                |acc, _, x| acc + *x,
                 |acc| acc,
                 move |a, b| a + b + zero.get(),
             );
@@ -561,7 +559,7 @@ mod test {
             thread_pool.pipeline(
                 &input,
                 || 0u64,
-                |acc, _, x| *acc += x.get(),
+                |acc, _, x| acc + x.get(),
                 |acc| acc,
                 |a, b| a + b,
             )
@@ -581,7 +579,7 @@ mod test {
                 .pipeline(
                     &input,
                     || 0u64,
-                    |acc, _, x| *acc += *x,
+                    |acc, _, x| acc + *x,
                     Cell::new,
                     |a, b| Cell::new(a.get() + b.get()),
                 )
@@ -602,7 +600,7 @@ mod test {
             thread_pool.pipeline(
                 &input,
                 || NotSend(0u64),
-                |acc, _, x| acc.0 += *x,
+                |acc, _, x| NotSend(acc.0 + *x),
                 |acc| acc.0,
                 |a, b| a + b,
             )
@@ -621,7 +619,10 @@ mod test {
             thread_pool.pipeline(
                 &input,
                 || Cell::new(0u64),
-                |acc, _, x| *acc.get_mut() += *x,
+                |mut acc, _, x| {
+                    *acc.get_mut() += *x;
+                    acc
+                },
                 |acc| acc.get(),
                 |a, b| a + b,
             )
@@ -640,7 +641,10 @@ mod test {
             thread_pool.pipeline(
                 &input,
                 || Rc::new(0u64),
-                |acc, _, x| *Rc::get_mut(acc).unwrap() += *x,
+                |mut acc, _, x| {
+                    *Rc::get_mut(&mut acc).unwrap() += *x;
+                    acc
+                },
                 |acc| *acc,
                 |a, b| a + b,
             )
@@ -663,7 +667,7 @@ mod test {
             let sum1 = thread_pool.pipeline(
                 &input,
                 || zero,
-                |acc, _, x| *acc += *x,
+                |acc, _, x| acc + *x,
                 |acc| acc,
                 |a, b| a + b,
             );
@@ -671,7 +675,7 @@ mod test {
             let sum2 = thread_pool.pipeline(
                 &input,
                 || 0u64,
-                |acc, _, x| *acc += *x * one,
+                |acc, _, x| acc + *x * one,
                 |acc| acc,
                 |a, b| a + b,
             );
@@ -679,7 +683,7 @@ mod test {
             let sum3 = thread_pool.pipeline(
                 &input,
                 || 0u64,
-                |acc, _, x| *acc += *x,
+                |acc, _, x| acc + *x,
                 |acc| acc * one,
                 |a, b| a + b,
             );
@@ -687,7 +691,7 @@ mod test {
             let sum4 = thread_pool.pipeline(
                 &input,
                 || 0u64,
-                |acc, _, x| *acc += *x,
+                |acc, _, x| acc + *x,
                 |acc| acc,
                 |a, b| a + b + zero,
             );
@@ -716,7 +720,7 @@ mod test {
             thread_pool.pipeline(
                 &input,
                 || 0u64,
-                |acc, _, x| *acc += x.0,
+                |acc, _, x| acc + x.0,
                 |acc| acc,
                 |a, b| a + b,
             )
@@ -739,7 +743,7 @@ mod test {
                 .pipeline(
                     &input,
                     || 0u64,
-                    |acc, _, x| *acc += *x,
+                    |acc, _, x| acc + *x,
                     |acc| (acc, token_ref),
                     |a, b| (a.0 + b.0, a.1),
                 )
@@ -762,7 +766,7 @@ mod test {
             thread_pool.pipeline(
                 &input,
                 || (0u64, token_ref),
-                |acc, _, x| acc.0 += *x,
+                |acc, _, x| (acc.0 + *x, acc.1),
                 |acc| acc.0,
                 |a, b| a + b,
             )
@@ -779,7 +783,7 @@ mod test {
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
             input.par_iter(&mut thread_pool).pipeline(
                 || 0u64,
-                |acc, _, x| *acc += *x,
+                |acc, _, x| acc + *x,
                 |acc| acc,
                 |a, b| a + b,
             )
@@ -797,7 +801,7 @@ mod test {
             input
                 .par_iter(&mut thread_pool)
                 .filter(|&&x| x % 2 == 0)
-                .pipeline(|| 0u64, |acc, _, x| *acc += *x, |acc| acc, |a, b| a + b)
+                .pipeline(|| 0u64, |acc, _, x| acc + *x, |acc| acc, |a, b| a + b)
         });
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN / 2 + 1) / 2);
     }
@@ -828,7 +832,7 @@ mod test {
 
             let sum1 = input.par_iter(&mut thread_pool).map(|&x| x * 42).pipeline(
                 || 0u64,
-                |acc, _, x| *acc += x,
+                |acc, _, x| acc + x,
                 |acc| acc,
                 |a, b| a + b,
             );
@@ -837,20 +841,35 @@ mod test {
                 .par_iter(&mut thread_pool)
                 .map(|&x| x * 6)
                 .map(|x| x * 7)
-                .pipeline(|| 0u64, |acc, _, x| *acc += x, |acc| acc, |a, b| a + b);
+                .pipeline(|| 0u64, |acc, _, x| acc + x, |acc| acc, |a, b| a + b);
 
             let sum3 = input
                 .par_iter(&mut thread_pool)
                 // Mapping to a non-Send non-Sync type is fine, as the item stays on the same thread
                 // and isn't shared with other threads.
                 .map(|&x| Rc::new(x))
-                .pipeline(|| 0u64, |acc, _, x| *acc += *x, |acc| acc, |a, b| a + b);
+                .pipeline(|| 0u64, |acc, _, x| acc + *x, |acc| acc, |a, b| a + b);
 
             (sum1, sum2, sum3)
         });
         assert_eq!(sum1, 42 * INPUT_LEN * (INPUT_LEN + 1) / 2);
         assert_eq!(sum2, 42 * INPUT_LEN * (INPUT_LEN + 1) / 2);
         assert_eq!(sum3, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_adaptor_reduce(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            range_strategy,
+        };
+        let sum = pool_builder.scope(|mut thread_pool| {
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            input
+                .par_iter(&mut thread_pool)
+                .map(|&x| x)
+                .reduce(|| 0, |x, y| x + y)
+        });
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
     const fn expected_sum_lengths(max: u64) -> u64 {
