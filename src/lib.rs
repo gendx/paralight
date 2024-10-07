@@ -99,6 +99,7 @@ mod test {
                 test_local_lifetime_output,
                 test_local_lifetime_accumulator,
                 test_adaptor_par_iter,
+                test_adaptor_filter,
                 test_adaptor_map,
             );
         };
@@ -789,6 +790,21 @@ mod test {
             )
         });
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_adaptor_filter(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            range_strategy,
+        };
+        let sum = pool_builder.scope(|mut thread_pool| {
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            input
+                .par_iter(&mut thread_pool)
+                .filter(|&&x| x % 2 == 0)
+                .pipeline(|| 0u64, |acc, _, x| *acc += *x, |acc| acc, |a, b| a + b)
+        });
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN / 2 + 1) / 2);
     }
 
     fn test_adaptor_map(range_strategy: RangeStrategy) {

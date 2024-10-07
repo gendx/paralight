@@ -125,6 +125,33 @@ impl<'pool, 'scope: 'pool, 'data, T: Sync> ParallelIterator
 
 /// Additional methods provided for types that implement [`ParallelIterator`].
 pub trait ParallelIteratorExt: ParallelIterator {
+    /// Returns a parallel iterator that yields only the items for which the
+    /// predicate `f` returns `true`.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
+    /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
+    /// # use std::num::NonZeroUsize;
+    /// # let pool = ThreadPoolBuilder {
+    /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// # };
+    /// # pool.scope(|mut thread_pool| {
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum_even = input
+    ///     .par_iter(&mut thread_pool)
+    ///     .filter(|&&x| x % 2 == 0)
+    ///     .pipeline(|| 0u64, |acc, _, x| *acc += *x, |acc| acc, |a, b| a + b);
+    /// assert_eq!(sum_even, 5 * 6);
+    /// # });
+    /// ```
+    fn filter<F>(self, f: F) -> Filter<Self, F>
+    where
+        F: Fn(&Self::Item) -> bool + Sync,
+    {
+        Filter { inner: self, f }
+    }
+
     /// Applies the function `f` to each item of this iterator, returning a
     /// parallel iterator with the mapped items.
     ///
@@ -165,6 +192,40 @@ pub trait ParallelIteratorExt: ParallelIterator {
 
 impl<T: ParallelIterator> ParallelIteratorExt for T {}
 
+/// This struct is created by the [`filter()`](ParallelIteratorExt::filter)
+/// method on [`ParallelIteratorExt`].
+#[must_use = "iterator adaptors are lazy"]
+pub struct Filter<Inner: ParallelIterator, F> {
+    inner: Inner,
+    f: F,
+}
+
+impl<Inner: ParallelIterator, F> ParallelIterator for Filter<Inner, F>
+where
+    F: Fn(&Inner::Item) -> bool + Sync,
+{
+    type Item = Inner::Item;
+
+    fn pipeline<Output: Send, Accum>(
+        self,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(&mut Accum, usize, Self::Item) + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+    ) -> Output {
+        self.inner.pipeline(
+            init,
+            |accum, index, item| {
+                if (self.f)(&item) {
+                    process_item(accum, index, item)
+                }
+            },
+            finalize,
+            reduce,
+        )
+    }
+}
+
 /// This struct is created by the [`map()`](ParallelIteratorExt::map) method on
 /// [`ParallelIteratorExt`].
 #[must_use = "iterator adaptors are lazy"]
@@ -188,7 +249,7 @@ where
     ) -> Output {
         self.inner.pipeline(
             init,
-            |accum, index, input| process_item(accum, index, (self.f)(input)),
+            |accum, index, item| process_item(accum, index, (self.f)(item)),
             finalize,
             reduce,
         )
