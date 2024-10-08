@@ -151,6 +151,56 @@ pub trait ParallelIteratorExt: ParallelIterator {
         Filter { inner: self, f }
     }
 
+    /// Applies the function `f` to each item of this iterator, returning a
+    /// parallel iterator that yields the mapped items `x` for which `f` returns
+    /// `Some(x)` and skips the items for which `f` returns `None`.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
+    /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
+    /// # use std::num::NonZeroUsize;
+    /// # let pool = ThreadPoolBuilder {
+    /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// # };
+    /// # pool.scope(|mut thread_pool| {
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum = input
+    ///     .par_iter(&mut thread_pool)
+    ///     .filter_map(|&x| if x != 2 { Some(x * 3) } else { None })
+    ///     .reduce(|| 0, |x, y| x + y);
+    /// assert_eq!(sum, 3 * (5 * 11 - 2));
+    /// # });
+    /// ```
+    ///
+    /// Mapping to a non-[`Send`] non-[`Sync`] type such as [`Rc`](std::rc::Rc)
+    /// is fine.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
+    /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
+    /// # use std::num::NonZeroUsize;
+    /// # use std::rc::Rc;
+    /// # let pool = ThreadPoolBuilder {
+    /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// # };
+    /// # pool.scope(|mut thread_pool| {
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum_even = input
+    ///     .par_iter(&mut thread_pool)
+    ///     .filter_map(|&x| if x % 2 == 0 { Some(Rc::new(x)) } else { None })
+    ///     .pipeline(|| 0, |acc, _, x| acc + *x, |acc| acc, |a, b| a + b);
+    /// assert_eq!(sum_even, 5 * 6);
+    /// # });
+    /// ```
+    fn filter_map<T, F>(self, f: F) -> FilterMap<Self, F>
+    where
+        F: Fn(Self::Item) -> Option<T> + Sync,
+    {
+        FilterMap { inner: self, f }
+    }
+
     /// Runs `f` on each item of this parallel iterator.
     ///
     /// ```
@@ -323,6 +373,40 @@ where
                 } else {
                     accum
                 }
+            },
+            finalize,
+            reduce,
+        )
+    }
+}
+
+/// This struct is created by the
+/// [`filter_map()`](ParallelIteratorExt::filter_map) method on
+/// [`ParallelIteratorExt`].
+#[must_use = "iterator adaptors are lazy"]
+pub struct FilterMap<Inner: ParallelIterator, F> {
+    inner: Inner,
+    f: F,
+}
+
+impl<Inner: ParallelIterator, T, F> ParallelIterator for FilterMap<Inner, F>
+where
+    F: Fn(Inner::Item) -> Option<T> + Sync,
+{
+    type Item = T;
+
+    fn pipeline<Output: Send, Accum>(
+        self,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(Accum, usize, Self::Item) -> Accum + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+    ) -> Output {
+        self.inner.pipeline(
+            init,
+            |accum, index, item| match (self.f)(item) {
+                Some(mapped_item) => process_item(accum, index, mapped_item),
+                None => accum,
             },
             finalize,
             reduce,
