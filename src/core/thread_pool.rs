@@ -73,7 +73,12 @@ impl ThreadPoolBuilder {
 /// A thread pool tied to a scope, that can process inputs into outputs of the
 /// given types.
 ///
-/// See [`std::thread::scope()`] for what scoped threads mean and what the
+/// This type doesn't expose any public methods. You can interact with it via
+/// the [`ThreadPoolBuilder::scope()`] function to create a thread pool, and the
+/// [`par_iter()`](crate::iter::IntoParallelIterator::par_iter) method to attach
+/// a thread pool to a parallel iterator.
+///
+/// See also [`std::thread::scope()`] for what scoped threads mean and what the
 /// `'scope` lifetime refers to.
 pub struct ThreadPool<'scope> {
     inner: ThreadPoolEnum<'scope>,
@@ -93,36 +98,7 @@ impl<'scope> ThreadPool<'scope> {
     }
 
     /// Processes an input slice in parallel and returns the aggregated output.
-    ///
-    /// # Parameters
-    ///
-    /// - `input` slice to process in parallel,
-    /// - `init` function to create a new (per-thread) accumulator,
-    /// - `process_item` function to accumulate an item from the slice into the
-    ///   accumulator,
-    /// - `finalize` function to transform an accumulator into an output,
-    /// - `reduce` function to reduce a pair of outputs into one output.
-    ///
-    /// ```rust
-    /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
-    /// # use std::num::NonZeroUsize;
-    /// # let pool_builder = ThreadPoolBuilder {
-    /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
-    /// #     range_strategy: RangeStrategy::WorkStealing,
-    /// # };
-    /// # pool_builder.scope(|mut thread_pool| {
-    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    /// let sum = thread_pool.pipeline(
-    ///     &input,
-    ///     || 0u64,
-    ///     |acc, _, x| acc + *x,
-    ///     |acc| acc,
-    ///     |a, b| a + b,
-    /// );
-    /// assert_eq!(sum, 5 * 11);
-    /// # });
-    /// ```
-    pub fn pipeline<'data, Input: Sync, Output: Send, Accum>(
+    pub(crate) fn pipeline<'data, Input: Sync, Output: Send, Accum>(
         &mut self,
         input: &'data [Input],
         init: impl Fn() -> Accum + Sync,
@@ -164,7 +140,7 @@ impl<'scope> ThreadPoolEnum<'scope> {
     }
 
     /// Processes an input slice in parallel and returns the aggregated output.
-    pub fn pipeline<'data, Input: Sync, Output: Send, Accum>(
+    fn pipeline<'data, Input: Sync, Output: Send, Accum>(
         &mut self,
         input: &'data [Input],
         init: impl Fn() -> Accum + Sync,
@@ -271,7 +247,7 @@ impl<'scope, F: RangeFactory> ThreadPoolImpl<'scope, F> {
     }
 
     /// Processes an input slice in parallel and returns the aggregated output.
-    pub fn pipeline<'data, Input: Sync, Output: Send, Accum>(
+    fn pipeline<'data, Input: Sync, Output: Send, Accum>(
         &mut self,
         input: &'data [Input],
         init: impl Fn() -> Accum + Sync,
