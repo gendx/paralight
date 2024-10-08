@@ -222,7 +222,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let sum = input
     ///     .par_iter(&mut thread_pool)
     ///     .map(|&x| Rc::new(x))
-    ///     .pipeline(|| 0u64, |acc, _, x| acc + *x, |acc| acc, |a, b| a + b);
+    ///     .pipeline(|| 0, |acc, _, x| acc + *x, |acc| acc, |a, b| a + b);
     /// assert_eq!(sum, 5 * 11);
     /// # });
     /// ```
