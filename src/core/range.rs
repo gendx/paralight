@@ -139,6 +139,9 @@ impl RangeFactory for WorkStealingRangeFactory {
     type Orchestrator = WorkStealingRangeOrchestrator;
 
     fn new(num_threads: usize) -> Self {
+        if u32::try_from(num_threads).is_err() {
+            panic!("Only up to {} threads (2^32 - 1) are supported", u32::MAX);
+        }
         Self {
             ranges: Arc::new((0..num_threads).map(|_| AtomicRange::default()).collect()),
             #[cfg(feature = "log_parallelism")]
@@ -176,8 +179,19 @@ pub struct WorkStealingRangeOrchestrator {
 impl RangeOrchestrator for WorkStealingRangeOrchestrator {
     fn reset_ranges(&self, num_elements: usize) {
         log_debug!("Resetting ranges.");
-        let num_threads = self.ranges.len();
+        let num_threads = self.ranges.len() as u64;
+        let num_elements = u32::try_from(num_elements).unwrap_or_else(|_| {
+            panic!(
+                "Only ranges of up to {} elements (2^32 - 1) are supported",
+                u32::MAX
+            );
+        }) as u64;
         for (i, range) in self.ranges.iter().enumerate() {
+            let i = i as u64;
+            // - This multiplication cannot overflow because `i+1` and `num_elements` both
+            //   fit in u32.
+            // - The result fits in u32 because `i < num_threads` and `num_elements` fits in
+            //   u32.
             let start = (i * num_elements) / num_threads;
             let end = ((i + 1) * num_elements) / num_threads;
             range.store(PackedRange::new(start as u32, end as u32));
@@ -301,7 +315,6 @@ impl PackedRange {
     #[inline(always)]
     fn increment_start(self) -> (u32, Self) {
         assert!(self.start() < self.end());
-        // TODO: check for overflow.
         (self.start(), PackedRange::new(self.start() + 1, self.end()))
     }
 
@@ -311,8 +324,8 @@ impl PackedRange {
     fn split(self) -> (Self, Self) {
         let start = self.start();
         let end = self.end();
-        // TODO: check for overflow.
-        let middle = (start + end) / 2;
+        // The result fits in u32 because the inputs fit in u32.
+        let middle = ((start as u64 + end as u64) / 2) as u32;
         (
             PackedRange::new(start, middle),
             PackedRange::new(middle, end),
@@ -568,7 +581,7 @@ mod test {
     }
 
     #[test]
-    fn test_work_stealing_range() {
+    fn test_work_stealing_range_multi_threaded() {
         const NUM_THREADS: usize = 4;
         #[cfg(not(miri))]
         const NUM_ELEMENTS: usize = 10000;
@@ -606,6 +619,44 @@ mod test {
     }
 
     #[test]
+    #[should_panic(expected = "Only up to 4294967295 threads (2^32 - 1) are supported")]
+    fn test_work_stealing_range_too_many_threads() {
+        WorkStealingRangeFactory::new(10_000_000_000);
+    }
+
+    #[test]
+    #[should_panic(expected = "Only ranges of up to 4294967295 elements (2^32 - 1) are supported")]
+    fn test_work_stealing_range_too_many_items() {
+        let factory = WorkStealingRangeFactory::new(4);
+        let orchestrator = factory.orchestrator();
+        orchestrator.reset_ranges(10_000_000_000);
+    }
+
+    #[test]
+    fn test_work_stealing_range_many_items() {
+        let factory = WorkStealingRangeFactory::new(4);
+        let orchestrator = factory.orchestrator();
+        orchestrator.reset_ranges(4_000_000_000);
+
+        assert_eq!(
+            orchestrator
+                .ranges
+                .iter()
+                .map(|x| {
+                    let range = x.load();
+                    range.start()..range.end()
+                })
+                .collect::<Vec<_>>(),
+            vec![
+                0..1_000_000_000,
+                1_000_000_000..2_000_000_000,
+                2_000_000_000..3_000_000_000,
+                3_000_000_000..4_000_000_000
+            ]
+        );
+    }
+
+    #[test]
     fn test_default_packed_range_is_empty() {
         let range = PackedRange::default();
         assert!(range.is_empty());
@@ -637,6 +688,13 @@ mod test {
     }
 
     #[test]
+    #[should_panic(expected = "assertion failed: self.start() < self.end()")]
+    fn test_packed_range_increment_start_overflow() {
+        let range = PackedRange::new(u32::MAX, u32::MAX);
+        range.increment_start();
+    }
+
+    #[test]
     fn test_packed_range_split() {
         let (left, right) = PackedRange::new(0, 0).split();
         assert!(left.is_empty());
@@ -649,6 +707,19 @@ mod test {
         assert_eq!((left.start(), left.end()), (0, 0));
         assert!(!right.is_empty());
         assert_eq!((right.start(), right.end()), (0, 1));
+    }
+
+    #[test]
+    fn test_packed_range_split_overflow() {
+        let range = PackedRange::new(u32::MAX, u32::MAX);
+        let (left, right) = range.split();
+        assert_eq!((left.start(), left.end()), (u32::MAX, u32::MAX));
+        assert_eq!((right.start(), right.end()), (u32::MAX, u32::MAX));
+
+        let range = PackedRange::new(u32::MAX - 2, u32::MAX);
+        let (left, right) = range.split();
+        assert_eq!((left.start(), left.end()), (u32::MAX - 2, u32::MAX - 1));
+        assert_eq!((right.start(), right.end()), (u32::MAX - 1, u32::MAX));
     }
 
     #[test]

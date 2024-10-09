@@ -60,6 +60,33 @@ the standard library's `Iterator` trait that processes items in order).
 Fortunately, a lot of common operations are commutative and associative, but be
 mindful of this.
 
+## Limitations
+
+With the [`WorkStealing`](RangeStrategy::WorkStealing) strategy, inputs with
+more than [`u32::MAX`](u32::MAX) elements are currently not supported.
+
+```rust,should_panic
+use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
+use paralight::{RangeStrategy, ThreadPoolBuilder};
+use std::num::NonZeroUsize;
+
+let pool_builder = ThreadPoolBuilder {
+    num_threads: NonZeroUsize::try_from(4).unwrap(),
+    range_strategy: RangeStrategy::WorkStealing,
+};
+
+let sum = pool_builder.scope(
+    |mut thread_pool| {
+        let input = vec![0u8; 5_000_000_000];
+        input
+            .par_iter(&mut thread_pool)
+            .map(|&x| x)
+            .reduce(|| 0, |x, y| x + y)
+    },
+);
+assert_eq!(sum, 0);
+```
+
 ## Debugging
 
 Two optional features are available if you want to debug performance.
