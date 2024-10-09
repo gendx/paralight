@@ -20,7 +20,7 @@ mod core;
 pub mod iter;
 mod macros;
 
-pub use core::{RangeStrategy, ThreadPool, ThreadPoolBuilder};
+pub use core::{CpuPinningPolicy, RangeStrategy, ThreadPool, ThreadPoolBuilder};
 
 #[cfg(test)]
 mod test {
@@ -127,6 +127,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         let sum = pool_builder.scope(|mut thread_pool| {
             thread_pool.pipeline(&input, || 0, |acc, _, x| acc + *x, |acc| acc, |a, b| a + b)
@@ -139,6 +140,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         let (sum1, sum2) = pool_builder.scope(|mut thread_pool| {
             // The same input can be processed multiple times on the thread pool.
@@ -156,6 +158,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         let sum = pool_builder.scope(|mut thread_pool| {
             // The input can be local.
@@ -181,6 +184,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         let sum = pool_builder.scope(|mut thread_pool| {
             // The input can be local.
@@ -206,6 +210,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         let sum = pool_builder.scope(|mut thread_pool| {
             // The input can be local.
@@ -231,6 +236,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         // The scope should accept FnOnce() parameter. We test it with a closure that
         // captures and consumes a non-Copy type.
@@ -242,6 +248,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         let sum = pool_builder.scope(|mut thread_pool| {
             // The input can be local.
@@ -255,6 +262,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         let sum = pool_builder.scope(|mut thread_pool| {
             // The input can be empty.
@@ -273,6 +281,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         let (sum1, sum2) = pool_builder.scope(|mut thread_pool| {
             // Several inputs can be used successively.
@@ -296,6 +305,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         let (sum, sum_squares) = pool_builder.scope(|mut thread_pool| {
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
@@ -326,6 +336,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         let (sum1, sum2) = pool_builder.scope(|mut thread_pool| {
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
@@ -356,6 +367,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         let (sum, sum_lengths) = pool_builder.scope(|mut thread_pool| {
             // Several input types can be used successively.
@@ -389,6 +401,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         let (sum, sum_pairs) = pool_builder.scope(|mut thread_pool| {
             // Pipelines with different types can be used successively.
@@ -423,6 +436,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         // Pipelines can capture from the environment outside of the scoped thread pool.
         let zero = 0;
@@ -458,6 +472,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         let (sum1, sum2, sum3, sum4) = pool_builder.scope(|mut thread_pool| {
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
@@ -511,6 +526,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         let sum = pool_builder.scope(|mut thread_pool| {
             // A non-Send input can be used in the pipeline.
@@ -530,6 +546,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         let sum = pool_builder.scope(|mut thread_pool| {
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
@@ -552,6 +569,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         let sum = pool_builder.scope(|mut thread_pool| {
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
@@ -571,6 +589,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         let sum = pool_builder.scope(move |mut thread_pool| {
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
@@ -593,6 +612,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         let sum = pool_builder.scope(move |mut thread_pool| {
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
@@ -615,6 +635,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         let (sum1, sum2, sum3, sum4) = pool_builder.scope(|mut thread_pool| {
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
@@ -667,6 +688,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         let sum = pool_builder.scope(|mut thread_pool| {
             // The pipeline input can borrow local values (and therefore have a local
@@ -685,6 +707,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         let sum = pool_builder.scope(|mut thread_pool| {
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
@@ -709,6 +732,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         let sum = pool_builder.scope(|mut thread_pool| {
             // The pipeline accumulator can borrow local values (and therefore have a local
@@ -731,6 +755,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         let sum = pool_builder.scope(|mut thread_pool| {
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
@@ -748,6 +773,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         let sum = pool_builder.scope(|mut thread_pool| {
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
@@ -763,6 +789,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         let sum = pool_builder.scope(|mut thread_pool| {
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
@@ -778,6 +805,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         let set = pool_builder.scope(|mut thread_pool| {
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
@@ -794,6 +822,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         let (sum1, sum2, sum3) = pool_builder.scope(|mut thread_pool| {
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
@@ -829,6 +858,7 @@ mod test {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(4).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         let sum = pool_builder.scope(|mut thread_pool| {
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();

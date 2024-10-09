@@ -33,12 +33,36 @@ use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 use std::thread::{Scope, ScopedJoinHandle};
 
+/// Strategy to distribute ranges of work items among threads.
+#[derive(Clone, Copy)]
+pub enum RangeStrategy {
+    /// Each thread processes a fixed range of items.
+    Fixed,
+    /// Threads can steal work from each other.
+    WorkStealing,
+}
+
+/// Policy to pin worker threads to CPUs.
+#[derive(Clone, Copy)]
+pub enum CpuPinningPolicy {
+    /// Don't pin worker threads to CPUs.
+    No,
+    /// Pin each worker thread to a CPU, if CPU pinning is supported and
+    /// implemented on this platform.
+    IfSupported,
+    /// Pin each worker thread to a CPU. If CPU pinning isn't supported on this
+    /// platform (or not implemented), building a thread pool will panic.
+    Always,
+}
+
 /// A builder for [`ThreadPool`].
 pub struct ThreadPoolBuilder {
     /// Number of worker threads to spawn in the pool.
     pub num_threads: NonZeroUsize,
     /// Strategy to distribute ranges of work items among threads.
     pub range_strategy: RangeStrategy,
+    /// Policy to pin worker threads to CPUs.
+    pub cpu_pinning: CpuPinningPolicy,
 }
 
 impl ThreadPoolBuilder {
@@ -46,11 +70,12 @@ impl ThreadPoolBuilder {
     ///
     /// ```rust
     /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
-    /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadPoolBuilder};
     /// # use std::num::NonZeroUsize;
     /// let pool_builder = ThreadPoolBuilder {
     ///     num_threads: NonZeroUsize::try_from(4).unwrap(),
     ///     range_strategy: RangeStrategy::WorkStealing,
+    ///     cpu_pinning: CpuPinningPolicy::IfSupported,
     /// };
     ///
     /// let sum = pool_builder.scope(|mut thread_pool| {
@@ -64,7 +89,12 @@ impl ThreadPoolBuilder {
     /// ```
     pub fn scope<R>(&self, f: impl FnOnce(ThreadPool) -> R) -> R {
         std::thread::scope(|scope| {
-            let thread_pool = ThreadPool::new(scope, self.num_threads, self.range_strategy);
+            let thread_pool = ThreadPool::new(
+                scope,
+                self.num_threads,
+                self.range_strategy,
+                self.cpu_pinning,
+            );
             f(thread_pool)
         })
     }
@@ -91,9 +121,10 @@ impl<'scope> ThreadPool<'scope> {
         thread_scope: &'scope Scope<'scope, '_>,
         num_threads: NonZeroUsize,
         range_strategy: RangeStrategy,
+        cpu_pinning: CpuPinningPolicy,
     ) -> Self {
         Self {
-            inner: ThreadPoolEnum::new(thread_scope, num_threads, range_strategy),
+            inner: ThreadPoolEnum::new(thread_scope, num_threads, range_strategy, cpu_pinning),
         }
     }
 
@@ -123,6 +154,7 @@ impl<'scope> ThreadPoolEnum<'scope> {
         thread_scope: &'scope Scope<'scope, '_>,
         num_threads: NonZeroUsize,
         range_strategy: RangeStrategy,
+        cpu_pinning: CpuPinningPolicy,
     ) -> Self {
         let num_threads: usize = num_threads.into();
         match range_strategy {
@@ -130,11 +162,13 @@ impl<'scope> ThreadPoolEnum<'scope> {
                 thread_scope,
                 num_threads,
                 FixedRangeFactory::new(num_threads),
+                cpu_pinning,
             )),
             RangeStrategy::WorkStealing => ThreadPoolEnum::WorkStealing(ThreadPoolImpl::new(
                 thread_scope,
                 num_threads,
                 WorkStealingRangeFactory::new(num_threads),
+                cpu_pinning,
             )),
         }
     }
@@ -174,19 +208,15 @@ struct WorkerThreadHandle<'scope> {
     handle: ScopedJoinHandle<'scope, ()>,
 }
 
-/// Strategy to distribute ranges of work items among threads.
-#[derive(Clone, Copy)]
-pub enum RangeStrategy {
-    /// Each thread processes a fixed range of items.
-    Fixed,
-    /// Threads can steal work from each other.
-    WorkStealing,
-}
-
 impl<'scope, F: RangeFactory> ThreadPoolImpl<'scope, F> {
     /// Creates a new pool tied to the given scope, spawning the given number of
     /// worker threads.
-    fn new(thread_scope: &'scope Scope<'scope, '_>, num_threads: usize, range_factory: F) -> Self
+    fn new(
+        thread_scope: &'scope Scope<'scope, '_>,
+        num_threads: usize,
+        range_factory: F,
+        cpu_pinning: CpuPinningPolicy,
+    ) -> Self
     where
         F::Range: Send + 'scope,
     {
@@ -201,7 +231,16 @@ impl<'scope, F: RangeFactory> ThreadPoolImpl<'scope, F> {
                 target_os = "linux"
             ))
         ))]
-        log_warn!("Pinning threads to CPUs is not implemented on this platform.");
+        match cpu_pinning {
+            CpuPinningPolicy::No => (),
+            CpuPinningPolicy::IfSupported => {
+                log_warn!("Pinning threads to CPUs is not implemented on this platform.")
+            }
+            CpuPinningPolicy::Always => {
+                panic!("Pinning threads to CPUs is not implemented on this platform.")
+            }
+        }
+
         let threads = borrowers
             .into_iter()
             .enumerate()
@@ -222,14 +261,30 @@ impl<'scope, F: RangeFactory> ThreadPoolImpl<'scope, F> {
                                 target_os = "linux"
                             )
                         ))]
-                        {
-                            let mut cpu_set = CpuSet::new();
-                            if let Err(_e) = cpu_set.set(id) {
-                                log_warn!("Failed to set CPU affinity for thread #{id}: {_e}");
-                            } else if let Err(_e) = sched_setaffinity(Pid::from_raw(0), &cpu_set) {
-                                log_warn!("Failed to set CPU affinity for thread #{id}: {_e}");
-                            } else {
-                                log_debug!("Pinned thread #{id} to CPU #{id}");
+                        match cpu_pinning {
+                            CpuPinningPolicy::No => (),
+                            CpuPinningPolicy::IfSupported => {
+                                let mut cpu_set = CpuSet::new();
+                                if let Err(_e) = cpu_set.set(id) {
+                                    log_warn!("Failed to set CPU affinity for thread #{id}: {_e}");
+                                } else if let Err(_e) =
+                                    sched_setaffinity(Pid::from_raw(0), &cpu_set)
+                                {
+                                    log_warn!("Failed to set CPU affinity for thread #{id}: {_e}");
+                                } else {
+                                    log_debug!("Pinned thread #{id} to CPU #{id}");
+                                }
+                            }
+                            CpuPinningPolicy::Always => {
+                                let mut cpu_set = CpuSet::new();
+                                if let Err(e) = cpu_set.set(id) {
+                                    panic!("Failed to set CPU affinity for thread #{id}: {e}");
+                                } else if let Err(e) = sched_setaffinity(Pid::from_raw(0), &cpu_set)
+                                {
+                                    panic!("Failed to set CPU affinity for thread #{id}: {e}");
+                                } else {
+                                    log_debug!("Pinned thread #{id} to CPU #{id}");
+                                }
                             }
                         }
                         context.run()

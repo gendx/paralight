@@ -19,11 +19,12 @@ pub trait IntoParallelIterator {
     ///
     /// ```rust
     /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
-    /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadPoolBuilder};
     /// # use std::num::NonZeroUsize;
     /// # let pool_builder = ThreadPoolBuilder {
     /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
     /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
     /// # };
     /// # pool_builder.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -59,11 +60,12 @@ pub trait ParallelIterator: Sized {
     ///
     /// ```rust
     /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
-    /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadPoolBuilder};
     /// # use std::num::NonZeroUsize;
     /// # let pool_builder = ThreadPoolBuilder {
     /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
     /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
     /// # };
     /// # pool_builder.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -128,11 +130,12 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
-    /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadPoolBuilder};
     /// # use std::num::NonZeroUsize;
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
     /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
     /// # };
     /// # pool.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -157,11 +160,12 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
-    /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadPoolBuilder};
     /// # use std::num::NonZeroUsize;
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
     /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
     /// # };
     /// # pool.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -178,12 +182,13 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
-    /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadPoolBuilder};
     /// # use std::num::NonZeroUsize;
     /// # use std::rc::Rc;
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
     /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
     /// # };
     /// # pool.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -205,13 +210,14 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
-    /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadPoolBuilder};
     /// # use std::collections::HashSet;
     /// # use std::num::NonZeroUsize;
     /// # use std::sync::Mutex;
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
     /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
     /// # };
     /// # pool.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -239,11 +245,12 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
-    /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadPoolBuilder};
     /// # use std::num::NonZeroUsize;
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
     /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
     /// # };
     /// # pool.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -260,12 +267,13 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
-    /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadPoolBuilder};
     /// # use std::num::NonZeroUsize;
     /// # use std::rc::Rc;
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
     /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
     /// # };
     /// # pool.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -288,11 +296,12 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
-    /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadPoolBuilder};
     /// # use std::num::NonZeroUsize;
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
     /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
     /// # };
     /// # pool.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -318,11 +327,12 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
-    /// # use paralight::{RangeStrategy, ThreadPoolBuilder};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadPoolBuilder};
     /// # use std::num::NonZeroUsize;
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
     /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
     /// # };
     /// # pool.scope(|mut thread_pool| {
     /// let sum = []

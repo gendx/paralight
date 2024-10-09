@@ -60,7 +60,7 @@ mod paralight {
     use divan::counter::BytesCount;
     use divan::{black_box, Bencher};
     use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
-    use paralight::{RangeStrategy, ThreadPoolBuilder};
+    use paralight::{CpuPinningPolicy, RangeStrategy, ThreadPoolBuilder};
     use std::num::NonZeroUsize;
 
     #[divan::bench(consts = NUM_THREADS, args = LENGTHS)]
@@ -83,6 +83,7 @@ mod paralight {
         let pool_builder = ThreadPoolBuilder {
             num_threads: NonZeroUsize::try_from(NUM_THREADS).unwrap(),
             range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
         };
         pool_builder.scope(move |mut thread_pool| {
             bencher

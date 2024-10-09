@@ -16,13 +16,14 @@ the outputs from all threads into a single result.
 
 ```rust
 use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
-use paralight::{RangeStrategy, ThreadPoolBuilder};
+use paralight::{CpuPinningPolicy, RangeStrategy, ThreadPoolBuilder};
 use std::num::NonZeroUsize;
 
 // Define thread pool parameters.
 let pool_builder = ThreadPoolBuilder {
     num_threads: NonZeroUsize::try_from(4).unwrap(),
     range_strategy: RangeStrategy::WorkStealing,
+    cpu_pinning: CpuPinningPolicy::IfSupported,
 };
 
 // Create a scoped thread pool.
@@ -43,22 +44,74 @@ Note: In principle, Paralight could be extended to support other inputs than
 slices as long as they are *indexed*, but for now only slices are supported.
 Come back to check when future versions are published!
 
-## Work-stealing strategy
+## Thread pool configuration
 
-Paralight offers two strategies to distribute computation among threads:
+The [`ThreadPoolBuilder`](ThreadPoolBuilder) provides an explicit way to
+configure your thread pool, giving you fine-grained control over performance for
+your workload. There is no default, which is deliberate because the suitable
+parameters depend on your workload
 
-- [`RangeStrategy::Fixed`](RangeStrategy::Fixed) splits the input evenly and
-  hands out a fixed sequential range of items to each thread,
-- [`RangeStrategy::WorkStealing`](RangeStrategy::WorkStealing) starts with the
-  fixed distribution, but lets each thread steal items from others once it is
-  done computing its items.
+### Work-stealing strategy
+
+Paralight offers two strategies in the [`RangeStrategy`](RangeStrategy) enum to
+distribute computation among threads:
+
+- [`Fixed`](RangeStrategy::Fixed) splits the input evenly and hands out a fixed
+  sequential range of items to each worker thread,
+- [`WorkStealing`](RangeStrategy::WorkStealing) starts with the fixed
+  distribution, but lets each worker thread steal items from others once it is
+  done processing its items.
 
 Note: In work-stealing mode, each thread processes an arbitrary subset of items
 in arbitrary order, meaning that the reduction operation must be both
-commutative and associative to yield a deterministic result (in contrast with
-the standard library's `Iterator` trait that processes items in order).
+[commutative](https://en.wikipedia.org/wiki/Commutative_property) and
+[associative](https://en.wikipedia.org/wiki/Associative_property) to yield a
+deterministic result (in contrast to the standard library's
+[`Iterator`](std::iter::Iterator) trait that processes items in order).
 Fortunately, a lot of common operations are commutative and associative, but be
 mindful of this.
+
+Recommendation: If your pipeline is performing roughly the same amont of work
+for each item, you should probably use the [`Fixed`](RangeStrategy::Fixed)
+strategy, to avoid paying the synchronization cost of work-stealing. This is
+especially true if the amount of work per item is small (e.g. some simple
+arithmetic operations). If the amoung of work per item is highly variable and/or
+large, you should probably use the [`WorkStealing`](RangeStrategy::WorkStealing)
+strategy (e.g. parsing strings, processing files).
+
+### CPU pinning
+
+Paralight allows pinning each worker thread to one CPU, on platforms that
+support it. For now, this is implemented for platforms whose
+[`target_os`](https://doc.rust-lang.org/reference/conditional-compilation.html#target_os)
+is among `android`, `dragonfly`, `freebsd` and `linux` (platforms that support
+`libc::sched_setaffinity()` via the
+[`nix` crate](https://crates.io/crates/nix)).
+
+Paralight offers three policies in the [`CpuPinningPolicy`](CpuPinningPolicy)
+enum:
+
+- [`No`](CpuPinningPolicy::No) doesn't pin worker threads to CPUs,
+- [`IfSupported`](CpuPinningPolicy::IfSupported) attempts to pin each worker
+  thread to a distinct CPU on supported platforms, but proceeds without pinning
+  if running on an unsupported platform or if the pinning function fails,
+- [`Always`](CpuPinningPolicy::Always) pins each worker thread to a distinct
+  CPU, panicking if the platform isn't supported or if the pinning function
+  returns an error.
+
+Whether CPU pinning is useful or detrimental depends on your workload. If you're
+processing the same data over and over again (e.g. calling `par_iter()` multiple
+times on the same data), CPU pinning can help ensure that each subset of the
+data is always processed on the same CPU core and stays fresh in the lower-level
+per-core caches, speeding up memory accesses. This however depends on the amount
+of data: if it's too large, it may not fit in per-core caches anyway.
+
+If your program is not running alone on your machine but is competing with other
+programs, CPU pinning may be detrimental, as a worker thread will be blocked
+whenever its required core is used by another program, even if another core is
+free and other worker threads are done (especially with the
+[`Fixed`](RangeStrategy::Fixed) strategy). This of course depends on how the
+scheduler works on your OS.
 
 ## Limitations
 
@@ -67,12 +120,13 @@ more than [`u32::MAX`](u32::MAX) elements are currently not supported.
 
 ```rust,should_panic
 use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
-use paralight::{RangeStrategy, ThreadPoolBuilder};
+use paralight::{CpuPinningPolicy, RangeStrategy, ThreadPoolBuilder};
 use std::num::NonZeroUsize;
 
 let pool_builder = ThreadPoolBuilder {
     num_threads: NonZeroUsize::try_from(4).unwrap(),
     range_strategy: RangeStrategy::WorkStealing,
+    cpu_pinning: CpuPinningPolicy::IfSupported,
 };
 
 let sum = pool_builder.scope(
