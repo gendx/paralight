@@ -60,8 +60,7 @@ mod paralight {
     use divan::counter::BytesCount;
     use divan::{black_box, Bencher};
     use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
-    use paralight::{CpuPinningPolicy, RangeStrategy, ThreadPoolBuilder};
-    use std::num::NonZeroUsize;
+    use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
 
     #[divan::bench(consts = NUM_THREADS, args = LENGTHS)]
     fn sum_fixed<const NUM_THREADS: usize>(bencher: Bencher, len: usize) {
@@ -81,7 +80,7 @@ mod paralight {
         let input = (0..=len as u64).map(|x| x.into()).collect::<Vec<u64>>();
         let input_slice = input.as_slice();
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(NUM_THREADS).unwrap(),
+            num_threads: ThreadCount::try_from(NUM_THREADS).unwrap(),
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };

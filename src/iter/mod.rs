@@ -19,10 +19,9 @@ pub trait IntoParallelIterator {
     ///
     /// ```rust
     /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadPoolBuilder};
-    /// # use std::num::NonZeroUsize;
+    /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool_builder = ThreadPoolBuilder {
-    /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
+    /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
     /// # };
@@ -60,10 +59,9 @@ pub trait ParallelIterator: Sized {
     ///
     /// ```rust
     /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadPoolBuilder};
-    /// # use std::num::NonZeroUsize;
+    /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool_builder = ThreadPoolBuilder {
-    /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
+    /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
     /// # };
@@ -130,10 +128,9 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadPoolBuilder};
-    /// # use std::num::NonZeroUsize;
+    /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
-    /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
+    /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
     /// # };
@@ -160,10 +157,9 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadPoolBuilder};
-    /// # use std::num::NonZeroUsize;
+    /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
-    /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
+    /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
     /// # };
@@ -182,11 +178,10 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadPoolBuilder};
-    /// # use std::num::NonZeroUsize;
+    /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # use std::rc::Rc;
     /// # let pool = ThreadPoolBuilder {
-    /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
+    /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
     /// # };
@@ -210,12 +205,11 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadPoolBuilder};
+    /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # use std::collections::HashSet;
-    /// # use std::num::NonZeroUsize;
     /// # use std::sync::Mutex;
     /// # let pool = ThreadPoolBuilder {
-    /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
+    /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
     /// # };
@@ -245,10 +239,9 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadPoolBuilder};
-    /// # use std::num::NonZeroUsize;
+    /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
-    /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
+    /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
     /// # };
@@ -267,11 +260,10 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadPoolBuilder};
-    /// # use std::num::NonZeroUsize;
+    /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # use std::rc::Rc;
     /// # let pool = ThreadPoolBuilder {
-    /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
+    /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
     /// # };
@@ -296,10 +288,9 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadPoolBuilder};
-    /// # use std::num::NonZeroUsize;
+    /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
-    /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
+    /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
     /// # };
@@ -327,10 +318,9 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadPoolBuilder};
-    /// # use std::num::NonZeroUsize;
+    /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
-    /// #     num_threads: NonZeroUsize::try_from(4).unwrap(),
+    /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
     /// # };

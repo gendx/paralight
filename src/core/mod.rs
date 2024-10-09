@@ -13,4 +13,6 @@ mod sync;
 mod thread_pool;
 mod util;
 
-pub use thread_pool::{CpuPinningPolicy, RangeStrategy, ThreadPool, ThreadPoolBuilder};
+pub use thread_pool::{
+    CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPool, ThreadPoolBuilder,
+};

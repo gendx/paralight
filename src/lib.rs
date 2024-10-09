@@ -20,7 +20,7 @@ mod core;
 pub mod iter;
 mod macros;
 
-pub use core::{CpuPinningPolicy, RangeStrategy, ThreadPool, ThreadPoolBuilder};
+pub use core::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPool, ThreadPoolBuilder};
 
 #[cfg(test)]
 mod test {
@@ -28,7 +28,6 @@ mod test {
     use crate::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
     use std::cell::Cell;
     use std::collections::HashSet;
-    use std::num::NonZeroUsize;
     use std::rc::Rc;
     use std::sync::Mutex;
 
@@ -125,7 +124,7 @@ mod test {
     fn test_sum_integers(range_strategy: RangeStrategy) {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };
@@ -138,7 +137,7 @@ mod test {
     fn test_sum_twice(range_strategy: RangeStrategy) {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };
@@ -156,7 +155,7 @@ mod test {
 
     fn test_one_panic(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };
@@ -182,7 +181,7 @@ mod test {
 
     fn test_some_panics(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };
@@ -208,7 +207,7 @@ mod test {
 
     fn test_many_panics(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };
@@ -234,7 +233,7 @@ mod test {
 
     fn test_fn_once(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };
@@ -246,7 +245,7 @@ mod test {
 
     fn test_local_sum(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };
@@ -260,7 +259,7 @@ mod test {
 
     fn test_empty_input(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };
@@ -279,7 +278,7 @@ mod test {
 
     fn test_several_inputs(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };
@@ -303,7 +302,7 @@ mod test {
 
     fn test_several_functions(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };
@@ -334,7 +333,7 @@ mod test {
 
     fn test_several_accumulators(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };
@@ -365,7 +364,7 @@ mod test {
 
     fn test_several_input_types(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };
@@ -399,7 +398,7 @@ mod test {
 
     fn test_several_pipelines(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };
@@ -434,7 +433,7 @@ mod test {
 
     fn test_capture_environment(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };
@@ -470,7 +469,7 @@ mod test {
     #[cfg(feature = "nightly_tests")]
     fn test_non_send_functions(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };
@@ -524,7 +523,7 @@ mod test {
     #[cfg(feature = "nightly_tests")]
     fn test_non_send_input(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };
@@ -544,7 +543,7 @@ mod test {
 
     fn test_non_sync_output(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };
@@ -567,7 +566,7 @@ mod test {
     #[cfg(feature = "nightly_tests")]
     fn test_non_send_accumulator(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };
@@ -587,7 +586,7 @@ mod test {
 
     fn test_non_sync_accumulator(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };
@@ -610,7 +609,7 @@ mod test {
 
     fn test_non_send_sync_accumulator(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };
@@ -633,7 +632,7 @@ mod test {
 
     fn test_local_lifetime_functions(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };
@@ -686,7 +685,7 @@ mod test {
 
     fn test_local_lifetime_input(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };
@@ -705,7 +704,7 @@ mod test {
 
     fn test_local_lifetime_output(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };
@@ -730,7 +729,7 @@ mod test {
 
     fn test_local_lifetime_accumulator(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };
@@ -753,7 +752,7 @@ mod test {
 
     fn test_adaptor_par_iter(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };
@@ -771,7 +770,7 @@ mod test {
 
     fn test_adaptor_filter(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };
@@ -787,7 +786,7 @@ mod test {
 
     fn test_adaptor_filter_map(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };
@@ -803,7 +802,7 @@ mod test {
 
     fn test_adaptor_for_each(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };
@@ -820,7 +819,7 @@ mod test {
 
     fn test_adaptor_map(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };
@@ -856,7 +855,7 @@ mod test {
 
     fn test_adaptor_reduce(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(4).unwrap(),
+            num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };

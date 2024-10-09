@@ -71,8 +71,7 @@ mod rayon {
 mod paralight {
     use criterion::{black_box, Bencher};
     use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
-    use paralight::{CpuPinningPolicy, RangeStrategy, ThreadPoolBuilder};
-    use std::num::NonZeroUsize;
+    use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
 
     pub fn sum(
         bencher: &mut Bencher,
@@ -83,7 +82,7 @@ mod paralight {
         let input = (0..=*len as u64).collect::<Vec<u64>>();
         let input_slice = input.as_slice();
         let pool_builder = ThreadPoolBuilder {
-            num_threads: NonZeroUsize::try_from(num_threads).unwrap(),
+            num_threads: ThreadCount::try_from(num_threads).unwrap(),
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
         };

@@ -28,10 +28,30 @@ use nix::{
     sched::{sched_setaffinity, CpuSet},
     unistd::Pid,
 };
+use std::convert::TryFrom;
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
 use std::thread::{Scope, ScopedJoinHandle};
+
+/// Number of threads to spawn in a thread pool.
+#[derive(Clone, Copy)]
+pub enum ThreadCount {
+    /// Spawn the number of threads returned by
+    /// [`std::thread::available_parallelism()`].
+    AvailableParallelism,
+    /// Spawn the given number of threads.
+    Count(NonZeroUsize),
+}
+
+impl TryFrom<usize> for ThreadCount {
+    type Error = <NonZeroUsize as TryFrom<usize>>::Error;
+
+    fn try_from(thread_count: usize) -> Result<Self, Self::Error> {
+        let count = NonZeroUsize::try_from(thread_count)?;
+        Ok(ThreadCount::Count(count))
+    }
+}
 
 /// Strategy to distribute ranges of work items among threads.
 #[derive(Clone, Copy)]
@@ -58,7 +78,7 @@ pub enum CpuPinningPolicy {
 /// A builder for [`ThreadPool`].
 pub struct ThreadPoolBuilder {
     /// Number of worker threads to spawn in the pool.
-    pub num_threads: NonZeroUsize,
+    pub num_threads: ThreadCount,
     /// Strategy to distribute ranges of work items among threads.
     pub range_strategy: RangeStrategy,
     /// Policy to pin worker threads to CPUs.
@@ -70,10 +90,9 @@ impl ThreadPoolBuilder {
     ///
     /// ```rust
     /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadPoolBuilder};
-    /// # use std::num::NonZeroUsize;
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
     /// let pool_builder = ThreadPoolBuilder {
-    ///     num_threads: NonZeroUsize::try_from(4).unwrap(),
+    ///     num_threads: ThreadCount::AvailableParallelism,
     ///     range_strategy: RangeStrategy::WorkStealing,
     ///     cpu_pinning: CpuPinningPolicy::IfSupported,
     /// };
@@ -119,7 +138,7 @@ impl<'scope> ThreadPool<'scope> {
     /// worker threads.
     fn new(
         thread_scope: &'scope Scope<'scope, '_>,
-        num_threads: NonZeroUsize,
+        num_threads: ThreadCount,
         range_strategy: RangeStrategy,
         cpu_pinning: CpuPinningPolicy,
     ) -> Self {
@@ -152,10 +171,15 @@ impl<'scope> ThreadPoolEnum<'scope> {
     /// worker threads.
     fn new(
         thread_scope: &'scope Scope<'scope, '_>,
-        num_threads: NonZeroUsize,
+        num_threads: ThreadCount,
         range_strategy: RangeStrategy,
         cpu_pinning: CpuPinningPolicy,
     ) -> Self {
+        let num_threads: NonZeroUsize = match num_threads {
+            ThreadCount::AvailableParallelism => std::thread::available_parallelism()
+                .expect("Getting the available parallelism failed"),
+            ThreadCount::Count(count) => count,
+        };
         let num_threads: usize = num_threads.into();
         match range_strategy {
             RangeStrategy::Fixed => ThreadPoolEnum::Fixed(ThreadPoolImpl::new(

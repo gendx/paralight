@@ -16,12 +16,11 @@ the outputs from all threads into a single result.
 
 ```rust
 use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
-use paralight::{CpuPinningPolicy, RangeStrategy, ThreadPoolBuilder};
-use std::num::NonZeroUsize;
+use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
 
 // Define thread pool parameters.
 let pool_builder = ThreadPoolBuilder {
-    num_threads: NonZeroUsize::try_from(4).unwrap(),
+    num_threads: ThreadCount::AvailableParallelism,
     range_strategy: RangeStrategy::WorkStealing,
     cpu_pinning: CpuPinningPolicy::IfSupported,
 };
@@ -49,7 +48,22 @@ Come back to check when future versions are published!
 The [`ThreadPoolBuilder`](ThreadPoolBuilder) provides an explicit way to
 configure your thread pool, giving you fine-grained control over performance for
 your workload. There is no default, which is deliberate because the suitable
-parameters depend on your workload
+parameters depend on your workload.
+
+### Number of worker threads
+
+Paralight allows you to specify the number of worker threads to spawn in a
+thread pool with the [`ThreadCount`](ThreadCount) enum:
+
+- [`AvailableParallelism`](ThreadCount::AvailableParallelism) uses the number of
+  threads returned by the standard library's
+  [`available_parallelism()`](std::thread::available_parallelism) function,
+- [`Count(_)`](ThreadCount::Count) uses the specified number of threads, which
+  must be non-zero.
+
+For convenience, [`ThreadCount`](ThreadCount) implements the
+[`TryFrom<usize>`](TryFrom) trait to create a [`Count(_)`](ThreadCount::Count)
+instance, validating that the given number of threads is not zero.
 
 ### Work-stealing strategy
 
@@ -120,11 +134,10 @@ more than [`u32::MAX`](u32::MAX) elements are currently not supported.
 
 ```rust,should_panic
 use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
-use paralight::{CpuPinningPolicy, RangeStrategy, ThreadPoolBuilder};
-use std::num::NonZeroUsize;
+use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
 
 let pool_builder = ThreadPoolBuilder {
-    num_threads: NonZeroUsize::try_from(4).unwrap(),
+    num_threads: ThreadCount::AvailableParallelism,
     range_strategy: RangeStrategy::WorkStealing,
     cpu_pinning: CpuPinningPolicy::IfSupported,
 };
