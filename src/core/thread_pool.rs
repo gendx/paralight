@@ -94,7 +94,7 @@ impl ThreadPoolBuilder {
     /// let pool_builder = ThreadPoolBuilder {
     ///     num_threads: ThreadCount::AvailableParallelism,
     ///     range_strategy: RangeStrategy::WorkStealing,
-    ///     cpu_pinning: CpuPinningPolicy::IfSupported,
+    ///     cpu_pinning: CpuPinningPolicy::No,
     /// };
     ///
     /// let sum = pool_builder.scope(|mut thread_pool| {

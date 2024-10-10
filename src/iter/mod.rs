@@ -23,7 +23,7 @@ pub trait IntoParallelIterator {
     /// # let pool_builder = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
-    /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
     /// # };
     /// # pool_builder.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -63,7 +63,7 @@ pub trait ParallelIterator: Sized {
     /// # let pool_builder = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
-    /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
     /// # };
     /// # pool_builder.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -138,7 +138,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
-    /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
     /// # };
     /// # pool.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(Box::new);
@@ -175,7 +175,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
-    /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
     /// # };
     /// # pool.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -203,7 +203,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
-    /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
     /// # };
     /// # pool.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -232,7 +232,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
-    /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
     /// # };
     /// # pool.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -254,7 +254,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
-    /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
     /// # };
     /// # pool.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -282,7 +282,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
-    /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
     /// # };
     /// # pool.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -314,7 +314,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
-    /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
     /// # };
     /// # pool.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -336,7 +336,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
-    /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
     /// # };
     /// # pool.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -363,7 +363,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
-    /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
     /// # };
     /// # pool.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
@@ -393,7 +393,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
-    /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
     /// # };
     /// # pool.scope(|mut thread_pool| {
     /// let sum = []
