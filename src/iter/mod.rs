@@ -9,6 +9,7 @@
 //! Iterator adaptors to define parallel pipelines more conveniently.
 
 use crate::ThreadPool;
+use std::cmp::Ordering;
 
 /// Trait for converting into a parallel iterator on a [`ThreadPool`].
 pub trait IntoParallelIterator {
@@ -352,6 +353,236 @@ pub trait ParallelIteratorExt: ParallelIterator {
         F: Fn(Self::Item) -> T + Sync,
     {
         Map { inner: self, f }
+    }
+
+    /// Returns the maximal item of this iterator, or [`None`] if this iterator
+    /// is empty.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
+    /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
+    /// # let pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # };
+    /// # pool.scope(|mut thread_pool| {
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let max = input.par_iter(&mut thread_pool).max();
+    /// assert_eq!(max, Some(&10));
+    /// # });
+    /// ```
+    fn max(self) -> Option<Self::Item>
+    where
+        Self::Item: Ord + Send,
+    {
+        self.pipeline(
+            || None,
+            |max, _, x| match max {
+                None => Some(x),
+                Some(max) => Some(max.max(x)),
+            },
+            |max| max,
+            |x, y| match (x, y) {
+                (None, None) => None,
+                (Some(a), None) | (None, Some(a)) => Some(a),
+                (Some(a), Some(b)) => Some(a.max(b)),
+            },
+        )
+    }
+
+    /// Returns the maximal item of this iterator according to the comparison
+    /// function `f`, or [`None`] if this iterator is empty.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
+    /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
+    /// # let pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # };
+    /// # pool.scope(|mut thread_pool| {
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// // Custom comparison function where even numbers are smaller than all odd numbers.
+    /// let max = input
+    ///     .par_iter(&mut thread_pool)
+    ///     .max_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
+    /// assert_eq!(max, Some(&9));
+    /// # });
+    /// ```
+    fn max_by<F>(self, f: F) -> Option<Self::Item>
+    where
+        F: Fn(&Self::Item, &Self::Item) -> Ordering + Sync,
+        Self::Item: Send,
+    {
+        self.pipeline(
+            || None,
+            |max, _, x| match max {
+                None => Some(x),
+                Some(max) => match f(&max, &x) {
+                    Ordering::Greater | Ordering::Equal => Some(max),
+                    Ordering::Less => Some(x),
+                },
+            },
+            |max| max,
+            |x, y| match (x, y) {
+                (None, None) => None,
+                (Some(a), None) | (None, Some(a)) => Some(a),
+                (Some(a), Some(b)) => match f(&a, &b) {
+                    Ordering::Greater | Ordering::Equal => Some(a),
+                    Ordering::Less => Some(b),
+                },
+            },
+        )
+    }
+
+    /// Returns the maximal item of this iterator according to the keys derived
+    /// from the mapping function `f`, or [`None`] if this iterator is
+    /// empty.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
+    /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
+    /// # let pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # };
+    /// # pool.scope(|mut thread_pool| {
+    /// let input = ["ccc", "aaaaa", "dd", "e", "bbbb"];
+    ///
+    /// let max = input.par_iter(&mut thread_pool).max();
+    /// assert_eq!(max, Some(&"e"));
+    ///
+    /// let max_by_len = input.par_iter(&mut thread_pool).max_by_key(|x| x.len());
+    /// assert_eq!(max_by_len, Some(&"aaaaa"));
+    /// # });
+    /// ```
+    fn max_by_key<T, F>(self, f: F) -> Option<Self::Item>
+    where
+        F: Fn(&Self::Item) -> T + Sync,
+        T: Ord + Send,
+        Self::Item: Send,
+    {
+        self.map(|x| (f(&x), x))
+            .max_by(|a, b| a.0.cmp(&b.0))
+            .map(|(_, x)| x)
+    }
+
+    /// Returns the minimal item of this iterator, or [`None`] if this iterator
+    /// is empty.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
+    /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
+    /// # let pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # };
+    /// # pool.scope(|mut thread_pool| {
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let min = input.par_iter(&mut thread_pool).min();
+    /// assert_eq!(min, Some(&1));
+    /// # });
+    /// ```
+    fn min(self) -> Option<Self::Item>
+    where
+        Self::Item: Ord + Send,
+    {
+        self.pipeline(
+            || None,
+            |min, _, x| match min {
+                None => Some(x),
+                Some(min) => Some(min.min(x)),
+            },
+            |min| min,
+            |x, y| match (x, y) {
+                (None, None) => None,
+                (Some(a), None) | (None, Some(a)) => Some(a),
+                (Some(a), Some(b)) => Some(a.min(b)),
+            },
+        )
+    }
+
+    /// Returns the minimal item of this iterator according to the comparison
+    /// function `f`, or [`None`] if this iterator is empty.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
+    /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
+    /// # let pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # };
+    /// # pool.scope(|mut thread_pool| {
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// // Custom comparison function where even numbers are smaller than all odd numbers.
+    /// let min = input
+    ///     .par_iter(&mut thread_pool)
+    ///     .min_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
+    /// assert_eq!(min, Some(&2));
+    /// # });
+    /// ```
+    fn min_by<F>(self, f: F) -> Option<Self::Item>
+    where
+        F: Fn(&Self::Item, &Self::Item) -> Ordering + Sync,
+        Self::Item: Send,
+    {
+        self.pipeline(
+            || None,
+            |min, _, x| match min {
+                None => Some(x),
+                Some(min) => match f(&min, &x) {
+                    Ordering::Less | Ordering::Equal => Some(min),
+                    Ordering::Greater => Some(x),
+                },
+            },
+            |min| min,
+            |x, y| match (x, y) {
+                (None, None) => None,
+                (Some(a), None) | (None, Some(a)) => Some(a),
+                (Some(a), Some(b)) => match f(&a, &b) {
+                    Ordering::Less | Ordering::Equal => Some(a),
+                    Ordering::Greater => Some(b),
+                },
+            },
+        )
+    }
+
+    /// Returns the minimal item of this iterator according to the keys derived
+    /// from the mapping function `f`, or [`None`] if this iterator is
+    /// empty.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
+    /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
+    /// # let pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # };
+    /// # pool.scope(|mut thread_pool| {
+    /// let input = ["ccc", "aaaaa", "dd", "e", "bbbb"];
+    ///
+    /// let min = input.par_iter(&mut thread_pool).min();
+    /// assert_eq!(min, Some(&"aaaaa"));
+    ///
+    /// let min_by_len = input.par_iter(&mut thread_pool).min_by_key(|x| x.len());
+    /// assert_eq!(min_by_len, Some(&"e"));
+    /// # });
+    /// ```
+    fn min_by_key<T, F>(self, f: F) -> Option<Self::Item>
+    where
+        F: Fn(&Self::Item) -> T + Sync,
+        T: Ord + Send,
+        Self::Item: Send,
+    {
+        self.map(|x| (f(&x), x))
+            .min_by(|a, b| a.0.cmp(&b.0))
+            .map(|(_, x)| x)
     }
 
     /// Reduces the items produced by this iterator into a single item, using

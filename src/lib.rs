@@ -105,6 +105,12 @@ mod test {
                 test_adaptor_filter_map,
                 test_adaptor_for_each,
                 test_adaptor_map,
+                test_adaptor_max,
+                test_adaptor_max_by,
+                test_adaptor_max_by_key,
+                test_adaptor_min,
+                test_adaptor_min_by,
+                test_adaptor_min_by_key,
                 test_adaptor_reduce,
             );
         };
@@ -888,6 +894,106 @@ mod test {
         assert_eq!(sum1, 42 * INPUT_LEN * (INPUT_LEN + 1) / 2);
         assert_eq!(sum2, 42 * INPUT_LEN * (INPUT_LEN + 1) / 2);
         assert_eq!(sum3, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_adaptor_max(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        };
+        let max = pool_builder.scope(|mut thread_pool| {
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            input.par_iter(&mut thread_pool).copied().max()
+        });
+        assert_eq!(max, Some(INPUT_LEN));
+    }
+
+    fn test_adaptor_max_by(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        };
+        let max = pool_builder.scope(|mut thread_pool| {
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            // Custom comparison function where even numbers are smaller than all odd
+            // numbers.
+            input
+                .par_iter(&mut thread_pool)
+                .copied()
+                .max_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)))
+        });
+        let last_odd = ((INPUT_LEN - 1) / 2) * 2 + 1;
+        assert_eq!(max, Some(last_odd));
+    }
+
+    fn test_adaptor_max_by_key(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        };
+        let max = pool_builder.scope(|mut thread_pool| {
+            let input = (0..=INPUT_LEN)
+                .map(|x| (x, INPUT_LEN - x))
+                .collect::<Vec<(u64, u64)>>();
+            input
+                .par_iter(&mut thread_pool)
+                .copied()
+                .max_by_key(|pair| pair.1)
+        });
+        assert_eq!(max, Some((0, INPUT_LEN)));
+    }
+
+    fn test_adaptor_min(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        };
+        let min = pool_builder.scope(|mut thread_pool| {
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            input.par_iter(&mut thread_pool).copied().min()
+        });
+        assert_eq!(min, Some(0));
+    }
+
+    fn test_adaptor_min_by(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        };
+        let max = pool_builder.scope(|mut thread_pool| {
+            let input = (1..=INPUT_LEN).collect::<Vec<u64>>();
+            // Custom comparison function where even numbers are smaller than all odd
+            // numbers.
+            input
+                .par_iter(&mut thread_pool)
+                .copied()
+                .min_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)))
+        });
+        let first_even = 2;
+        assert_eq!(max, Some(first_even));
+    }
+
+    fn test_adaptor_min_by_key(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        };
+        let max = pool_builder.scope(|mut thread_pool| {
+            let input = (0..=INPUT_LEN)
+                .map(|x| (x, INPUT_LEN - x))
+                .collect::<Vec<(u64, u64)>>();
+            input
+                .par_iter(&mut thread_pool)
+                .copied()
+                .min_by_key(|pair| pair.1)
+        });
+        assert_eq!(max, Some((INPUT_LEN, 0)));
     }
 
     fn test_adaptor_reduce(range_strategy: RangeStrategy) {
