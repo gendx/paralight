@@ -195,7 +195,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
         Copied { inner: self }
     }
 
-    /// Returns a parallel iterator that yields only the items for which the
+    /// Returns a parallel iterator that produces only the items for which the
     /// predicate `f` returns `true`.
     ///
     /// ```
@@ -224,8 +224,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     }
 
     /// Applies the function `f` to each item of this iterator, returning a
-    /// parallel iterator that yields the mapped items `x` for which `f` returns
-    /// `Some(x)` and skips the items for which `f` returns `None`.
+    /// parallel iterator that produces the mapped items `x` for which `f`
+    /// returns `Some(x)` and skips the items for which `f` returns `None`.
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
@@ -306,8 +306,46 @@ pub trait ParallelIteratorExt: ParallelIterator {
         )
     }
 
+    /// Runs the function `f` on each item of this iterator in a pass-through
+    /// manner, returning a parallel iterator producing the original items.
+    ///
+    /// This is useful to help debug intermediate stages of an iterator adaptor
+    /// pipeline.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
+    /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
+    /// # use std::sync::atomic::{AtomicUsize, Ordering};
+    /// # let pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # };
+    /// # pool.scope(|mut thread_pool| {
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let inspections = AtomicUsize::new(0);
+    ///
+    /// let min = input
+    ///     .par_iter(&mut thread_pool)
+    ///     .inspect(|x| {
+    ///         println!("[{:?}] x = {x}", std::thread::current().id());
+    ///         inspections.fetch_add(1, Ordering::Relaxed);
+    ///     })
+    ///     .min();
+    ///
+    /// assert_eq!(min, Some(&1));
+    /// assert_eq!(inspections.load(Ordering::Relaxed), 10);
+    /// # });
+    /// ```
+    fn inspect<F>(self, f: F) -> Inspect<Self, F>
+    where
+        F: Fn(&Self::Item) + Sync,
+    {
+        Inspect { inner: self, f }
+    }
+
     /// Applies the function `f` to each item of this iterator, returning a
-    /// parallel iterator with the mapped items.
+    /// parallel iterator producing the mapped items.
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
@@ -769,6 +807,39 @@ where
             |accum, index, item| match (self.f)(item) {
                 Some(mapped_item) => process_item(accum, index, mapped_item),
                 None => accum,
+            },
+            finalize,
+            reduce,
+        )
+    }
+}
+
+/// This struct is created by the [`inspect()`](ParallelIteratorExt::inspect)
+/// method on [`ParallelIteratorExt`].
+#[must_use = "iterator adaptors are lazy"]
+pub struct Inspect<Inner: ParallelIterator, F> {
+    inner: Inner,
+    f: F,
+}
+
+impl<Inner: ParallelIterator, F> ParallelIterator for Inspect<Inner, F>
+where
+    F: Fn(&Inner::Item) + Sync,
+{
+    type Item = Inner::Item;
+
+    fn pipeline<Output: Send, Accum>(
+        self,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(Accum, usize, Self::Item) -> Accum + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+    ) -> Output {
+        self.inner.pipeline(
+            init,
+            |accum, index, item| {
+                (self.f)(&item);
+                process_item(accum, index, item)
             },
             finalize,
             reduce,

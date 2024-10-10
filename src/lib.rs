@@ -29,6 +29,7 @@ mod test {
     use std::cell::Cell;
     use std::collections::HashSet;
     use std::rc::Rc;
+    use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::Mutex;
 
     macro_rules! expand_tests {
@@ -104,6 +105,7 @@ mod test {
                 test_adaptor_filter,
                 test_adaptor_filter_map,
                 test_adaptor_for_each,
+                test_adaptor_inspect,
                 test_adaptor_map,
                 test_adaptor_max,
                 test_adaptor_max_by,
@@ -858,6 +860,28 @@ mod test {
             set.into_inner().unwrap()
         });
         assert_eq!(set, (0..=INPUT_LEN).collect());
+    }
+
+    fn test_adaptor_inspect(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        };
+        let (max, sum) = pool_builder.scope(|mut thread_pool| {
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            let sum = AtomicU64::new(0);
+            let max = input
+                .par_iter(&mut thread_pool)
+                .copied()
+                .inspect(|&x| {
+                    sum.fetch_add(x, Ordering::Relaxed);
+                })
+                .max();
+            (max, sum.into_inner())
+        });
+        assert_eq!(max, Some(INPUT_LEN));
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
     fn test_adaptor_map(range_strategy: RangeStrategy) {
