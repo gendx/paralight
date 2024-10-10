@@ -90,7 +90,7 @@ mod paralight {
             bencher.iter(|| {
                 black_box(input_slice)
                     .par_iter(&mut thread_pool)
-                    .map(|&x| x)
+                    .copied()
                     .reduce(|| 0, |x, y| x + y)
             });
         });

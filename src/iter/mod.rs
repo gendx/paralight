@@ -123,6 +123,77 @@ impl<'pool, 'scope: 'pool, 'data, T: Sync> ParallelIterator
 
 /// Additional methods provided for types that implement [`ParallelIterator`].
 pub trait ParallelIteratorExt: ParallelIterator {
+    /// Returns a parallel iterator that produces items that are cloned from the
+    /// items of this iterator. This is useful if you have an iterator over
+    /// [`&T`](reference) and want an iterator over `T`, when `T` is
+    /// [`Clone`].
+    ///
+    /// This is equivalent to calling `.map(|x| x.clone())`.
+    ///
+    /// See also [`copied()`](Self::copied).
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
+    /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
+    /// # let pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
+    /// # };
+    /// # pool.scope(|mut thread_pool| {
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(Box::new);
+    /// let sum = input.par_iter(&mut thread_pool).cloned().reduce(
+    ///     || Box::new(0),
+    ///     |mut x, y| {
+    ///         *x += *y;
+    ///         x
+    ///     },
+    /// );
+    /// assert_eq!(*sum, 5 * 11);
+    /// # });
+    /// ```
+    fn cloned<'a, T>(self) -> Cloned<Self>
+    where
+        T: Clone + 'a,
+        Self: ParallelIterator<Item = &'a T>,
+    {
+        Cloned { inner: self }
+    }
+
+    /// Returns a parallel iterator that produces items that are copied from the
+    /// items of this iterator. This is useful if you have an iterator over
+    /// [`&T`](reference) and want an iterator over `T`, when `T` is
+    /// [`Copy`].
+    ///
+    /// This is equivalent to calling `.map(|x| *x)`.
+    ///
+    /// See also [`cloned()`](Self::cloned).
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
+    /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
+    /// # let pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::IfSupported,
+    /// # };
+    /// # pool.scope(|mut thread_pool| {
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum = input
+    ///     .par_iter(&mut thread_pool)
+    ///     .copied()
+    ///     .reduce(|| 0, |x, y| x + y);
+    /// assert_eq!(sum, 5 * 11);
+    /// # });
+    /// ```
+    fn copied<'a, T>(self) -> Copied<Self>
+    where
+        T: Copy + 'a,
+        Self: ParallelIterator<Item = &'a T>,
+    {
+        Copied { inner: self }
+    }
+
     /// Returns a parallel iterator that yields only the items for which the
     /// predicate `f` returns `true`.
     ///
@@ -139,7 +210,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let sum_even = input
     ///     .par_iter(&mut thread_pool)
     ///     .filter(|&&x| x % 2 == 0)
-    ///     .map(|&x| x)
+    ///     .copied()
     ///     .reduce(|| 0, |x, y| x + y);
     /// assert_eq!(sum_even, 5 * 6);
     /// # });
@@ -298,7 +369,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let sum = input
     ///     .par_iter(&mut thread_pool)
-    ///     .map(|&x| x)
+    ///     .copied()
     ///     .reduce(|| 0, |x, y| x + y);
     /// assert_eq!(sum, 5 * 11);
     /// # });
@@ -327,7 +398,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # pool.scope(|mut thread_pool| {
     /// let sum = []
     ///     .par_iter(&mut thread_pool)
-    ///     .map(|&x| x)
+    ///     .copied()
     ///     .reduce(|| 0, |x, y| x + y);
     /// assert_eq!(sum, 0);
     /// # });
@@ -343,6 +414,66 @@ pub trait ParallelIteratorExt: ParallelIterator {
 }
 
 impl<T: ParallelIterator> ParallelIteratorExt for T {}
+
+/// This struct is created by the [`cloned()`](ParallelIteratorExt::cloned)
+/// method on [`ParallelIteratorExt`].
+#[must_use = "iterator adaptors are lazy"]
+pub struct Cloned<Inner: ParallelIterator> {
+    inner: Inner,
+}
+
+impl<'a, T, Inner: ParallelIterator> ParallelIterator for Cloned<Inner>
+where
+    T: Clone + 'a,
+    Inner: ParallelIterator<Item = &'a T>,
+{
+    type Item = T;
+
+    fn pipeline<Output: Send, Accum>(
+        self,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(Accum, usize, Self::Item) -> Accum + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+    ) -> Output {
+        self.inner.pipeline(
+            init,
+            |accum, index, item| process_item(accum, index, item.clone()),
+            finalize,
+            reduce,
+        )
+    }
+}
+
+/// This struct is created by the [`copied()`](ParallelIteratorExt::copied)
+/// method on [`ParallelIteratorExt`].
+#[must_use = "iterator adaptors are lazy"]
+pub struct Copied<Inner: ParallelIterator> {
+    inner: Inner,
+}
+
+impl<'a, T, Inner: ParallelIterator> ParallelIterator for Copied<Inner>
+where
+    T: Copy + 'a,
+    Inner: ParallelIterator<Item = &'a T>,
+{
+    type Item = T;
+
+    fn pipeline<Output: Send, Accum>(
+        self,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(Accum, usize, Self::Item) -> Accum + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+    ) -> Output {
+        self.inner.pipeline(
+            init,
+            |accum, index, item| process_item(accum, index, *item),
+            finalize,
+            reduce,
+        )
+    }
+}
 
 /// This struct is created by the [`filter()`](ParallelIteratorExt::filter)
 /// method on [`ParallelIteratorExt`].

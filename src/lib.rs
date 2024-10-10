@@ -99,6 +99,8 @@ mod test {
                 test_local_lifetime_output,
                 test_local_lifetime_accumulator,
                 test_adaptor_par_iter,
+                test_adaptor_cloned,
+                test_adaptor_copied,
                 test_adaptor_filter,
                 test_adaptor_filter_map,
                 test_adaptor_for_each,
@@ -768,6 +770,41 @@ mod test {
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
+    fn test_adaptor_cloned(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
+        };
+        let sum = pool_builder.scope(|mut thread_pool| {
+            let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
+            input.par_iter(&mut thread_pool).cloned().reduce(
+                || Box::new(0u64),
+                |mut x, y| {
+                    *x += *y;
+                    x
+                },
+            )
+        });
+        assert_eq!(*sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_adaptor_copied(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
+        };
+        let sum = pool_builder.scope(|mut thread_pool| {
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            input
+                .par_iter(&mut thread_pool)
+                .copied()
+                .reduce(|| 0u64, |x, y| x + y)
+        });
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
     fn test_adaptor_filter(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
             num_threads: ThreadCount::AvailableParallelism,
@@ -863,7 +900,7 @@ mod test {
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
             input
                 .par_iter(&mut thread_pool)
-                .map(|&x| x)
+                .copied()
                 .reduce(|| 0, |x, y| x + y)
         });
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);

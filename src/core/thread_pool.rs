@@ -101,7 +101,7 @@ impl ThreadPoolBuilder {
     ///     let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     ///     input
     ///         .par_iter(&mut thread_pool)
-    ///         .map(|&x| x)
+    ///         .copied()
     ///         .reduce(|| 0, |x, y| x + y)
     /// });
     /// assert_eq!(sum, 5 * 11);

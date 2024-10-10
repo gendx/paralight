@@ -77,7 +77,7 @@ mod paralight {
         len: usize,
         range_strategy: RangeStrategy,
     ) {
-        let input = (0..=len as u64).map(|x| x.into()).collect::<Vec<u64>>();
+        let input = (0..=len as u64).collect::<Vec<u64>>();
         let input_slice = input.as_slice();
         let pool_builder = ThreadPoolBuilder {
             num_threads: ThreadCount::try_from(NUM_THREADS).unwrap(),
@@ -90,7 +90,7 @@ mod paralight {
                 .bench_local(|| {
                     black_box(input_slice)
                         .par_iter(&mut thread_pool)
-                        .map(|&x| x)
+                        .copied()
                         .reduce(|| 0, |x, y| x + y)
                 });
         });

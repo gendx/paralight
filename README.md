@@ -32,7 +32,7 @@ let sum = pool_builder.scope(
         let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
         input
             .par_iter(&mut thread_pool)
-            .map(|&x| x)
+            .copied()
             .reduce(|| 0, |x, y| x + y)
     },
 );
@@ -147,7 +147,7 @@ let sum = pool_builder.scope(
         let input = vec![0u8; 5_000_000_000];
         input
             .par_iter(&mut thread_pool)
-            .map(|&x| x)
+            .copied()
             .reduce(|| 0, |x, y| x + y)
     },
 );
