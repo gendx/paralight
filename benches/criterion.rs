@@ -70,7 +70,7 @@ mod rayon {
 /// Benchmarks using Paralight.
 mod paralight {
     use criterion::{black_box, Bencher};
-    use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
+    use paralight::iter::{IntoParallelRefIterator, ParallelIteratorExt};
     use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
 
     pub fn sum(

@@ -8,38 +8,10 @@
 
 //! Iterator adaptors to define parallel pipelines more conveniently.
 
-use crate::ThreadPool;
+mod source;
+
+pub use source::{IntoParallelIterator, IntoParallelRefIterator, SliceParallelIterator};
 use std::cmp::Ordering;
-
-/// Trait for converting into a parallel iterator on a [`ThreadPool`].
-pub trait IntoParallelIterator {
-    /// Target parallel iterator type.
-    type ParIter<'pool, 'scope: 'pool>: ParallelIterator;
-
-    /// Converts `self` into a parallel iterator.
-    ///
-    /// ```rust
-    /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
-    /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
-    /// # let pool_builder = ThreadPoolBuilder {
-    /// #     num_threads: ThreadCount::AvailableParallelism,
-    /// #     range_strategy: RangeStrategy::WorkStealing,
-    /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # };
-    /// # pool_builder.scope(|mut thread_pool| {
-    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    /// let sum = input
-    ///     .par_iter(&mut thread_pool)
-    ///     .map(|&x| x)
-    ///     .reduce(|| 0, |x, y| x + y);
-    /// assert_eq!(sum, 5 * 11);
-    /// # });
-    /// ```
-    fn par_iter<'pool, 'scope: 'pool>(
-        self,
-        thread_pool: &'pool mut ThreadPool<'scope>,
-    ) -> Self::ParIter<'pool, 'scope>;
-}
 
 /// An iterator to process items in parallel. The [`ParallelIteratorExt`] trait
 /// provides additional methods (iterator adaptors) as an extension of this
@@ -59,7 +31,7 @@ pub trait ParallelIterator: Sized {
     /// - `reduce` function to reduce a pair of outputs into one output.
     ///
     /// ```rust
-    /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIteratorExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool_builder = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -84,44 +56,6 @@ pub trait ParallelIterator: Sized {
     ) -> Output;
 }
 
-/// A parallel iterator over a slice.
-#[must_use = "iterator adaptors are lazy"]
-pub struct SliceParallelIterator<'pool, 'scope: 'pool, 'data, T> {
-    thread_pool: &'pool mut ThreadPool<'scope>,
-    slice: &'data [T],
-}
-
-impl<'data, T: Sync> IntoParallelIterator for &'data [T] {
-    type ParIter<'pool, 'scope: 'pool> = SliceParallelIterator<'pool, 'scope, 'data, T>;
-
-    fn par_iter<'pool, 'scope: 'pool>(
-        self,
-        thread_pool: &'pool mut ThreadPool<'scope>,
-    ) -> Self::ParIter<'pool, 'scope> {
-        SliceParallelIterator {
-            thread_pool,
-            slice: self,
-        }
-    }
-}
-
-impl<'pool, 'scope: 'pool, 'data, T: Sync> ParallelIterator
-    for SliceParallelIterator<'pool, 'scope, 'data, T>
-{
-    type Item = &'data T;
-
-    fn pipeline<Output: Send, Accum>(
-        self,
-        init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize, Self::Item) -> Accum + Sync,
-        finalize: impl Fn(Accum) -> Output + Sync,
-        reduce: impl Fn(Output, Output) -> Output,
-    ) -> Output {
-        self.thread_pool
-            .pipeline(self.slice, init, process_item, finalize, reduce)
-    }
-}
-
 /// Additional methods provided for types that implement [`ParallelIterator`].
 pub trait ParallelIteratorExt: ParallelIterator {
     /// Returns a parallel iterator that produces items that are cloned from the
@@ -134,7 +68,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// See also [`copied()`](Self::copied).
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIteratorExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -171,7 +105,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// See also [`cloned()`](Self::cloned).
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIteratorExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -199,7 +133,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// predicate `f` returns `true`.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIteratorExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -228,7 +162,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// returns `Some(x)` and skips the items for which `f` returns `None`.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIteratorExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -249,7 +183,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// is fine.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIterator, ParallelIteratorExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # use std::rc::Rc;
     /// # let pool = ThreadPoolBuilder {
@@ -276,7 +210,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// Runs `f` on each item of this parallel iterator.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIteratorExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # use std::collections::HashSet;
     /// # use std::sync::Mutex;
@@ -313,7 +247,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// pipeline.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIteratorExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # use std::sync::atomic::{AtomicUsize, Ordering};
     /// # let pool = ThreadPoolBuilder {
@@ -348,7 +282,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// parallel iterator producing the mapped items.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIteratorExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -369,7 +303,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// is fine.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIterator, ParallelIteratorExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # use std::rc::Rc;
     /// # let pool = ThreadPoolBuilder {
@@ -397,7 +331,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// is empty.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIterator, ParallelIteratorExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -433,7 +367,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// function `f`, or [`None`] if this iterator is empty.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIterator, ParallelIteratorExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -480,7 +414,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// empty.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIterator, ParallelIteratorExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -512,7 +446,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// is empty.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIterator, ParallelIteratorExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -548,7 +482,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// function `f`, or [`None`] if this iterator is empty.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIterator, ParallelIteratorExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -595,7 +529,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// empty.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIterator, ParallelIteratorExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -627,7 +561,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// `f` to collapse pairs of items.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIteratorExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -657,7 +591,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///   In particular, `reduce()` returns `init()` if the iterator is empty.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIteratorExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,

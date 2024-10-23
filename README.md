@@ -3,19 +3,19 @@
 [![Crate](https://img.shields.io/crates/v/paralight.svg?logo=rust)](https://crates.io/crates/paralight)
 [![Documentation](https://img.shields.io/docsrs/paralight?logo=rust)](https://docs.rs/paralight)
 [![Minimum Rust 1.75.0](https://img.shields.io/badge/rust-1.75.0%2B-orange.svg?logo=rust)](https://releases.rs/docs/1.75.0/)
-[![Lines of Code](https://www.aschey.tech/tokei/github/gendx/paralight?category=code&branch=0.0.3)](https://github.com/gendx/paralight)
-[![Dependencies](https://deps.rs/crate/paralight/0.0.3/status.svg)](https://deps.rs/crate/paralight/0.0.3)
+[![Lines of Code](https://www.aschey.tech/tokei/github/gendx/paralight?category=code&branch=main)](https://github.com/gendx/paralight)
+[![Dependencies](https://deps.rs/repo/github/gendx/paralight/status.svg)](https://deps.rs/repo/github/gendx/paralight)
 [![License](https://img.shields.io/crates/l/paralight.svg)](https://github.com/gendx/paralight/blob/main/LICENSE)
-[![Codecov](https://codecov.io/gh/gendx/paralight/branch/0.0.3/graph/badge.svg)](https://codecov.io/gh/gendx/paralight)
-[![Build Status](https://github.com/gendx/paralight/actions/workflows/build.yml/badge.svg?branch=0.0.3)](https://github.com/gendx/paralight/actions/workflows/build.yml)
-[![Test Status](https://github.com/gendx/paralight/actions/workflows/tests.yml/badge.svg?branch=0.0.3)](https://github.com/gendx/paralight/actions/workflows/tests.yml)
+[![Codecov](https://codecov.io/gh/gendx/paralight/branch/main/graph/badge.svg)](https://app.codecov.io/gh/gendx/paralight/tree/main)
+[![Build Status](https://github.com/gendx/paralight/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/gendx/paralight/actions/workflows/build.yml)
+[![Test Status](https://github.com/gendx/paralight/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/gendx/paralight/actions/workflows/tests.yml)
 
 This library allows you to distribute computation over slices among multiple
 threads. Each thread processes a subset of the items, and a final step reduces
 the outputs from all threads into a single result.
 
 ```rust
-use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
+use paralight::iter::{IntoParallelRefIterator, ParallelIteratorExt};
 use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
 
 // Define thread pool parameters.
@@ -114,11 +114,12 @@ enum:
   returns an error.
 
 Whether CPU pinning is useful or detrimental depends on your workload. If you're
-processing the same data over and over again (e.g. calling `par_iter()` multiple
-times on the same data), CPU pinning can help ensure that each subset of the
-data is always processed on the same CPU core and stays fresh in the lower-level
-per-core caches, speeding up memory accesses. This however depends on the amount
-of data: if it's too large, it may not fit in per-core caches anyway.
+processing the same data over and over again (e.g. calling
+[`par_iter()`](iter::IntoParallelRefIterator::par_iter) multiple times on the
+same data), CPU pinning can help ensure that each subset of the data is always
+processed on the same CPU core and stays fresh in the lower-level per-core
+caches, speeding up memory accesses. This however depends on the amount of data:
+if it's too large, it may not fit in per-core caches anyway.
 
 If your program is not running alone on your machine but is competing with other
 programs, CPU pinning may be detrimental, as a worker thread will be blocked
@@ -133,7 +134,7 @@ With the [`WorkStealing`](RangeStrategy::WorkStealing) strategy, inputs with
 more than [`u32::MAX`](u32::MAX) elements are currently not supported.
 
 ```rust,should_panic
-use paralight::iter::{IntoParallelIterator, ParallelIteratorExt};
+use paralight::iter::{IntoParallelRefIterator, ParallelIteratorExt};
 use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
 
 let pool_builder = ThreadPoolBuilder {

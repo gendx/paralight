@@ -25,7 +25,7 @@ pub use core::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPool, ThreadP
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::iter::{IntoParallelIterator, ParallelIterator, ParallelIteratorExt};
+    use crate::iter::{IntoParallelRefIterator, ParallelIterator, ParallelIteratorExt};
     use std::cell::Cell;
     use std::collections::HashSet;
     use std::rc::Rc;
