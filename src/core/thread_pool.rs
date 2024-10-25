@@ -35,7 +35,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::{Scope, ScopedJoinHandle};
 
 /// Number of threads to spawn in a thread pool.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ThreadCount {
     /// Spawn the number of threads returned by
     /// [`std::thread::available_parallelism()`].
@@ -446,5 +446,19 @@ impl<R: Range> ThreadContext<R> {
                 WorkerState::Ready => continue,
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_thread_count_try_from_usize() {
+        assert!(ThreadCount::try_from(0).is_err());
+        assert_eq!(
+            ThreadCount::try_from(1),
+            Ok(ThreadCount::Count(NonZeroUsize::try_from(1).unwrap()))
+        );
     }
 }

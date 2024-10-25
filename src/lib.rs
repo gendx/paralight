@@ -253,7 +253,7 @@ mod test {
                 || 0,
                 |acc, index| {
                     let x = input[index];
-                    if x % 2 == 0 {
+                    if x % 2 == 1 {
                         panic!("arithmetic panic");
                     } else {
                         acc + x
@@ -1046,11 +1046,21 @@ mod test {
             range_strategy,
             cpu_pinning: CpuPinningPolicy::No,
         };
-        let max = pool_builder.scope(|mut thread_pool| {
-            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-            input.par_iter(&mut thread_pool).copied().max()
+        let (max, max_one, max_empty) = pool_builder.scope(|mut thread_pool| {
+            let mut input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            let max = input.par_iter(&mut thread_pool).copied().max();
+
+            input.truncate(1);
+            let max_one = input.par_iter(&mut thread_pool).copied().max();
+
+            input.clear();
+            let max_empty = input.par_iter(&mut thread_pool).copied().max();
+
+            (max, max_one, max_empty)
         });
         assert_eq!(max, Some(INPUT_LEN));
+        assert_eq!(max_one, Some(0));
+        assert_eq!(max_empty, None);
     }
 
     fn test_adaptor_max_by(range_strategy: RangeStrategy) {
@@ -1059,17 +1069,33 @@ mod test {
             range_strategy,
             cpu_pinning: CpuPinningPolicy::No,
         };
-        let max = pool_builder.scope(|mut thread_pool| {
-            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let (max, max_one, max_empty) = pool_builder.scope(|mut thread_pool| {
             // Custom comparison function where even numbers are smaller than all odd
             // numbers.
-            input
+            let mut input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            let max = input
                 .par_iter(&mut thread_pool)
                 .copied()
-                .max_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)))
+                .max_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
+
+            input.truncate(1);
+            let max_one = input
+                .par_iter(&mut thread_pool)
+                .copied()
+                .max_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
+
+            input.clear();
+            let max_empty = input
+                .par_iter(&mut thread_pool)
+                .copied()
+                .max_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
+
+            (max, max_one, max_empty)
         });
         let last_odd = ((INPUT_LEN - 1) / 2) * 2 + 1;
         assert_eq!(max, Some(last_odd));
+        assert_eq!(max_one, Some(0));
+        assert_eq!(max_empty, None);
     }
 
     fn test_adaptor_max_by_key(range_strategy: RangeStrategy) {
@@ -1078,16 +1104,32 @@ mod test {
             range_strategy,
             cpu_pinning: CpuPinningPolicy::No,
         };
-        let max = pool_builder.scope(|mut thread_pool| {
-            let input = (0..=INPUT_LEN)
+        let (max, max_one, max_empty) = pool_builder.scope(|mut thread_pool| {
+            let mut input = (0..=INPUT_LEN)
                 .map(|x| (x, INPUT_LEN - x))
                 .collect::<Vec<(u64, u64)>>();
-            input
+            let max = input
                 .par_iter(&mut thread_pool)
                 .copied()
-                .max_by_key(|pair| pair.1)
+                .max_by_key(|pair| pair.1);
+
+            input.truncate(1);
+            let max_one = input
+                .par_iter(&mut thread_pool)
+                .copied()
+                .max_by_key(|pair| pair.1);
+
+            input.clear();
+            let max_empty = input
+                .par_iter(&mut thread_pool)
+                .copied()
+                .max_by_key(|pair| pair.1);
+
+            (max, max_one, max_empty)
         });
         assert_eq!(max, Some((0, INPUT_LEN)));
+        assert_eq!(max_one, Some((0, INPUT_LEN)));
+        assert_eq!(max_empty, None);
     }
 
     fn test_adaptor_min(range_strategy: RangeStrategy) {
@@ -1096,11 +1138,21 @@ mod test {
             range_strategy,
             cpu_pinning: CpuPinningPolicy::No,
         };
-        let min = pool_builder.scope(|mut thread_pool| {
-            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-            input.par_iter(&mut thread_pool).copied().min()
+        let (min, min_one, min_empty) = pool_builder.scope(|mut thread_pool| {
+            let mut input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            let min = input.par_iter(&mut thread_pool).copied().min();
+
+            input.truncate(1);
+            let min_one = input.par_iter(&mut thread_pool).copied().min();
+
+            input.clear();
+            let min_empty = input.par_iter(&mut thread_pool).copied().min();
+
+            (min, min_one, min_empty)
         });
         assert_eq!(min, Some(0));
+        assert_eq!(min_one, Some(0));
+        assert_eq!(min_empty, None);
     }
 
     fn test_adaptor_min_by(range_strategy: RangeStrategy) {
@@ -1109,17 +1161,33 @@ mod test {
             range_strategy,
             cpu_pinning: CpuPinningPolicy::No,
         };
-        let max = pool_builder.scope(|mut thread_pool| {
-            let input = (1..=INPUT_LEN).collect::<Vec<u64>>();
+        let (min, min_one, min_empty) = pool_builder.scope(|mut thread_pool| {
             // Custom comparison function where even numbers are smaller than all odd
             // numbers.
-            input
+            let mut input = (1..=INPUT_LEN).collect::<Vec<u64>>();
+            let min = input
                 .par_iter(&mut thread_pool)
                 .copied()
-                .min_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)))
+                .min_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
+
+            input.truncate(1);
+            let min_one = input
+                .par_iter(&mut thread_pool)
+                .copied()
+                .min_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
+
+            input.clear();
+            let min_empty = input
+                .par_iter(&mut thread_pool)
+                .copied()
+                .min_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
+
+            (min, min_one, min_empty)
         });
         let first_even = 2;
-        assert_eq!(max, Some(first_even));
+        assert_eq!(min, Some(first_even));
+        assert_eq!(min_one, Some(1));
+        assert_eq!(min_empty, None);
     }
 
     fn test_adaptor_min_by_key(range_strategy: RangeStrategy) {
@@ -1128,16 +1196,32 @@ mod test {
             range_strategy,
             cpu_pinning: CpuPinningPolicy::No,
         };
-        let max = pool_builder.scope(|mut thread_pool| {
-            let input = (0..=INPUT_LEN)
+        let (min, min_one, min_empty) = pool_builder.scope(|mut thread_pool| {
+            let mut input = (0..=INPUT_LEN)
                 .map(|x| (x, INPUT_LEN - x))
                 .collect::<Vec<(u64, u64)>>();
-            input
+            let min = input
                 .par_iter(&mut thread_pool)
                 .copied()
-                .min_by_key(|pair| pair.1)
+                .min_by_key(|pair| pair.1);
+
+            input.truncate(1);
+            let min_one = input
+                .par_iter(&mut thread_pool)
+                .copied()
+                .min_by_key(|pair| pair.1);
+
+            input.clear();
+            let min_empty = input
+                .par_iter(&mut thread_pool)
+                .copied()
+                .min_by_key(|pair| pair.1);
+
+            (min, min_one, min_empty)
         });
-        assert_eq!(max, Some((INPUT_LEN, 0)));
+        assert_eq!(min, Some((INPUT_LEN, 0)));
+        assert_eq!(min_one, Some((0, INPUT_LEN)));
+        assert_eq!(min_empty, None);
     }
 
     fn test_adaptor_reduce(range_strategy: RangeStrategy) {
