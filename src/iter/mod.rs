@@ -10,7 +10,10 @@
 
 mod source;
 
-pub use source::{IntoParallelIterator, IntoParallelRefIterator, SliceParallelIterator};
+pub use source::{
+    IntoParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator,
+    MutSliceParallelIterator, SliceParallelIterator,
+};
 use std::cmp::Ordering;
 
 /// An iterator to process items in parallel. The [`ParallelIteratorExt`] trait
@@ -18,6 +21,12 @@ use std::cmp::Ordering;
 /// trait.
 pub trait ParallelIterator: Sized {
     /// The type of items that this parallel iterator produces.
+    ///
+    /// Note that this type has no particular [`Send`] nor [`Sync`] bounds, as
+    /// items may be created locally on a worker thread, for example via the
+    /// [`map()`](ParallelIteratorExt::map) adaptor. However, initial
+    /// sources of parallel iterators require the items to be [`Send`],
+    /// via the [`IntoParallelIterator`] trait.
     type Item;
 
     /// Runs the pipeline defined by the given functions on this iterator.
@@ -25,13 +34,12 @@ pub trait ParallelIterator: Sized {
     /// # Parameters
     ///
     /// - `init` function to create a new (per-thread) accumulator,
-    /// - `process_item` function to accumulate an item from the slice into the
-    ///   accumulator,
+    /// - `process_item` function to accumulate an item into the accumulator,
     /// - `finalize` function to transform an accumulator into an output,
     /// - `reduce` function to reduce a pair of outputs into one output.
     ///
     /// ```rust
-    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIterator};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool_builder = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -40,10 +48,12 @@ pub trait ParallelIterator: Sized {
     /// # };
     /// # pool_builder.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    /// let sum = input
-    ///     .par_iter(&mut thread_pool)
-    ///     .map(|&x| x)
-    ///     .reduce(|| 0, |x, y| x + y);
+    /// let sum = input.par_iter(&mut thread_pool).pipeline(
+    ///     || 0,
+    ///     |acc, _, x| acc + x,
+    ///     |acc| acc,
+    ///     |x, y| x + y,
+    /// );
     /// assert_eq!(sum, 5 * 11);
     /// # });
     /// ```

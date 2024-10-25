@@ -147,17 +147,18 @@ impl<'scope> ThreadPool<'scope> {
         }
     }
 
-    /// Processes an input slice in parallel and returns the aggregated output.
-    pub(crate) fn pipeline<'data, Input: Sync, Output: Send, Accum>(
+    /// Processes an input of the given length in parallel and returns the
+    /// aggregated output.
+    pub(crate) fn pipeline<Output: Send, Accum>(
         &mut self,
-        input: &'data [Input],
+        input_len: usize,
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize, &'data Input) -> Accum + Sync,
+        process_item: impl Fn(Accum, usize) -> Accum + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
     ) -> Output {
         self.inner
-            .pipeline(input, init, process_item, finalize, reduce)
+            .pipeline(input_len, init, process_item, finalize, reduce)
     }
 }
 
@@ -197,21 +198,22 @@ impl<'scope> ThreadPoolEnum<'scope> {
         }
     }
 
-    /// Processes an input slice in parallel and returns the aggregated output.
-    fn pipeline<'data, Input: Sync, Output: Send, Accum>(
+    /// Processes an input of the given length in parallel and returns the
+    /// aggregated output.
+    fn pipeline<Output: Send, Accum>(
         &mut self,
-        input: &'data [Input],
+        input_len: usize,
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize, &'data Input) -> Accum + Sync,
+        process_item: impl Fn(Accum, usize) -> Accum + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
     ) -> Output {
         match self {
             ThreadPoolEnum::Fixed(inner) => {
-                inner.pipeline(input, init, process_item, finalize, reduce)
+                inner.pipeline(input_len, init, process_item, finalize, reduce)
             }
             ThreadPoolEnum::WorkStealing(inner) => {
-                inner.pipeline(input, init, process_item, finalize, reduce)
+                inner.pipeline(input_len, init, process_item, finalize, reduce)
             }
         }
     }
@@ -222,7 +224,7 @@ struct ThreadPoolImpl<'scope, F: RangeFactory> {
     threads: Vec<WorkerThreadHandle<'scope>>,
     /// Orchestrator for the work ranges distributed to the threads.
     range_orchestrator: F::Orchestrator,
-    /// Pipeline to map and reduce inputs into the output.
+    /// Pipeline to map and reduce inputs into an output.
     pipeline: Lender<DynLifetimeSyncPipeline<F::Range>>,
 }
 
@@ -325,16 +327,17 @@ impl<'scope, F: RangeFactory> ThreadPoolImpl<'scope, F> {
         }
     }
 
-    /// Processes an input slice in parallel and returns the aggregated output.
-    fn pipeline<'data, Input: Sync, Output: Send, Accum>(
+    /// Processes an input of the given length in parallel and returns the
+    /// aggregated output.
+    fn pipeline<Output: Send, Accum>(
         &mut self,
-        input: &'data [Input],
+        input_len: usize,
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize, &'data Input) -> Accum + Sync,
+        process_item: impl Fn(Accum, usize) -> Accum + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
     ) -> Output {
-        self.range_orchestrator.reset_ranges(input.len());
+        self.range_orchestrator.reset_ranges(input_len);
 
         let num_threads = self.threads.len();
         let outputs = (0..num_threads)
@@ -342,7 +345,6 @@ impl<'scope, F: RangeFactory> ThreadPoolImpl<'scope, F> {
             .collect::<Arc<[_]>>();
 
         self.pipeline.lend(&PipelineImpl {
-            input,
             outputs: outputs.clone(),
             init,
             process_item,
@@ -393,35 +395,30 @@ impl<R: Range> LifetimeParameterized for DynLifetimeSyncPipeline<R> {
 }
 
 struct PipelineImpl<
-    'data,
-    Input,
     Output,
     Accum,
     Init: Fn() -> Accum,
-    ProcessItem: Fn(Accum, usize, &'data Input) -> Accum,
+    ProcessItem: Fn(Accum, usize) -> Accum,
     Finalize: Fn(Accum) -> Output,
 > {
-    input: &'data [Input],
     outputs: Arc<[Mutex<Option<Output>>]>,
     init: Init,
     process_item: ProcessItem,
     finalize: Finalize,
 }
 
-impl<'data, R, Input, Output, Accum, Init, ProcessItem, Finalize> Pipeline<R>
-    for PipelineImpl<'data, Input, Output, Accum, Init, ProcessItem, Finalize>
+impl<R, Output, Accum, Init, ProcessItem, Finalize> Pipeline<R>
+    for PipelineImpl<Output, Accum, Init, ProcessItem, Finalize>
 where
     R: Range,
     Init: Fn() -> Accum,
-    ProcessItem: Fn(Accum, usize, &'data Input) -> Accum,
+    ProcessItem: Fn(Accum, usize) -> Accum,
     Finalize: Fn(Accum) -> Output,
 {
     fn run(&self, worker_id: usize, range: &R) {
-        // SAFETY: The underlying input slice is valid and not mutated for the whole
-        // lifetime of this block.
         let mut accumulator = (self.init)();
         for i in range.iter() {
-            accumulator = (self.process_item)(accumulator, i, &self.input[i]);
+            accumulator = (self.process_item)(accumulator, i);
         }
         let output = (self.finalize)(accumulator);
         *self.outputs[worker_id].lock().unwrap() = Some(output);
