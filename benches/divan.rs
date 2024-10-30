@@ -59,7 +59,7 @@ mod paralight {
     use super::{LENGTHS, NUM_THREADS};
     use divan::counter::BytesCount;
     use divan::{black_box, Bencher};
-    use paralight::iter::{IntoParallelRefIterator, ParallelIteratorExt};
+    use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
 
     #[divan::bench(consts = NUM_THREADS, args = LENGTHS)]
@@ -89,7 +89,8 @@ mod paralight {
                 .counter(BytesCount::of_many::<u64>(len))
                 .bench_local(|| {
                     black_box(input_slice)
-                        .par_iter(&mut thread_pool)
+                        .par_iter()
+                        .with_thread_pool(&mut thread_pool)
                         .copied()
                         .reduce(|| 0, |x, y| x + y)
                 });

@@ -6,98 +6,63 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use super::{IntoParallelIterator, ParallelIterator};
-use crate::ThreadPool;
+use super::{IntoParallelSource, ParallelSource, SourceDescriptor};
 
-/// A parallel iterator over a slice. This struct is created by the
-/// [`par_iter()`](super::IntoParallelRefIterator::par_iter) method on
-/// [`IntoParallelRefIterator`](super::IntoParallelRefIterator).
+/// A parallel source over a slice. This struct is created by the
+/// [`par_iter()`](super::IntoParallelRefSource::par_iter) method on
+/// [`IntoParallelRefSource`](super::IntoParallelRefSource).
 #[must_use = "iterator adaptors are lazy"]
-pub struct SliceParallelIterator<'pool, 'scope: 'pool, 'data, T> {
-    thread_pool: &'pool mut ThreadPool<'scope>,
+pub struct SliceParallelSource<'data, T> {
     slice: &'data [T],
 }
 
-impl<'data, T: Sync> IntoParallelIterator for &'data [T] {
+impl<'data, T: Sync> IntoParallelSource for &'data [T] {
     type Item = &'data T;
-    type Iter<'pool, 'scope: 'pool> = SliceParallelIterator<'pool, 'scope, 'data, T>;
+    type Source = SliceParallelSource<'data, T>;
 
-    fn into_par_iter<'pool, 'scope: 'pool>(
-        self,
-        thread_pool: &'pool mut ThreadPool<'scope>,
-    ) -> Self::Iter<'pool, 'scope> {
-        SliceParallelIterator {
-            thread_pool,
-            slice: self,
-        }
+    fn into_par_iter(self) -> Self::Source {
+        SliceParallelSource { slice: self }
     }
 }
 
-impl<'pool, 'scope: 'pool, 'data, T: Sync> ParallelIterator
-    for SliceParallelIterator<'pool, 'scope, 'data, T>
-{
+impl<'data, T: Sync> ParallelSource for SliceParallelSource<'data, T> {
     type Item = &'data T;
 
-    fn pipeline<Output: Send, Accum>(
-        self,
-        init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize, Self::Item) -> Accum + Sync,
-        finalize: impl Fn(Accum) -> Output + Sync,
-        reduce: impl Fn(Output, Output) -> Output,
-    ) -> Output {
-        self.thread_pool.pipeline(
-            self.slice.len(),
-            init,
-            |acc, index| process_item(acc, index, &self.slice[index]),
-            finalize,
-            reduce,
-        )
+    fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
+        SourceDescriptor {
+            len: self.slice.len(),
+            fetch_item: |index| &self.slice[index],
+        }
     }
 }
 
 #[allow(clippy::too_long_first_doc_paragraph)]
-/// A parallel iterator over a mutable slice. This struct is created by the
-/// [`par_iter_mut()`](super::IntoParallelRefMutIterator::par_iter_mut) method
-/// on [`IntoParallelRefMutIterator`](super::IntoParallelRefMutIterator).
+/// A parallel source over a mutable slice. This struct is created by the
+/// [`par_iter_mut()`](super::IntoParallelRefMutSource::par_iter_mut) method
+/// on [`IntoParallelRefMutSource`](super::IntoParallelRefMutSource).
 #[must_use = "iterator adaptors are lazy"]
-pub struct MutSliceParallelIterator<'pool, 'scope: 'pool, 'data, T> {
-    thread_pool: &'pool mut ThreadPool<'scope>,
+pub struct MutSliceParallelSource<'data, T> {
     slice: &'data mut [T],
 }
 
-impl<'data, T: Send> IntoParallelIterator for &'data mut [T] {
+impl<'data, T: Send> IntoParallelSource for &'data mut [T] {
     type Item = &'data mut T;
-    type Iter<'pool, 'scope: 'pool> = MutSliceParallelIterator<'pool, 'scope, 'data, T>;
+    type Source = MutSliceParallelSource<'data, T>;
 
-    fn into_par_iter<'pool, 'scope: 'pool>(
-        self,
-        thread_pool: &'pool mut ThreadPool<'scope>,
-    ) -> Self::Iter<'pool, 'scope> {
-        MutSliceParallelIterator {
-            thread_pool,
-            slice: self,
-        }
+    fn into_par_iter(self) -> Self::Source {
+        MutSliceParallelSource { slice: self }
     }
 }
 
-impl<'pool, 'scope: 'pool, 'data, T: Send> ParallelIterator
-    for MutSliceParallelIterator<'pool, 'scope, 'data, T>
-{
+impl<'data, T: Send> ParallelSource for MutSliceParallelSource<'data, T> {
     type Item = &'data mut T;
 
-    fn pipeline<Output: Send, Accum>(
-        self,
-        init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize, Self::Item) -> Accum + Sync,
-        finalize: impl Fn(Accum) -> Output + Sync,
-        reduce: impl Fn(Output, Output) -> Output,
-    ) -> Output {
-        let ptr = MutPtrWrapper(self.slice.as_mut_ptr());
+    fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
         let len = self.slice.len();
-        self.thread_pool.pipeline(
+        let ptr = MutPtrWrapper(self.slice.as_mut_ptr());
+        SourceDescriptor {
             len,
-            init,
-            |acc, index| {
+            fetch_item: move |index| {
                 assert!(index < len);
                 let base_ptr: *mut T = ptr.get();
                 // SAFETY:
@@ -135,15 +100,13 @@ impl<'pool, 'scope: 'pool, 'data, T: Send> ParallelIterator
                 // threads, and `&mut T` is `Send` if and only if `T` is `Send`. This is the
                 // rationale for why `MutPtrWrapper` implements `Sync` when `T` is `Send`.
                 let item: &mut T = unsafe { &mut *item_ptr };
-                process_item(acc, index, item)
+                item
             },
-            finalize,
-            reduce,
-        )
+        }
     }
 }
 
-/// A helper struct for the implementation of [`MutSliceParallelIterator`], that
+/// A helper struct for the implementation of [`MutSliceParallelSource`], that
 /// wraps a [`*mut T`](pointer). This enables sending [`&mut T`](reference)
 /// derived from a [`&mut [T]`](slice) to other threads.
 struct MutPtrWrapper<T>(*mut T);
@@ -157,7 +120,7 @@ impl<T> MutPtrWrapper<T> {
 ///
 /// A [`MutPtrWrapper`] is meant to be shared among threads as a way to send
 /// items of type [`&mut T`](reference) to other threads (see the safety
-/// comments in [`MutSliceParallelIterator::pipeline`]). Therefore we make it
+/// comments in [`MutSliceParallelSource::descriptor`]). Therefore we make it
 /// [`Sync`] if and only if [`&mut T`](reference) is [`Send`], which is when `T`
 /// is [`Send`].
 unsafe impl<T: Send> Sync for MutPtrWrapper<T> {}

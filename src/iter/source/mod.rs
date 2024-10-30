@@ -6,54 +6,72 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use super::ParallelIterator;
-use crate::ThreadPool;
-
 pub mod slice;
 
-/// Trait for converting into a [`ParallelIterator`] on a [`ThreadPool`].
-pub trait IntoParallelIterator {
-    /// The type of items that this parallel iterator produces.
+/// An object describing how to fetch items from a [`ParallelSource`].
+pub struct SourceDescriptor<Item: Send, FetchItem: Fn(usize) -> Item + Sync> {
+    /// Number of items that the source produces.
+    pub len: usize,
+    /// A function to fetch the item at the given index.
+    pub fetch_item: FetchItem,
+}
+
+/// A source to produce items in parallel.
+///
+/// This can be turned into a [`ParallelIterator`](super::ParallelIterator) by
+/// attaching a [`ThreadPool`](crate::ThreadPool) via the
+/// [`with_thread_pool()`](super::WithThreadPool::with_thread_pool) function.
+pub trait ParallelSource: Sized {
+    /// The type of items that this parallel source produces.
     ///
     /// Items are sent to worker threads (where they are then consumed by the
     /// `process_item` function parameter of the
-    /// [`ParallelIterator::pipeline()`]), hence the required [`Send`] bound.
+    /// [`super::ParallelIterator::pipeline()`]), hence the required [`Send`]
+    /// bound.
     type Item: Send;
 
-    /// Target parallel iterator type.
-    type Iter<'pool, 'scope: 'pool>: ParallelIterator<Item = Self::Item>;
-
-    /// Converts `self` into a parallel iterator to be processed on the given
-    /// thread pool.
-    fn into_par_iter<'pool, 'scope: 'pool>(
-        self,
-        thread_pool: &'pool mut ThreadPool<'scope>,
-    ) -> Self::Iter<'pool, 'scope>;
+    /// Returns an object that describes how to fetch items from this source.
+    fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync>;
 }
 
-/// Trait for converting into a [`ParallelIterator`] that produces references.
-///
-/// This trait is automatically implemented for `T` where [`&T`](reference)
-/// implements [`IntoParallelIterator`].
-pub trait IntoParallelRefIterator<'data> {
-    /// The type of items that this parallel iterator produces.
+/// Trait for converting into a [`ParallelSource`].
+pub trait IntoParallelSource {
+    /// The type of items that this parallel source produces.
     ///
-    /// Like for [`IntoParallelIterator`], items are sent to worker threads
-    /// (where they are then consumed by the `process_item` function
-    /// parameter of the [`ParallelIterator::pipeline()`]), hence the required
-    /// [`Send`] bound.
+    /// Items are sent to worker threads (where they are then consumed by the
+    /// `process_item` function parameter of the
+    /// [`super::ParallelIterator::pipeline()`]), hence the required [`Send`]
+    /// bound.
     type Item: Send;
 
-    /// Target parallel iterator type.
-    type Iter<'pool, 'scope: 'pool>: ParallelIterator
-    where
-        Self: 'data;
+    /// Target parallel source type.
+    type Source: ParallelSource<Item = Self::Item>;
 
-    /// Converts `&self` into a parallel iterator to be processed on the given
+    /// Converts `self` into a parallel source.
+    fn into_par_iter(self) -> Self::Source;
+}
+
+/// Trait for converting into a [`ParallelSource`] that produces references.
+///
+/// This trait is automatically implemented for `T` where [`&T`](reference)
+/// implements [`IntoParallelSource`].
+pub trait IntoParallelRefSource<'data> {
+    /// The type of items that this parallel source produces.
+    ///
+    /// Like for [`IntoParallelSource`], items are sent to worker threads (where
+    /// they are then consumed by the `process_item` function parameter of the
+    /// [`super::ParallelIterator::pipeline()`]), hence the required [`Send`]
+    /// bound.
+    type Item: Send;
+
+    /// Target parallel source type.
+    type Source: ParallelSource<Item = Self::Item>;
+
+    /// Converts `&self` into a parallel source to be processed on the given
     /// thread pool.
     ///
     /// ```rust
-    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool_builder = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -63,57 +81,50 @@ pub trait IntoParallelRefIterator<'data> {
     /// # pool_builder.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let sum = input
-    ///     .par_iter(&mut thread_pool)
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
     ///     .reduce(|| 0, |x, y| x + y);
     /// assert_eq!(sum, 5 * 11);
     /// # });
     /// ```
-    fn par_iter<'pool, 'scope: 'pool>(
-        &'data self,
-        thread_pool: &'pool mut ThreadPool<'scope>,
-    ) -> Self::Iter<'pool, 'scope>;
+    fn par_iter(&'data self) -> Self::Source;
 }
 
-impl<'data, T: 'data + ?Sized> IntoParallelRefIterator<'data> for T
+impl<'data, T: 'data + ?Sized> IntoParallelRefSource<'data> for T
 where
-    &'data T: IntoParallelIterator,
+    &'data T: IntoParallelSource,
 {
-    type Item = <&'data T as IntoParallelIterator>::Item;
-    type Iter<'pool, 'scope: 'pool> = <&'data T as IntoParallelIterator>::Iter<'pool, 'scope>;
+    type Item = <&'data T as IntoParallelSource>::Item;
+    type Source = <&'data T as IntoParallelSource>::Source;
 
-    fn par_iter<'pool, 'scope: 'pool>(
-        &'data self,
-        thread_pool: &'pool mut ThreadPool<'scope>,
-    ) -> Self::Iter<'pool, 'scope> {
-        self.into_par_iter(thread_pool)
+    fn par_iter(&'data self) -> Self::Source {
+        self.into_par_iter()
     }
 }
 
-/// Trait for converting into a [`ParallelIterator`] that produces mutable
+/// Trait for converting into a [`ParallelSource`] that produces mutable
 /// references.
 ///
 /// This trait is automatically implemented for `T` where [`&mut T`](reference)
-/// implements [`IntoParallelIterator`].
-pub trait IntoParallelRefMutIterator<'data> {
-    /// The type of items that this parallel iterator produces.
+/// implements [`IntoParallelSource`].
+pub trait IntoParallelRefMutSource<'data> {
+    /// The type of items that this parallel source produces.
     ///
-    /// Like for [`IntoParallelIterator`], items are sent to worker threads
-    /// (where they are then consumed by the `process_item` function
-    /// parameter of the [`ParallelIterator::pipeline()`]), hence the required
-    /// [`Send`] bound.
+    /// Like for [`IntoParallelSource`], items are sent to worker threads (where
+    /// they are then consumed by the `process_item` function parameter of the
+    /// [`super::ParallelIterator::pipeline()`]), hence the required [`Send`]
+    /// bound.
     type Item: Send;
 
-    /// Target parallel iterator type.
-    type Iter<'pool, 'scope: 'pool>: ParallelIterator
-    where
-        Self: 'data;
+    /// Target parallel source type.
+    type Source: ParallelSource<Item = Self::Item>;
 
-    /// Converts `&mut self` into a parallel iterator to be processed on the
-    /// given thread pool.
+    /// Converts `&mut self` into a parallel source to be processed on the given
+    /// thread pool.
     ///
     /// ```rust
-    /// # use paralight::iter::{IntoParallelRefMutIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefMutSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool_builder = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -122,29 +133,26 @@ pub trait IntoParallelRefMutIterator<'data> {
     /// # };
     /// # pool_builder.scope(|mut thread_pool| {
     /// let mut values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    /// let sum = values.par_iter_mut(&mut thread_pool).for_each(|x| {
-    ///     *x *= 2;
-    /// });
+    /// let sum = values
+    ///     .par_iter_mut()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .for_each(|x| {
+    ///         *x *= 2;
+    ///     });
     /// assert_eq!(values, [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]);
     /// # });
     /// ```
-    fn par_iter_mut<'pool, 'scope: 'pool>(
-        &'data mut self,
-        thread_pool: &'pool mut ThreadPool<'scope>,
-    ) -> Self::Iter<'pool, 'scope>;
+    fn par_iter_mut(&'data mut self) -> Self::Source;
 }
 
-impl<'data, T: 'data + ?Sized> IntoParallelRefMutIterator<'data> for T
+impl<'data, T: 'data + ?Sized> IntoParallelRefMutSource<'data> for T
 where
-    &'data mut T: IntoParallelIterator,
+    &'data mut T: IntoParallelSource,
 {
-    type Item = <&'data mut T as IntoParallelIterator>::Item;
-    type Iter<'pool, 'scope: 'pool> = <&'data mut T as IntoParallelIterator>::Iter<'pool, 'scope>;
+    type Item = <&'data mut T as IntoParallelSource>::Item;
+    type Source = <&'data mut T as IntoParallelSource>::Source;
 
-    fn par_iter_mut<'pool, 'scope: 'pool>(
-        &'data mut self,
-        thread_pool: &'pool mut ThreadPool<'scope>,
-    ) -> Self::Iter<'pool, 'scope> {
-        self.into_par_iter(thread_pool)
+    fn par_iter_mut(&'data mut self) -> Self::Source {
+        self.into_par_iter()
     }
 }

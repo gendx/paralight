@@ -10,9 +10,62 @@
 
 mod source;
 
-pub use source::slice::{MutSliceParallelIterator, SliceParallelIterator};
-pub use source::{IntoParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator};
+use crate::ThreadPool;
+pub use source::slice::{MutSliceParallelSource, SliceParallelSource};
+pub use source::{
+    IntoParallelRefMutSource, IntoParallelRefSource, IntoParallelSource, ParallelSource,
+    SourceDescriptor,
+};
 use std::cmp::Ordering;
+
+/// Trait to attach a [`ThreadPool`] to a [`ParallelSource`] and obtain a
+/// [`ParallelIterator`].
+pub trait WithThreadPool: ParallelSource {
+    /// Attaches the given [`ThreadPool`] to this [`ParallelSource`].
+    fn with_thread_pool<'pool, 'scope: 'pool>(
+        self,
+        thread_pool: &'pool mut ThreadPool<'scope>,
+    ) -> BaseParallelIterator<'pool, 'scope, Self> {
+        BaseParallelIterator {
+            thread_pool,
+            source: self,
+        }
+    }
+}
+
+impl<S: ParallelSource> WithThreadPool for S {}
+
+/// This struct is created by the
+/// [`with_thread_pool()`](WithThreadPool::with_thread_pool) method on
+/// [`WithThreadPool`].
+#[must_use = "iterator adaptors are lazy"]
+pub struct BaseParallelIterator<'pool, 'scope: 'pool, S: ParallelSource> {
+    thread_pool: &'pool mut ThreadPool<'scope>,
+    source: S,
+}
+
+impl<'pool, 'scope: 'pool, S: ParallelSource> ParallelIterator
+    for BaseParallelIterator<'pool, 'scope, S>
+{
+    type Item = S::Item;
+
+    fn pipeline<Output: Send, Accum>(
+        self,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(Accum, usize, Self::Item) -> Accum + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+    ) -> Output {
+        let source_descriptor = self.source.descriptor();
+        self.thread_pool.pipeline(
+            source_descriptor.len,
+            init,
+            |acc, index| process_item(acc, index, (source_descriptor.fetch_item)(index)),
+            finalize,
+            reduce,
+        )
+    }
+}
 
 /// An iterator to process items in parallel. The [`ParallelIteratorExt`] trait
 /// provides additional methods (iterator adaptors) as an extension of this
@@ -24,7 +77,7 @@ pub trait ParallelIterator: Sized {
     /// items may be created locally on a worker thread, for example via the
     /// [`map()`](ParallelIteratorExt::map) adaptor. However, initial
     /// sources of parallel iterators require the items to be [`Send`],
-    /// via the [`IntoParallelIterator`] trait.
+    /// via the [`IntoParallelSource`] trait.
     type Item;
 
     /// Runs the pipeline defined by the given functions on this iterator.
@@ -37,7 +90,7 @@ pub trait ParallelIterator: Sized {
     /// - `reduce` function to reduce a pair of outputs into one output.
     ///
     /// ```rust
-    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIterator};
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIterator, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool_builder = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -46,12 +99,10 @@ pub trait ParallelIterator: Sized {
     /// # };
     /// # pool_builder.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    /// let sum = input.par_iter(&mut thread_pool).pipeline(
-    ///     || 0,
-    ///     |acc, _, x| acc + x,
-    ///     |acc| acc,
-    ///     |x, y| x + y,
-    /// );
+    /// let sum = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .pipeline(|| 0, |acc, _, x| acc + x, |acc| acc, |x, y| x + y);
     /// assert_eq!(sum, 5 * 11);
     /// # });
     /// ```
@@ -76,7 +127,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// See also [`copied()`](Self::copied).
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -85,13 +136,17 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # };
     /// # pool.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(Box::new);
-    /// let sum = input.par_iter(&mut thread_pool).cloned().reduce(
-    ///     || Box::new(0),
-    ///     |mut x, y| {
-    ///         *x += *y;
-    ///         x
-    ///     },
-    /// );
+    /// let sum = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .cloned()
+    ///     .reduce(
+    ///         || Box::new(0),
+    ///         |mut x, y| {
+    ///             *x += *y;
+    ///             x
+    ///         },
+    ///     );
     /// assert_eq!(*sum, 5 * 11);
     /// # });
     /// ```
@@ -113,7 +168,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// See also [`cloned()`](Self::cloned).
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -123,7 +178,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # pool.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let sum = input
-    ///     .par_iter(&mut thread_pool)
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
     ///     .reduce(|| 0, |x, y| x + y);
     /// assert_eq!(sum, 5 * 11);
@@ -141,7 +197,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// predicate `f` returns `true`.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -151,7 +207,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # pool.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let sum_even = input
-    ///     .par_iter(&mut thread_pool)
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .filter(|&&x| x % 2 == 0)
     ///     .copied()
     ///     .reduce(|| 0, |x, y| x + y);
@@ -170,7 +227,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// returns `Some(x)` and skips the items for which `f` returns `None`.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -180,7 +237,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # pool.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let sum = input
-    ///     .par_iter(&mut thread_pool)
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .filter_map(|&x| if x != 2 { Some(x * 3) } else { None })
     ///     .reduce(|| 0, |x, y| x + y);
     /// assert_eq!(sum, 3 * (5 * 11 - 2));
@@ -191,7 +249,9 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// is fine.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIterator, ParallelIteratorExt, WithThreadPool,
+    /// # };
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # use std::rc::Rc;
     /// # let pool = ThreadPoolBuilder {
@@ -202,7 +262,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # pool.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let sum_even = input
-    ///     .par_iter(&mut thread_pool)
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .filter_map(|&x| if x % 2 == 0 { Some(Rc::new(x)) } else { None })
     ///     .pipeline(|| 0, |acc, _, x| acc + *x, |acc| acc, |a, b| a + b);
     /// assert_eq!(sum_even, 5 * 6);
@@ -218,7 +279,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// Runs `f` on each item of this parallel iterator.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # use std::collections::HashSet;
     /// # use std::sync::Mutex;
@@ -230,9 +291,12 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # pool.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let set = Mutex::new(HashSet::new());
-    /// input.par_iter(&mut thread_pool).for_each(|&x| {
-    ///     set.lock().unwrap().insert(x);
-    /// });
+    /// input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .for_each(|&x| {
+    ///         set.lock().unwrap().insert(x);
+    ///     });
     /// assert_eq!(set.into_inner().unwrap(), (1..=10).collect());
     /// # });
     /// ```
@@ -255,7 +319,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// pipeline.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # use std::sync::atomic::{AtomicUsize, Ordering};
     /// # let pool = ThreadPoolBuilder {
@@ -268,7 +332,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let inspections = AtomicUsize::new(0);
     ///
     /// let min = input
-    ///     .par_iter(&mut thread_pool)
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .inspect(|x| {
     ///         println!("[{:?}] x = {x}", std::thread::current().id());
     ///         inspections.fetch_add(1, Ordering::Relaxed);
@@ -290,7 +355,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// parallel iterator producing the mapped items.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -300,7 +365,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # pool.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let double_sum = input
-    ///     .par_iter(&mut thread_pool)
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .map(|&x| x * 2)
     ///     .reduce(|| 0, |x, y| x + y);
     /// assert_eq!(double_sum, 10 * 11);
@@ -311,7 +377,9 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// is fine.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIterator, ParallelIteratorExt, WithThreadPool,
+    /// # };
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # use std::rc::Rc;
     /// # let pool = ThreadPoolBuilder {
@@ -322,7 +390,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # pool.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let sum = input
-    ///     .par_iter(&mut thread_pool)
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .map(|&x| Rc::new(x))
     ///     .pipeline(|| 0, |acc, _, x| acc + *x, |acc| acc, |a, b| a + b);
     /// assert_eq!(sum, 5 * 11);
@@ -339,7 +408,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// is empty.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -348,7 +417,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # };
     /// # pool.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    /// let max = input.par_iter(&mut thread_pool).max();
+    /// let max = input.par_iter().with_thread_pool(&mut thread_pool).max();
     /// assert_eq!(max, Some(&10));
     /// # });
     /// ```
@@ -375,7 +444,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// function `f`, or [`None`] if this iterator is empty.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -386,7 +455,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// // Custom comparison function where even numbers are smaller than all odd numbers.
     /// let max = input
-    ///     .par_iter(&mut thread_pool)
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .max_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
     /// assert_eq!(max, Some(&9));
     /// # });
@@ -422,7 +492,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// empty.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -432,10 +502,13 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # pool.scope(|mut thread_pool| {
     /// let input = ["ccc", "aaaaa", "dd", "e", "bbbb"];
     ///
-    /// let max = input.par_iter(&mut thread_pool).max();
+    /// let max = input.par_iter().with_thread_pool(&mut thread_pool).max();
     /// assert_eq!(max, Some(&"e"));
     ///
-    /// let max_by_len = input.par_iter(&mut thread_pool).max_by_key(|x| x.len());
+    /// let max_by_len = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .max_by_key(|x| x.len());
     /// assert_eq!(max_by_len, Some(&"aaaaa"));
     /// # });
     /// ```
@@ -454,7 +527,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// is empty.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -463,7 +536,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # };
     /// # pool.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    /// let min = input.par_iter(&mut thread_pool).min();
+    /// let min = input.par_iter().with_thread_pool(&mut thread_pool).min();
     /// assert_eq!(min, Some(&1));
     /// # });
     /// ```
@@ -490,7 +563,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// function `f`, or [`None`] if this iterator is empty.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -501,7 +574,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// // Custom comparison function where even numbers are smaller than all odd numbers.
     /// let min = input
-    ///     .par_iter(&mut thread_pool)
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .min_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
     /// assert_eq!(min, Some(&2));
     /// # });
@@ -537,7 +611,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// empty.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -547,10 +621,13 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # pool.scope(|mut thread_pool| {
     /// let input = ["ccc", "aaaaa", "dd", "e", "bbbb"];
     ///
-    /// let min = input.par_iter(&mut thread_pool).min();
+    /// let min = input.par_iter().with_thread_pool(&mut thread_pool).min();
     /// assert_eq!(min, Some(&"aaaaa"));
     ///
-    /// let min_by_len = input.par_iter(&mut thread_pool).min_by_key(|x| x.len());
+    /// let min_by_len = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .min_by_key(|x| x.len());
     /// assert_eq!(min_by_len, Some(&"e"));
     /// # });
     /// ```
@@ -569,7 +646,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// `f` to collapse pairs of items.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -579,7 +656,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # pool.scope(|mut thread_pool| {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let sum = input
-    ///     .par_iter(&mut thread_pool)
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
     ///     .reduce(|| 0, |x, y| x + y);
     /// assert_eq!(sum, 5 * 11);
@@ -599,7 +677,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///   In particular, `reduce()` returns `init()` if the iterator is empty.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -608,7 +686,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # };
     /// # pool.scope(|mut thread_pool| {
     /// let sum = []
-    ///     .par_iter(&mut thread_pool)
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
     ///     .reduce(|| 0, |x, y| x + y);
     /// assert_eq!(sum, 0);

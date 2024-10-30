@@ -26,7 +26,8 @@ pub use core::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPool, ThreadP
 mod test {
     use super::*;
     use crate::iter::{
-        IntoParallelRefIterator, IntoParallelRefMutIterator, ParallelIterator, ParallelIteratorExt,
+        IntoParallelRefMutSource, IntoParallelRefSource, ParallelIterator, ParallelIteratorExt,
+        WithThreadPool,
     };
     use std::cell::Cell;
     use std::collections::HashSet;
@@ -834,12 +835,10 @@ mod test {
         };
         let sum = pool_builder.scope(|mut thread_pool| {
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-            input.par_iter(&mut thread_pool).pipeline(
-                || 0,
-                |acc, _, x| acc + x,
-                |acc| acc,
-                |a, b| a + b,
-            )
+            input
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
+                .pipeline(|| 0, |acc, _, x| acc + x, |acc| acc, |a, b| a + b)
         });
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
@@ -853,12 +852,10 @@ mod test {
         };
         let sum = pool_builder.scope(|mut thread_pool| {
             let input = (0..=INPUT_LEN).map(NotSend).collect::<Vec<NotSend>>();
-            input.par_iter(&mut thread_pool).pipeline(
-                || 0,
-                |acc, _, x| acc + x.get(),
-                |acc| acc,
-                |a, b| a + b,
-            )
+            input
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
+                .pipeline(|| 0, |acc, _, x| acc + x.get(), |acc| acc, |a, b| a + b)
         });
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
@@ -871,7 +868,10 @@ mod test {
         };
         let values = pool_builder.scope(|mut thread_pool| {
             let mut values = (0..=INPUT_LEN).collect::<Vec<u64>>();
-            values.par_iter_mut(&mut thread_pool).for_each(|x| *x *= 2);
+            values
+                .par_iter_mut()
+                .with_thread_pool(&mut thread_pool)
+                .for_each(|x| *x *= 2);
             values
         });
         assert_eq!(values, (0..=INPUT_LEN).map(|x| x * 2).collect::<Vec<_>>());
@@ -886,7 +886,8 @@ mod test {
         let values = pool_builder.scope(|mut thread_pool| {
             let mut values = (0..=INPUT_LEN).map(Cell::new).collect::<Vec<Cell<u64>>>();
             values
-                .par_iter_mut(&mut thread_pool)
+                .par_iter_mut()
+                .with_thread_pool(&mut thread_pool)
                 .for_each(|x| x.set(x.get() * 2));
             values
         });
@@ -906,13 +907,17 @@ mod test {
         };
         let sum = pool_builder.scope(|mut thread_pool| {
             let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
-            input.par_iter(&mut thread_pool).cloned().reduce(
-                || Box::new(0u64),
-                |mut x, y| {
-                    *x += *y;
-                    x
-                },
-            )
+            input
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
+                .cloned()
+                .reduce(
+                    || Box::new(0u64),
+                    |mut x, y| {
+                        *x += *y;
+                        x
+                    },
+                )
         });
         assert_eq!(*sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
@@ -926,7 +931,8 @@ mod test {
         let sum = pool_builder.scope(|mut thread_pool| {
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
             input
-                .par_iter(&mut thread_pool)
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
                 .copied()
                 .reduce(|| 0u64, |x, y| x + y)
         });
@@ -942,7 +948,8 @@ mod test {
         let sum = pool_builder.scope(|mut thread_pool| {
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
             input
-                .par_iter(&mut thread_pool)
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
                 .filter(|&&x| x % 2 == 0)
                 .pipeline(|| 0, |acc, _, x| acc + *x, |acc| acc, |a, b| a + b)
         });
@@ -958,7 +965,8 @@ mod test {
         let sum = pool_builder.scope(|mut thread_pool| {
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
             input
-                .par_iter(&mut thread_pool)
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
                 .filter_map(|&x| if x % 2 == 0 { Some(x * 3) } else { None })
                 .pipeline(|| 0, |acc, _, x| acc + x, |acc| acc, |a, b| a + b)
         });
@@ -974,9 +982,12 @@ mod test {
         let set = pool_builder.scope(|mut thread_pool| {
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
             let set = Mutex::new(HashSet::new());
-            input.par_iter(&mut thread_pool).for_each(|&x| {
-                set.lock().unwrap().insert(x);
-            });
+            input
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
+                .for_each(|&x| {
+                    set.lock().unwrap().insert(x);
+                });
             set.into_inner().unwrap()
         });
         assert_eq!(set, (0..=INPUT_LEN).collect());
@@ -992,7 +1003,8 @@ mod test {
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
             let sum = AtomicU64::new(0);
             let max = input
-                .par_iter(&mut thread_pool)
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
                 .copied()
                 .inspect(|&x| {
                     sum.fetch_add(x, Ordering::Relaxed);
@@ -1013,21 +1025,22 @@ mod test {
         let (sum1, sum2, sum3) = pool_builder.scope(|mut thread_pool| {
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
 
-            let sum1 = input.par_iter(&mut thread_pool).map(|&x| x * 42).pipeline(
-                || 0,
-                |acc, _, x| acc + x,
-                |acc| acc,
-                |a, b| a + b,
-            );
+            let sum1 = input
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
+                .map(|&x| x * 42)
+                .pipeline(|| 0, |acc, _, x| acc + x, |acc| acc, |a, b| a + b);
 
             let sum2 = input
-                .par_iter(&mut thread_pool)
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
                 .map(|&x| x * 6)
                 .map(|x| x * 7)
                 .pipeline(|| 0, |acc, _, x| acc + x, |acc| acc, |a, b| a + b);
 
             let sum3 = input
-                .par_iter(&mut thread_pool)
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
                 // Mapping to a non-Send non-Sync type is fine, as the item stays on the same thread
                 // and isn't shared with other threads.
                 .map(|&x| Rc::new(x))
@@ -1048,13 +1061,25 @@ mod test {
         };
         let (max, max_one, max_empty) = pool_builder.scope(|mut thread_pool| {
             let mut input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-            let max = input.par_iter(&mut thread_pool).copied().max();
+            let max = input
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
+                .copied()
+                .max();
 
             input.truncate(1);
-            let max_one = input.par_iter(&mut thread_pool).copied().max();
+            let max_one = input
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
+                .copied()
+                .max();
 
             input.clear();
-            let max_empty = input.par_iter(&mut thread_pool).copied().max();
+            let max_empty = input
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
+                .copied()
+                .max();
 
             (max, max_one, max_empty)
         });
@@ -1074,19 +1099,22 @@ mod test {
             // numbers.
             let mut input = (0..=INPUT_LEN).collect::<Vec<u64>>();
             let max = input
-                .par_iter(&mut thread_pool)
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
                 .copied()
                 .max_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
 
             input.truncate(1);
             let max_one = input
-                .par_iter(&mut thread_pool)
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
                 .copied()
                 .max_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
 
             input.clear();
             let max_empty = input
-                .par_iter(&mut thread_pool)
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
                 .copied()
                 .max_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
 
@@ -1109,19 +1137,22 @@ mod test {
                 .map(|x| (x, INPUT_LEN - x))
                 .collect::<Vec<(u64, u64)>>();
             let max = input
-                .par_iter(&mut thread_pool)
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
                 .copied()
                 .max_by_key(|pair| pair.1);
 
             input.truncate(1);
             let max_one = input
-                .par_iter(&mut thread_pool)
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
                 .copied()
                 .max_by_key(|pair| pair.1);
 
             input.clear();
             let max_empty = input
-                .par_iter(&mut thread_pool)
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
                 .copied()
                 .max_by_key(|pair| pair.1);
 
@@ -1140,13 +1171,25 @@ mod test {
         };
         let (min, min_one, min_empty) = pool_builder.scope(|mut thread_pool| {
             let mut input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-            let min = input.par_iter(&mut thread_pool).copied().min();
+            let min = input
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
+                .copied()
+                .min();
 
             input.truncate(1);
-            let min_one = input.par_iter(&mut thread_pool).copied().min();
+            let min_one = input
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
+                .copied()
+                .min();
 
             input.clear();
-            let min_empty = input.par_iter(&mut thread_pool).copied().min();
+            let min_empty = input
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
+                .copied()
+                .min();
 
             (min, min_one, min_empty)
         });
@@ -1166,19 +1209,22 @@ mod test {
             // numbers.
             let mut input = (1..=INPUT_LEN).collect::<Vec<u64>>();
             let min = input
-                .par_iter(&mut thread_pool)
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
                 .copied()
                 .min_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
 
             input.truncate(1);
             let min_one = input
-                .par_iter(&mut thread_pool)
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
                 .copied()
                 .min_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
 
             input.clear();
             let min_empty = input
-                .par_iter(&mut thread_pool)
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
                 .copied()
                 .min_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
 
@@ -1201,19 +1247,22 @@ mod test {
                 .map(|x| (x, INPUT_LEN - x))
                 .collect::<Vec<(u64, u64)>>();
             let min = input
-                .par_iter(&mut thread_pool)
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
                 .copied()
                 .min_by_key(|pair| pair.1);
 
             input.truncate(1);
             let min_one = input
-                .par_iter(&mut thread_pool)
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
                 .copied()
                 .min_by_key(|pair| pair.1);
 
             input.clear();
             let min_empty = input
-                .par_iter(&mut thread_pool)
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
                 .copied()
                 .min_by_key(|pair| pair.1);
 
@@ -1233,7 +1282,8 @@ mod test {
         let sum = pool_builder.scope(|mut thread_pool| {
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
             input
-                .par_iter(&mut thread_pool)
+                .par_iter()
+                .with_thread_pool(&mut thread_pool)
                 .copied()
                 .reduce(|| 0, |x, y| x + y)
         });

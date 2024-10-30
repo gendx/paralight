@@ -15,7 +15,7 @@ threads. Each thread processes a subset of the items, and a final step reduces
 the outputs from all threads into a single result.
 
 ```rust
-use paralight::iter::{IntoParallelRefIterator, ParallelIteratorExt};
+use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
 use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
 
 // Define thread pool parameters.
@@ -31,7 +31,8 @@ let sum = pool_builder.scope(
         // Compute the sum of a slice.
         let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
         input
-            .par_iter(&mut thread_pool)
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
             .copied()
             .reduce(|| 0, |x, y| x + y)
     },
@@ -115,8 +116,8 @@ enum:
 
 Whether CPU pinning is useful or detrimental depends on your workload. If you're
 processing the same data over and over again (e.g. calling
-[`par_iter()`](iter::IntoParallelRefIterator::par_iter) multiple times on the
-same data), CPU pinning can help ensure that each subset of the data is always
+[`par_iter()`](iter::IntoParallelRefSource::par_iter) multiple times on the same
+data), CPU pinning can help ensure that each subset of the data is always
 processed on the same CPU core and stays fresh in the lower-level per-core
 caches, speeding up memory accesses. This however depends on the amount of data:
 if it's too large, it may not fit in per-core caches anyway.
@@ -134,7 +135,7 @@ With the [`WorkStealing`](RangeStrategy::WorkStealing) strategy, inputs with
 more than [`u32::MAX`](u32::MAX) elements are currently not supported.
 
 ```rust,should_panic
-use paralight::iter::{IntoParallelRefIterator, ParallelIteratorExt};
+use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
 use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
 
 let pool_builder = ThreadPoolBuilder {
@@ -147,7 +148,8 @@ let sum = pool_builder.scope(
     |mut thread_pool| {
         let input = vec![0u8; 5_000_000_000];
         input
-            .par_iter(&mut thread_pool)
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
             .copied()
             .reduce(|| 0, |x, y| x + y)
     },

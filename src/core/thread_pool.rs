@@ -89,7 +89,7 @@ impl ThreadPoolBuilder {
     /// Spawn a scoped thread pool.
     ///
     /// ```rust
-    /// # use paralight::iter::{IntoParallelRefIterator, ParallelIteratorExt};
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
     /// let pool_builder = ThreadPoolBuilder {
     ///     num_threads: ThreadCount::AvailableParallelism,
@@ -100,7 +100,8 @@ impl ThreadPoolBuilder {
     /// let sum = pool_builder.scope(|mut thread_pool| {
     ///     let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     ///     input
-    ///         .par_iter(&mut thread_pool)
+    ///         .par_iter()
+    ///         .with_thread_pool(&mut thread_pool)
     ///         .copied()
     ///         .reduce(|| 0, |x, y| x + y)
     /// });
@@ -124,8 +125,8 @@ impl ThreadPoolBuilder {
 ///
 /// This type doesn't expose any public methods. You can interact with it via
 /// the [`ThreadPoolBuilder::scope()`] function to create a thread pool, and the
-/// [`par_iter()`](crate::iter::IntoParallelRefIterator::par_iter) method to
-/// attach a thread pool to a parallel iterator.
+/// [`with_thread_pool()`](crate::iter::WithThreadPool::with_thread_pool) method
+/// to attach a thread pool to a parallel iterator.
 ///
 /// See also [`std::thread::scope()`] for what scoped threads mean and what the
 /// `'scope` lifetime refers to.
