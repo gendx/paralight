@@ -10,10 +10,8 @@
 
 mod source;
 
-pub use source::{
-    IntoParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator,
-    MutSliceParallelIterator, SliceParallelIterator,
-};
+pub use source::slice::{MutSliceParallelIterator, SliceParallelIterator};
+pub use source::{IntoParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator};
 use std::cmp::Ordering;
 
 /// An iterator to process items in parallel. The [`ParallelIteratorExt`] trait
