@@ -45,7 +45,7 @@ mod serial {
     use criterion::{black_box, Bencher};
 
     pub fn sum(bencher: &mut Bencher, len: &usize) {
-        let input = (0..=*len as u64).collect::<Vec<u64>>();
+        let input = (0..*len as u64).collect::<Vec<u64>>();
         let input_slice = input.as_slice();
         bencher.iter(|| black_box(input_slice).iter().sum::<u64>());
     }
@@ -57,7 +57,7 @@ mod rayon {
     use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 
     pub fn sum(bencher: &mut Bencher, num_threads: usize, len: &usize) {
-        let input = (0..=*len as u64).collect::<Vec<u64>>();
+        let input = (0..*len as u64).collect::<Vec<u64>>();
         let input_slice = input.as_slice();
         let thread_pool = rayon::ThreadPoolBuilder::new()
             .num_threads(num_threads)
@@ -79,7 +79,7 @@ mod paralight {
         num_threads: usize,
         len: &usize,
     ) {
-        let input = (0..=*len as u64).collect::<Vec<u64>>();
+        let input = (0..*len as u64).collect::<Vec<u64>>();
         let input_slice = input.as_slice();
         let pool_builder = ThreadPoolBuilder {
             num_threads: ThreadCount::try_from(num_threads).unwrap(),

@@ -22,7 +22,7 @@ mod serial {
 
     #[divan::bench(args = LENGTHS)]
     fn sum(bencher: Bencher, len: usize) {
-        let input = (0..=len as u64).collect::<Vec<u64>>();
+        let input = (0..len as u64).collect::<Vec<u64>>();
         let input_slice = input.as_slice();
         bencher
             .counter(BytesCount::of_many::<u64>(len))
@@ -39,7 +39,7 @@ mod rayon {
 
     #[divan::bench(consts = NUM_THREADS, args = LENGTHS)]
     fn sum_rayon<const NUM_THREADS: usize>(bencher: Bencher, len: usize) {
-        let input = (0..=len as u64).collect::<Vec<u64>>();
+        let input = (0..len as u64).collect::<Vec<u64>>();
         let input_slice = input.as_slice();
         let thread_pool = rayon::ThreadPoolBuilder::new()
             .num_threads(NUM_THREADS)
@@ -77,7 +77,7 @@ mod paralight {
         len: usize,
         range_strategy: RangeStrategy,
     ) {
-        let input = (0..=len as u64).collect::<Vec<u64>>();
+        let input = (0..len as u64).collect::<Vec<u64>>();
         let input_slice = input.as_slice();
         let pool_builder = ThreadPoolBuilder {
             num_threads: ThreadCount::try_from(NUM_THREADS).unwrap(),
