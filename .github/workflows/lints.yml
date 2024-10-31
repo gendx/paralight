@@ -28,3 +28,12 @@ jobs:
         run: cargo clippy --verbose --all --tests --all-features
       - name: Check Clippy lints on tests (default features)
         run: cargo clippy --verbose --all --tests
+
+      - name: Check Clippy lints on benchmarks (no default features)
+        run: cargo clippy --verbose --all --benches --no-default-features
+      - name: Check Clippy lints on benchmarks (log feature)
+        run: cargo clippy --verbose --all --benches --no-default-features --features=log
+      - name: Check Clippy lints on benchmarks (all features)
+        run: cargo clippy --verbose --all --benches --all-features
+      - name: Check Clippy lints on benchmarks (default features)
+        run: cargo clippy --verbose --all --benches

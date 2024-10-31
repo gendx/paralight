@@ -20,7 +20,7 @@ fn sum(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("serial", len), len, serial::sum);
         for &num_threads in NUM_THREADS {
             group.bench_with_input(
-                BenchmarkId::new(&format!("rayon@{num_threads}"), len),
+                BenchmarkId::new(format!("rayon@{num_threads}"), len),
                 len,
                 |bencher, len| rayon::sum(bencher, num_threads, len),
             );
@@ -29,7 +29,7 @@ fn sum(c: &mut Criterion) {
                 (RangeStrategy::WorkStealing, "work-stealing"),
             ] {
                 group.bench_with_input(
-                    BenchmarkId::new(&format!("paralight_{range_name}@{num_threads}"), len),
+                    BenchmarkId::new(format!("paralight_{range_name}@{num_threads}"), len),
                     len,
                     |bencher, len| paralight::sum(bencher, range_strategy, num_threads, len),
                 );
