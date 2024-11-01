@@ -28,6 +28,27 @@ mod serial {
             .counter(BytesCount::of_many::<u64>(len))
             .bench_local(|| black_box(input_slice).iter().sum::<u64>())
     }
+
+    #[divan::bench(args = LENGTHS)]
+    fn add(bencher: Bencher, len: usize) {
+        let left = (0..len as u64).collect::<Vec<u64>>();
+        let right = (0..len as u64).collect::<Vec<u64>>();
+        let mut output = vec![0; len];
+
+        let left_slice = left.as_slice();
+        let right_slice = right.as_slice();
+        let output_slice = output.as_mut_slice();
+
+        bencher
+            .counter(BytesCount::of_many::<u64>(len * 2))
+            .bench_local(|| {
+                black_box(left_slice)
+                    .iter()
+                    .zip(black_box(right_slice))
+                    .zip(black_box(output_slice.iter_mut()))
+                    .for_each(|((&a, &b), out)| *out = a + b)
+            })
+    }
 }
 
 /// Benchmarks using Rayon.
@@ -35,7 +56,10 @@ mod rayon {
     use super::{LENGTHS, NUM_THREADS};
     use divan::counter::BytesCount;
     use divan::{black_box, Bencher};
-    use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+    use rayon::iter::{
+        IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator,
+        ParallelIterator,
+    };
 
     #[divan::bench(consts = NUM_THREADS, args = LENGTHS)]
     fn sum_rayon<const NUM_THREADS: usize>(bencher: Bencher, len: usize) {
@@ -52,6 +76,36 @@ mod rayon {
             .counter(BytesCount::of_many::<u64>(len))
             .bench_local(|| thread_pool.install(|| black_box(input_slice).par_iter().sum::<u64>()));
     }
+
+    #[divan::bench(consts = NUM_THREADS, args = LENGTHS)]
+    fn add_rayon<const NUM_THREADS: usize>(bencher: Bencher, len: usize) {
+        let left = (0..len as u64).collect::<Vec<u64>>();
+        let right = (0..len as u64).collect::<Vec<u64>>();
+        let mut output = vec![0; len];
+
+        let left_slice = left.as_slice();
+        let right_slice = right.as_slice();
+        let output_slice = output.as_mut_slice();
+
+        let thread_pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(NUM_THREADS)
+            .build()
+            .unwrap();
+        // Ideally we'd prefer to run bench_local() inside the Rayon thread pool, but
+        // that doesn't work because divan::Bencher isn't Send (and bench_local()
+        // consumes it).
+        bencher
+            .counter(BytesCount::of_many::<u64>(len * 2))
+            .bench_local(|| {
+                thread_pool.install(|| {
+                    black_box(left_slice)
+                        .par_iter()
+                        .zip(black_box(right_slice))
+                        .zip(black_box(output_slice.par_iter_mut()))
+                        .for_each(|((&a, &b), out)| *out = a + b)
+                })
+            });
+    }
 }
 
 /// Benchmarks using Paralight.
@@ -59,7 +113,10 @@ mod paralight {
     use super::{LENGTHS, NUM_THREADS};
     use divan::counter::BytesCount;
     use divan::{black_box, Bencher};
-    use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
+    use paralight::iter::{
+        IntoParallelRefMutSource, IntoParallelRefSource, ParallelIteratorExt, WithThreadPool,
+        ZipableSource,
+    };
     use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
 
     #[divan::bench(consts = NUM_THREADS, args = LENGTHS)]
@@ -93,6 +150,50 @@ mod paralight {
                         .with_thread_pool(&mut thread_pool)
                         .copied()
                         .reduce(|| 0, |x, y| x + y)
+                });
+        });
+    }
+
+    #[divan::bench(consts = NUM_THREADS, args = LENGTHS)]
+    fn add_fixed<const NUM_THREADS: usize>(bencher: Bencher, len: usize) {
+        add_impl::<NUM_THREADS>(bencher, len, RangeStrategy::Fixed)
+    }
+
+    #[divan::bench(consts = NUM_THREADS, args = LENGTHS)]
+    fn add_work_stealing<const NUM_THREADS: usize>(bencher: Bencher, len: usize) {
+        add_impl::<NUM_THREADS>(bencher, len, RangeStrategy::WorkStealing)
+    }
+
+    fn add_impl<const NUM_THREADS: usize>(
+        bencher: Bencher,
+        len: usize,
+        range_strategy: RangeStrategy,
+    ) {
+        let left = (0..len as u64).collect::<Vec<u64>>();
+        let right = (0..len as u64).collect::<Vec<u64>>();
+        let mut output = vec![0; len];
+
+        let left_slice = left.as_slice();
+        let right_slice = right.as_slice();
+        let output_slice = output.as_mut_slice();
+
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: ThreadCount::try_from(NUM_THREADS).unwrap(),
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
+        };
+        pool_builder.scope(move |mut thread_pool| {
+            bencher
+                .counter(BytesCount::of_many::<u64>(len * 2))
+                .bench_local(|| {
+                    (
+                        black_box(left_slice).par_iter(),
+                        black_box(right_slice).par_iter(),
+                        black_box(output_slice.par_iter_mut()),
+                    )
+                        .zip_eq()
+                        .with_thread_pool(&mut thread_pool)
+                        .for_each(|(&a, &b, out)| *out = a + b)
                 });
         });
     }

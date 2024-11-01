@@ -15,7 +15,10 @@ threads. Each thread processes a subset of the items, and a final step reduces
 the outputs from all threads into a single result.
 
 ```rust
-use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
+use paralight::iter::{
+    IntoParallelRefSource, IntoParallelRefMutSource, ParallelIteratorExt, WithThreadPool,
+    ZipableSource,
+};
 use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
 
 // Define thread pool parameters.
@@ -26,18 +29,30 @@ let pool_builder = ThreadPoolBuilder {
 };
 
 // Create a scoped thread pool.
-let sum = pool_builder.scope(
+pool_builder.scope(
     |mut thread_pool| {
         // Compute the sum of a slice.
         let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        input
+        let sum = input
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .copied()
-            .reduce(|| 0, |x, y| x + y)
+            .reduce(|| 0, |x, y| x + y);
+        assert_eq!(sum, 5 * 11);
+
+        // Add slices together.
+        let left = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        let right = [11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+        let mut output = [0; 10];
+
+        (left.par_iter(), right.par_iter(), output.par_iter_mut())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .for_each(|(&a, &b, out)| *out = a + b);
+
+        assert_eq!(output, [12, 14, 16, 18, 20, 22, 24, 26, 28, 30]);
     },
 );
-assert_eq!(sum, 5 * 11);
 ```
 
 Note: In principle, Paralight could be extended to support other inputs than

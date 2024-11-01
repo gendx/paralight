@@ -7,6 +7,7 @@
 // except according to those terms.
 
 pub mod slice;
+pub mod zip;
 
 /// An object describing how to fetch items from a [`ParallelSource`].
 pub struct SourceDescriptor<Item: Send, FetchItem: Fn(usize) -> Item + Sync> {
@@ -26,8 +27,8 @@ pub trait ParallelSource: Sized {
     ///
     /// Items are sent to worker threads (where they are then consumed by the
     /// `process_item` function parameter of the
-    /// [`super::ParallelIterator::pipeline()`]), hence the required [`Send`]
-    /// bound.
+    /// [`ParallelIterator::pipeline()`](super::ParallelIterator::pipeline)),
+    /// hence the required [`Send`] bound.
     type Item: Send;
 
     /// Returns an object that describes how to fetch items from this source.
@@ -40,8 +41,8 @@ pub trait IntoParallelSource {
     ///
     /// Items are sent to worker threads (where they are then consumed by the
     /// `process_item` function parameter of the
-    /// [`super::ParallelIterator::pipeline()`]), hence the required [`Send`]
-    /// bound.
+    /// [`ParallelIterator::pipeline()`](super::ParallelIterator::pipeline)),
+    /// hence the required [`Send`] bound.
     type Item: Send;
 
     /// Target parallel source type.
@@ -60,8 +61,8 @@ pub trait IntoParallelRefSource<'data> {
     ///
     /// Like for [`IntoParallelSource`], items are sent to worker threads (where
     /// they are then consumed by the `process_item` function parameter of the
-    /// [`super::ParallelIterator::pipeline()`]), hence the required [`Send`]
-    /// bound.
+    /// [`ParallelIterator::pipeline()`](super::ParallelIterator::pipeline)),
+    /// hence the required [`Send`] bound.
     type Item: Send;
 
     /// Target parallel source type.
@@ -113,8 +114,8 @@ pub trait IntoParallelRefMutSource<'data> {
     ///
     /// Like for [`IntoParallelSource`], items are sent to worker threads (where
     /// they are then consumed by the `process_item` function parameter of the
-    /// [`super::ParallelIterator::pipeline()`]), hence the required [`Send`]
-    /// bound.
+    /// [`ParallelIterator::pipeline()`](super::ParallelIterator::pipeline)),
+    /// hence the required [`Send`] bound.
     type Item: Send;
 
     /// Target parallel source type.

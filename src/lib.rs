@@ -27,7 +27,7 @@ mod test {
     use super::*;
     use crate::iter::{
         IntoParallelRefMutSource, IntoParallelRefSource, ParallelIterator, ParallelIteratorExt,
-        WithThreadPool,
+        WithThreadPool, ZipableSource,
     };
     use std::cell::Cell;
     use std::collections::HashSet;
@@ -107,6 +107,10 @@ mod test {
                 test_source_par_iter_not_send,
                 test_source_par_iter_mut,
                 test_source_par_iter_mut_not_sync,
+                test_source_adaptor_zip_eq,
+                test_source_adaptor_zip_eq_unequal => fail("called zip_eq() with sources of different lengths"),
+                test_source_adaptor_zip_max,
+                test_source_adaptor_zip_min,
                 test_adaptor_cloned,
                 test_adaptor_copied,
                 test_adaptor_filter,
@@ -897,6 +901,80 @@ mod test {
                 .map(|x| Cell::new(x * 2))
                 .collect::<Vec<_>>()
         );
+    }
+
+    fn test_source_adaptor_zip_eq(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        };
+        let (sum_left, sum_right) = pool_builder.scope(|mut thread_pool| {
+            let left = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            let right = (INPUT_LEN..=2 * INPUT_LEN).collect::<Vec<u64>>();
+            (left.par_iter(), right.par_iter())
+                .zip_eq()
+                .with_thread_pool(&mut thread_pool)
+                .map(|(&a, &b)| (a, b))
+                .reduce(|| (0, 0), |(a, b), (c, d)| (a + c, b + d))
+        });
+        assert_eq!(sum_left, INPUT_LEN * (INPUT_LEN + 1) / 2);
+        assert_eq!(sum_right, 3 * INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_source_adaptor_zip_eq_unequal(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        };
+        let _ = pool_builder.scope(|mut thread_pool| {
+            let left = (0..=2 * INPUT_LEN).collect::<Vec<u64>>();
+            let right = (INPUT_LEN..=2 * INPUT_LEN).collect::<Vec<u64>>();
+            (left.par_iter(), right.par_iter())
+                .zip_eq()
+                .with_thread_pool(&mut thread_pool)
+                .map(|(&a, &b)| (a, b))
+                .reduce(|| (0, 0), |(a, b), (c, d)| (a + c, b + d))
+        });
+    }
+
+    fn test_source_adaptor_zip_max(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        };
+        let (sum_left, sum_right) = pool_builder.scope(|mut thread_pool| {
+            let left = (0..=2 * INPUT_LEN).collect::<Vec<u64>>();
+            let right = (INPUT_LEN..=2 * INPUT_LEN).collect::<Vec<u64>>();
+            (left.par_iter(), right.par_iter())
+                .zip_max()
+                .with_thread_pool(&mut thread_pool)
+                .map(|(a, b)| (a.copied().unwrap(), b.copied().unwrap_or(0)))
+                .reduce(|| (0, 0), |(a, b), (c, d)| (a + c, b + d))
+        });
+        assert_eq!(sum_left, INPUT_LEN * (2 * INPUT_LEN + 1));
+        assert_eq!(sum_right, 3 * INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_source_adaptor_zip_min(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        };
+        let (sum_left, sum_right) = pool_builder.scope(|mut thread_pool| {
+            let left = (0..=2 * INPUT_LEN).collect::<Vec<u64>>();
+            let right = (INPUT_LEN..=2 * INPUT_LEN).collect::<Vec<u64>>();
+            (left.par_iter(), right.par_iter())
+                .zip_min()
+                .with_thread_pool(&mut thread_pool)
+                .map(|(&a, &b)| (a, b))
+                .reduce(|| (0, 0), |(a, b), (c, d)| (a + c, b + d))
+        });
+        assert_eq!(sum_left, INPUT_LEN * (INPUT_LEN + 1) / 2);
+        assert_eq!(sum_right, 3 * INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
     fn test_adaptor_cloned(range_strategy: RangeStrategy) {
