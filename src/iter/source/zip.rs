@@ -13,7 +13,7 @@ use super::{ParallelSource, SourceDescriptor};
 /// sources.
 ///
 /// This trait is automatically implemented for [tuples](tuple) of
-/// [`ParallelSource`]s.
+/// [`ParallelSource`]s (with up to 12 elements).
 pub trait ZipableSource: Sized
 where
     ZipEq<Self>: ParallelSource,
@@ -149,207 +149,93 @@ pub struct ZipMax<T>(T);
 #[must_use = "iterator adaptors are lazy"]
 pub struct ZipMin<T>(T);
 
-impl<A, B> ZipableSource for (A, B)
-where
-    A: ParallelSource,
-    B: ParallelSource,
-{
-}
-
-impl<A, B> ParallelSource for ZipEq<(A, B)>
-where
-    A: ParallelSource,
-    B: ParallelSource,
-{
-    type Item = (A::Item, B::Item);
-
-    fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
-        let tuple = self.0;
-        let descriptors = (tuple.0.descriptor(), tuple.1.descriptor());
-        assert_eq!(
-            descriptors.0.len, descriptors.1.len,
+macro_rules! assert_eq_lens {
+    ( $descriptors:expr, $zero:tt, $($i:tt),* ) => {
+        $( assert_eq!(
+            $descriptors.0.len,
+            $descriptors.$i.len,
             "called zip_eq() with sources of different lengths"
-        );
-        SourceDescriptor {
-            len: descriptors.0.len,
-            fetch_item: move |index| {
-                (
-                    (descriptors.0.fetch_item)(index),
-                    (descriptors.1.fetch_item)(index),
-                )
-            },
-        }
+        ); )+
     }
 }
 
-impl<A, B> ParallelSource for ZipMax<(A, B)>
-where
-    A: ParallelSource,
-    B: ParallelSource,
-{
-    type Item = (Option<A::Item>, Option<B::Item>);
+macro_rules! zipable_tuple {
+    ( $($tuple:ident $i:tt),+ ) => {
+        impl<$($tuple),+> ZipableSource for ($($tuple),+)
+        where $($tuple: ParallelSource),+ {}
 
-    fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
-        let tuple = self.0;
-        let descriptors = (tuple.0.descriptor(), tuple.1.descriptor());
-        SourceDescriptor {
-            len: descriptors.0.len.max(descriptors.1.len),
-            fetch_item: move |index| {
-                (
-                    if index < descriptors.0.len {
-                        Some((descriptors.0.fetch_item)(index))
-                    } else {
-                        None
+        impl<$($tuple),+> ParallelSource for ZipEq<($($tuple),+)>
+        where $($tuple: ParallelSource),+ {
+            type Item = ( $($tuple::Item),+ );
+
+            fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
+                let tuple = self.0;
+                let descriptors = ( $(tuple.$i.descriptor()),+ );
+                assert_eq_lens!(descriptors, $($i),+);
+                SourceDescriptor {
+                    len: descriptors.0.len,
+                    fetch_item: move |index| {
+                        ( $( (descriptors.$i.fetch_item)(index) ),+ )
                     },
-                    if index < descriptors.1.len {
-                        Some((descriptors.1.fetch_item)(index))
-                    } else {
-                        None
+                }
+            }
+        }
+
+        impl<$($tuple),+> ParallelSource for ZipMax<($($tuple),+)>
+        where $($tuple: ParallelSource),+ {
+            type Item = ( $(Option<$tuple::Item>),+ );
+
+            fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
+                let tuple = self.0;
+                let descriptors = ( $(tuple.$i.descriptor()),+ );
+                let mut len = 0;
+                $( len = descriptors.$i.len.max(len); )+
+                SourceDescriptor {
+                    len,
+                    fetch_item: move |index| {
+                        ( $(
+                            if index < descriptors.$i.len {
+                                Some((descriptors.$i.fetch_item)(index))
+                            } else {
+                                None
+                            }
+                        ),+ )
                     },
-                )
-            },
+                }
+            }
         }
-    }
-}
 
-impl<A, B> ParallelSource for ZipMin<(A, B)>
-where
-    A: ParallelSource,
-    B: ParallelSource,
-{
-    type Item = (A::Item, B::Item);
+        impl<$($tuple),+> ParallelSource for ZipMin<($($tuple),+)>
+        where $($tuple: ParallelSource),+ {
+            type Item = ( $($tuple::Item),+ );
 
-    fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
-        let tuple = self.0;
-        let descriptors = (tuple.0.descriptor(), tuple.1.descriptor());
-        SourceDescriptor {
-            len: descriptors.0.len.min(descriptors.1.len),
-            fetch_item: move |index| {
-                (
-                    (descriptors.0.fetch_item)(index),
-                    (descriptors.1.fetch_item)(index),
-                )
-            },
-        }
-    }
-}
-
-impl<A, B, C> ZipableSource for (A, B, C)
-where
-    A: ParallelSource,
-    B: ParallelSource,
-    C: ParallelSource,
-{
-}
-
-impl<A, B, C> ParallelSource for ZipEq<(A, B, C)>
-where
-    A: ParallelSource,
-    B: ParallelSource,
-    C: ParallelSource,
-{
-    type Item = (A::Item, B::Item, C::Item);
-
-    fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
-        let tuple = self.0;
-        let descriptors = (
-            tuple.0.descriptor(),
-            tuple.1.descriptor(),
-            tuple.2.descriptor(),
-        );
-        assert_eq!(
-            descriptors.0.len, descriptors.1.len,
-            "called zip_eq() with sources of different lengths"
-        );
-        assert_eq!(
-            descriptors.0.len, descriptors.2.len,
-            "called zip_eq() with sources of different lengths"
-        );
-        SourceDescriptor {
-            len: descriptors.0.len,
-            fetch_item: move |index| {
-                (
-                    (descriptors.0.fetch_item)(index),
-                    (descriptors.1.fetch_item)(index),
-                    (descriptors.2.fetch_item)(index),
-                )
-            },
-        }
-    }
-}
-
-impl<A, B, C> ParallelSource for ZipMax<(A, B, C)>
-where
-    A: ParallelSource,
-    B: ParallelSource,
-    C: ParallelSource,
-{
-    type Item = (Option<A::Item>, Option<B::Item>, Option<C::Item>);
-
-    fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
-        let tuple = self.0;
-        let descriptors = (
-            tuple.0.descriptor(),
-            tuple.1.descriptor(),
-            tuple.2.descriptor(),
-        );
-        SourceDescriptor {
-            len: descriptors
-                .0
-                .len
-                .max(descriptors.1.len)
-                .max(descriptors.2.len),
-            fetch_item: move |index| {
-                (
-                    if index < descriptors.0.len {
-                        Some((descriptors.0.fetch_item)(index))
-                    } else {
-                        None
+            fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
+                let tuple = self.0;
+                let descriptors = ( $(tuple.$i.descriptor()),+ );
+                let mut len = None;
+                $( len = Some(match len {
+                    None => descriptors.$i.len,
+                    Some(len) => descriptors.$i.len.min(len),
+                }); )+
+                SourceDescriptor {
+                    len: len.unwrap_or(0),
+                    fetch_item: move |index| {
+                        ( $( (descriptors.$i.fetch_item)(index) ),+ )
                     },
-                    if index < descriptors.1.len {
-                        Some((descriptors.1.fetch_item)(index))
-                    } else {
-                        None
-                    },
-                    if index < descriptors.2.len {
-                        Some((descriptors.2.fetch_item)(index))
-                    } else {
-                        None
-                    },
-                )
-            },
+                }
+            }
         }
     }
 }
 
-impl<A, B, C> ParallelSource for ZipMin<(A, B, C)>
-where
-    A: ParallelSource,
-    B: ParallelSource,
-    C: ParallelSource,
-{
-    type Item = (A::Item, B::Item, C::Item);
-
-    fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
-        let tuple = self.0;
-        let descriptors = (
-            tuple.0.descriptor(),
-            tuple.1.descriptor(),
-            tuple.2.descriptor(),
-        );
-        SourceDescriptor {
-            len: descriptors
-                .0
-                .len
-                .min(descriptors.1.len)
-                .min(descriptors.2.len),
-            fetch_item: move |index| {
-                (
-                    (descriptors.0.fetch_item)(index),
-                    (descriptors.1.fetch_item)(index),
-                    (descriptors.2.fetch_item)(index),
-                )
-            },
-        }
-    }
-}
+zipable_tuple!(A 0, B 1);
+zipable_tuple!(A 0, B 1, C 2);
+zipable_tuple!(A 0, B 1, C 2, D 3);
+zipable_tuple!(A 0, B 1, C 2, D 3, E 4);
+zipable_tuple!(A 0, B 1, C 2, D 3, E 4, F 5);
+zipable_tuple!(A 0, B 1, C 2, D 3, E 4, F 5, G 6);
+zipable_tuple!(A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7);
+zipable_tuple!(A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8);
+zipable_tuple!(A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9);
+zipable_tuple!(A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9, K 10);
+zipable_tuple!(A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9, K 10, L 11);
