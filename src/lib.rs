@@ -109,6 +109,12 @@ mod test {
                 test_source_par_iter_mut_not_sync,
                 test_source_adaptor_chain,
                 test_source_adaptor_enumerate,
+                test_source_adaptor_skip,
+                test_source_adaptor_skip_exact,
+                test_source_adaptor_skip_exact_too_much => fail("called skip_exact() with more items than this source produces"),
+                test_source_adaptor_take,
+                test_source_adaptor_take_exact,
+                test_source_adaptor_take_exact_too_much => fail("called take_exact() with more items than this source produces"),
                 test_source_adaptor_zip_eq,
                 test_source_adaptor_zip_eq_unequal => fail("called zip_eq() with sources of different lengths"),
                 test_source_adaptor_zip_max,
@@ -943,6 +949,128 @@ mod test {
             sum_squares,
             INPUT_LEN * (INPUT_LEN + 1) * (2 * INPUT_LEN + 1) / 6
         );
+    }
+
+    fn test_source_adaptor_skip(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        };
+        let (sum, sum_empty) = pool_builder.scope(|mut thread_pool| {
+            let input = (1..=INPUT_LEN).collect::<Vec<u64>>();
+            let sum = input
+                .par_iter()
+                .skip(INPUT_LEN as usize / 2)
+                .with_thread_pool(&mut thread_pool)
+                .copied()
+                .reduce(|| 0, |x, y| x + y);
+            let sum_empty = input
+                .par_iter()
+                .skip(2 * INPUT_LEN as usize)
+                .with_thread_pool(&mut thread_pool)
+                .copied()
+                .reduce(|| 0, |x, y| x + y);
+            (sum, sum_empty)
+        });
+        assert_eq!(sum, ((INPUT_LEN + 1) / 2) * ((3 * INPUT_LEN) / 2 + 1) / 2);
+        assert_eq!(sum_empty, 0);
+    }
+
+    fn test_source_adaptor_skip_exact(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        };
+        let sum = pool_builder.scope(|mut thread_pool| {
+            let input = (1..=INPUT_LEN).collect::<Vec<u64>>();
+            input
+                .par_iter()
+                .skip_exact(INPUT_LEN as usize / 2)
+                .with_thread_pool(&mut thread_pool)
+                .copied()
+                .reduce(|| 0, |x, y| x + y)
+        });
+        assert_eq!(sum, ((INPUT_LEN + 1) / 2) * ((3 * INPUT_LEN) / 2 + 1) / 2);
+    }
+
+    fn test_source_adaptor_skip_exact_too_much(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        };
+        let _ = pool_builder.scope(|mut thread_pool| {
+            let input = (1..=INPUT_LEN).collect::<Vec<u64>>();
+            input
+                .par_iter()
+                .skip_exact(2 * INPUT_LEN as usize)
+                .with_thread_pool(&mut thread_pool)
+                .copied()
+                .reduce(|| 0, |x, y| x + y)
+        });
+    }
+
+    fn test_source_adaptor_take(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        };
+        let (sum, sum_all) = pool_builder.scope(|mut thread_pool| {
+            let input = (1..=INPUT_LEN).collect::<Vec<u64>>();
+            let sum = input
+                .par_iter()
+                .take(INPUT_LEN as usize / 2)
+                .with_thread_pool(&mut thread_pool)
+                .copied()
+                .reduce(|| 0, |x, y| x + y);
+            let sum_all = input
+                .par_iter()
+                .take(2 * INPUT_LEN as usize)
+                .with_thread_pool(&mut thread_pool)
+                .copied()
+                .reduce(|| 0, |x, y| x + y);
+            (sum, sum_all)
+        });
+        assert_eq!(sum, ((INPUT_LEN / 2) * (INPUT_LEN / 2 + 1)) / 2);
+        assert_eq!(sum_all, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_source_adaptor_take_exact(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        };
+        let sum = pool_builder.scope(|mut thread_pool| {
+            let input = (1..=INPUT_LEN).collect::<Vec<u64>>();
+            input
+                .par_iter()
+                .take_exact(INPUT_LEN as usize / 2)
+                .with_thread_pool(&mut thread_pool)
+                .copied()
+                .reduce(|| 0, |x, y| x + y)
+        });
+        assert_eq!(sum, ((INPUT_LEN / 2) * (INPUT_LEN / 2 + 1)) / 2);
+    }
+
+    fn test_source_adaptor_take_exact_too_much(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        };
+        let _ = pool_builder.scope(|mut thread_pool| {
+            let input = (1..=INPUT_LEN).collect::<Vec<u64>>();
+            input
+                .par_iter()
+                .take_exact(2 * INPUT_LEN as usize)
+                .with_thread_pool(&mut thread_pool)
+                .copied()
+                .reduce(|| 0, |x, y| x + y)
+        });
     }
 
     fn test_source_adaptor_zip_eq(range_strategy: RangeStrategy) {
