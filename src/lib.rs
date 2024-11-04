@@ -109,6 +109,7 @@ mod test {
                 test_source_par_iter_mut_not_sync,
                 test_source_adaptor_chain,
                 test_source_adaptor_enumerate,
+                test_source_adaptor_rev,
                 test_source_adaptor_skip,
                 test_source_adaptor_skip_exact,
                 test_source_adaptor_skip_exact_too_much => fail("called skip_exact() with more items than this source produces"),
@@ -949,6 +950,25 @@ mod test {
             sum_squares,
             INPUT_LEN * (INPUT_LEN + 1) * (2 * INPUT_LEN + 1) / 6
         );
+    }
+
+    fn test_source_adaptor_rev(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        };
+        let sum = pool_builder.scope(|mut thread_pool| {
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            input
+                .par_iter()
+                .rev()
+                .enumerate()
+                .with_thread_pool(&mut thread_pool)
+                .map(|(i, &x)| i as u64 * x)
+                .reduce(|| 0, |x, y| x + y)
+        });
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN - 1) * (INPUT_LEN + 1) / 6);
     }
 
     fn test_source_adaptor_skip(range_strategy: RangeStrategy) {

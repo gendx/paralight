@@ -226,6 +226,41 @@ pub trait ParallelSourceExt: ParallelSource {
         Enumerate { inner: self }
     }
 
+    /// Returns a parallel source that produces items from this source in
+    /// reverse order.
+    ///
+    /// Note: Given that items are processed in arbitrary order (in
+    /// [`WorkStealing`](crate::RangeStrategy::WorkStealing) mode), this isn't
+    /// very useful on its own, but can be relevant when combined with
+    /// order-sensitive adaptors (e.g. [`enumerate()`](Self::enumerate),
+    /// [`take()`](Self::take), etc.).
+    ///
+    /// ```
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, WithThreadPool,
+    /// # };
+    /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
+    /// # let pool_builder = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # };
+    /// # pool_builder.scope(|mut thread_pool| {
+    /// let input = [11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+    /// let sum = input
+    ///     .par_iter()
+    ///     .rev()
+    ///     .take_exact(10)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .reduce(|| 0, |x, y| x + y);
+    /// assert_eq!(sum, 5 * 11);
+    /// # });
+    /// ```
+    fn rev(self) -> Rev<Self> {
+        Rev { inner: self }
+    }
+
     /// Returns a parallel source that skips the first `n` items from this
     /// source, or all the items if this source has fewer than `n` items, and
     /// produces the remaining items.
@@ -503,6 +538,25 @@ impl<Inner: ParallelSource> ParallelSource for Enumerate<Inner> {
         SourceDescriptor {
             len: descriptor.len,
             fetch_item: move |index| (index, (descriptor.fetch_item)(index)),
+        }
+    }
+}
+
+/// This struct is created by the [`rev()`](ParallelSourceExt::rev) method on
+/// [`ParallelSourceExt`].
+#[must_use = "iterator adaptors are lazy"]
+pub struct Rev<Inner> {
+    inner: Inner,
+}
+
+impl<Inner: ParallelSource> ParallelSource for Rev<Inner> {
+    type Item = Inner::Item;
+
+    fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
+        let descriptor = self.inner.descriptor();
+        SourceDescriptor {
+            len: descriptor.len,
+            fetch_item: move |index| (descriptor.fetch_item)(descriptor.len - index - 1),
         }
     }
 }
