@@ -157,3 +157,80 @@ where
         self.into_par_iter()
     }
 }
+
+/// Additional methods provided for types that implement [`ParallelSource`].
+pub trait ParallelSourceExt: ParallelSource {
+    /// Returns a parallel source that produces items from this source followed
+    /// by items from the next source.
+    ///
+    /// Note: Given that items are processed in arbitrary order (in
+    /// [`WorkStealing`](crate::RangeStrategy::WorkStealing) mode), the order in
+    /// which sources are chained doesn't necessarily matter, but can be
+    /// relevant when combined with order-sensitive adaptors.
+    ///
+    /// ```
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, WithThreadPool,
+    /// # };
+    /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
+    /// # let pool_builder = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # };
+    /// # pool_builder.scope(|mut thread_pool| {
+    /// let first = [1, 2, 3, 4, 5, 6, 7];
+    /// let second = [8, 9, 10];
+    /// let sum = first
+    ///     .par_iter()
+    ///     .chain(second.par_iter())
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .reduce(|| 0, |x, y| x + y);
+    /// assert_eq!(sum, 5 * 11);
+    /// # });
+    /// ```
+    fn chain<T: ParallelSource<Item = Self::Item>>(self, next: T) -> Chain<Self, T> {
+        Chain {
+            first: self,
+            second: next,
+        }
+    }
+}
+
+impl<T: ParallelSource> ParallelSourceExt for T {}
+
+/// This struct is created by the [`chain()`](ParallelSourceExt::chain) method
+/// on [`ParallelSourceExt`].
+#[must_use = "iterator adaptors are lazy"]
+pub struct Chain<First, Second> {
+    first: First,
+    second: Second,
+}
+
+impl<T: Send, First: ParallelSource<Item = T>, Second: ParallelSource<Item = T>> ParallelSource
+    for Chain<First, Second>
+{
+    type Item = T;
+
+    fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
+        let descriptor1 = self.first.descriptor();
+        let descriptor2 = self.second.descriptor();
+        let len = descriptor1
+            .len
+            .checked_add(descriptor2.len)
+            .unwrap_or_else(|| {
+                panic!("called chain() with sources that together produce more than usize::MAX ({}) items", usize::MAX);
+            });
+        SourceDescriptor {
+            len,
+            fetch_item: move |index| {
+                if index < descriptor1.len {
+                    (descriptor1.fetch_item)(index)
+                } else {
+                    (descriptor2.fetch_item)(index - descriptor1.len)
+                }
+            },
+        }
+    }
+}

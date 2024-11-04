@@ -15,7 +15,7 @@ pub use source::slice::{MutSliceParallelSource, SliceParallelSource};
 pub use source::zip::{ZipEq, ZipMax, ZipMin, ZipableSource};
 pub use source::{
     IntoParallelRefMutSource, IntoParallelRefSource, IntoParallelSource, ParallelSource,
-    SourceDescriptor,
+    ParallelSourceExt, SourceDescriptor,
 };
 use std::cmp::Ordering;
 

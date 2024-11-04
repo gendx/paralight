@@ -27,7 +27,7 @@ mod test {
     use super::*;
     use crate::iter::{
         IntoParallelRefMutSource, IntoParallelRefSource, ParallelIterator, ParallelIteratorExt,
-        WithThreadPool, ZipableSource,
+        ParallelSourceExt, WithThreadPool, ZipableSource,
     };
     use std::cell::Cell;
     use std::collections::HashSet;
@@ -107,6 +107,7 @@ mod test {
                 test_source_par_iter_not_send,
                 test_source_par_iter_mut,
                 test_source_par_iter_mut_not_sync,
+                test_source_adaptor_chain,
                 test_source_adaptor_zip_eq,
                 test_source_adaptor_zip_eq_unequal => fail("called zip_eq() with sources of different lengths"),
                 test_source_adaptor_zip_max,
@@ -903,6 +904,25 @@ mod test {
         );
     }
 
+    fn test_source_adaptor_chain(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        };
+        let sum = pool_builder.scope(|mut thread_pool| {
+            let input1 = (0..INPUT_LEN / 2).collect::<Vec<u64>>();
+            let input2 = (INPUT_LEN / 2..=INPUT_LEN).collect::<Vec<u64>>();
+            input1
+                .par_iter()
+                .chain(input2.par_iter())
+                .with_thread_pool(&mut thread_pool)
+                .copied()
+                .reduce(|| 0, |x, y| x + y)
+        });
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
     fn test_source_adaptor_zip_eq(range_strategy: RangeStrategy) {
         let pool_builder = ThreadPoolBuilder {
             num_threads: ThreadCount::AvailableParallelism,
@@ -1012,7 +1032,7 @@ mod test {
                 .par_iter()
                 .with_thread_pool(&mut thread_pool)
                 .copied()
-                .reduce(|| 0u64, |x, y| x + y)
+                .reduce(|| 0, |x, y| x + y)
         });
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
