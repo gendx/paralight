@@ -108,6 +108,7 @@ mod test {
                 test_source_par_iter_mut,
                 test_source_par_iter_mut_not_sync,
                 test_source_adaptor_chain,
+                test_source_adaptor_enumerate,
                 test_source_adaptor_zip_eq,
                 test_source_adaptor_zip_eq_unequal => fail("called zip_eq() with sources of different lengths"),
                 test_source_adaptor_zip_max,
@@ -921,6 +922,27 @@ mod test {
                 .reduce(|| 0, |x, y| x + y)
         });
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_source_adaptor_enumerate(range_strategy: RangeStrategy) {
+        let pool_builder = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        };
+        let sum_squares = pool_builder.scope(|mut thread_pool| {
+            let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+            input
+                .par_iter()
+                .enumerate()
+                .with_thread_pool(&mut thread_pool)
+                .map(|(i, &x)| i as u64 * x)
+                .reduce(|| 0, |x, y| x + y)
+        });
+        assert_eq!(
+            sum_squares,
+            INPUT_LEN * (INPUT_LEN + 1) * (2 * INPUT_LEN + 1) / 6
+        );
     }
 
     fn test_source_adaptor_zip_eq(range_strategy: RangeStrategy) {

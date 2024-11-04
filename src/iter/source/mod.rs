@@ -166,7 +166,8 @@ pub trait ParallelSourceExt: ParallelSource {
     /// Note: Given that items are processed in arbitrary order (in
     /// [`WorkStealing`](crate::RangeStrategy::WorkStealing) mode), the order in
     /// which sources are chained doesn't necessarily matter, but can be
-    /// relevant when combined with order-sensitive adaptors.
+    /// relevant when combined with order-sensitive adaptors (e.g.
+    /// [`enumerate()`](Self::enumerate)).
     ///
     /// ```
     /// # use paralight::iter::{
@@ -195,6 +196,33 @@ pub trait ParallelSourceExt: ParallelSource {
             first: self,
             second: next,
         }
+    }
+
+    /// Returns a parallel source that produces pairs of (index, item) for the
+    /// items of this source.
+    ///
+    /// ```
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, WithThreadPool,
+    /// # };
+    /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
+    /// # let pool_builder = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # };
+    /// # pool_builder.scope(|mut thread_pool| {
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let indexed_max = input
+    ///     .par_iter()
+    ///     .enumerate()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .max_by_key(|(_, &x)| x);
+    /// assert_eq!(indexed_max, Some((9, &10)));
+    /// # });
+    /// ```
+    fn enumerate(self) -> Enumerate<Self> {
+        Enumerate { inner: self }
     }
 }
 
@@ -231,6 +259,25 @@ impl<T: Send, First: ParallelSource<Item = T>, Second: ParallelSource<Item = T>>
                     (descriptor2.fetch_item)(index - descriptor1.len)
                 }
             },
+        }
+    }
+}
+
+/// This struct is created by the [`enumerate()`](ParallelSourceExt::enumerate)
+/// method on [`ParallelSourceExt`].
+#[must_use = "iterator adaptors are lazy"]
+pub struct Enumerate<Inner> {
+    inner: Inner,
+}
+
+impl<Inner: ParallelSource> ParallelSource for Enumerate<Inner> {
+    type Item = (usize, Inner::Item);
+
+    fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
+        let descriptor = self.inner.descriptor();
+        SourceDescriptor {
+            len: descriptor.len,
+            fetch_item: move |index| (index, (descriptor.fetch_item)(index)),
         }
     }
 }
