@@ -11,7 +11,7 @@ jobs:
           - stable
           - beta
           - nightly
-          - 1.77.0  # MSRV for tests
+          - 1.80.0  # MSRV for tests
         include:
           - test_features: ""
           - all_test_features: ""

@@ -33,7 +33,12 @@ mod test {
     use std::collections::HashSet;
     use std::rc::Rc;
     use std::sync::atomic::{AtomicU64, Ordering};
+    #[cfg(all(not(miri), feature = "log"))]
+    use std::sync::LazyLock;
     use std::sync::Mutex;
+
+    #[cfg(all(not(miri), feature = "log"))]
+    static ENV_LOGGER_INIT: LazyLock<()> = LazyLock::new(env_logger::init);
 
     macro_rules! expand_tests {
         ( $range_strategy:expr, ) => {};
@@ -41,6 +46,8 @@ mod test {
             $( #[$attrs] )*
             #[test]
             fn $case() {
+                #[cfg(all(not(miri), feature = "log"))]
+                LazyLock::force(&ENV_LOGGER_INIT);
                 for _ in 0..ITERATIONS {
                     $crate::test::$case($range_strategy);
                 }
@@ -53,6 +60,8 @@ mod test {
             #[test]
             #[should_panic(expected = $msg)]
             fn $case() {
+                #[cfg(all(not(miri), feature = "log"))]
+                LazyLock::force(&ENV_LOGGER_INIT);
                 $crate::test::$case($range_strategy);
             }
 
