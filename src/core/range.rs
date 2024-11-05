@@ -46,12 +46,14 @@ pub trait RangeOrchestrator {
 /// A range of items similar to [`std::ops::Range`], but that can steal from or
 /// be stolen by other threads.
 pub trait Range {
-    type Iter: Iterator<Item = usize>;
+    type Iter<'a>: Iterator<Item = usize>
+    where
+        Self: 'a;
 
     /// Returns an iterator over the items in this range. The item can be
     /// dynamically stolen from/by other threads, but the iterator provides
     /// a safe abstraction over that.
-    fn iter(&self) -> Self::Iter;
+    fn iter(&self) -> Self::Iter<'_>;
 }
 
 /// A factory that hands out a fixed range to each thread, without any stealing.
@@ -111,9 +113,9 @@ pub struct FixedRange {
 }
 
 impl Range for FixedRange {
-    type Iter = std::ops::Range<usize>;
+    type Iter<'a> = std::ops::Range<usize>;
 
-    fn iter(&self) -> Self::Iter {
+    fn iter(&self) -> Self::Iter<'_> {
         let num_elements = self.num_elements.load(Ordering::Relaxed);
         let start = (self.id * num_elements) / self.num_threads;
         let end = ((self.id + 1) * num_elements) / self.num_threads;
@@ -128,7 +130,7 @@ impl Range for FixedRange {
 /// continue processing items.
 pub struct WorkStealingRangeFactory {
     /// Handle to the ranges of all the threads.
-    ranges: Arc<Vec<AtomicRange>>,
+    ranges: Arc<[AtomicRange]>,
     /// Handle to the work-stealing statistics.
     #[cfg(feature = "log_parallelism")]
     stats: Arc<Mutex<WorkStealingStats>>,
@@ -143,7 +145,7 @@ impl RangeFactory for WorkStealingRangeFactory {
             panic!("Only up to {} threads (2^32 - 1) are supported", u32::MAX);
         }
         Self {
-            ranges: Arc::new((0..num_threads).map(|_| AtomicRange::default()).collect()),
+            ranges: (0..num_threads).map(|_| AtomicRange::default()).collect(),
             #[cfg(feature = "log_parallelism")]
             stats: Arc::new(Mutex::new(WorkStealingStats::default())),
         }
@@ -170,7 +172,7 @@ impl RangeFactory for WorkStealingRangeFactory {
 /// An orchestrator for the [`WorkStealingRangeFactory`].
 pub struct WorkStealingRangeOrchestrator {
     /// Handle to the ranges of all the threads.
-    ranges: Arc<Vec<AtomicRange>>,
+    ranges: Arc<[AtomicRange]>,
     /// Handle to the work-stealing statistics.
     #[cfg(feature = "log_parallelism")]
     stats: Arc<Mutex<WorkStealingStats>>,
@@ -216,19 +218,19 @@ pub struct WorkStealingRange {
     /// Index of the thread that owns this range.
     id: usize,
     /// Handle to the ranges of all the threads.
-    ranges: Arc<Vec<AtomicRange>>,
+    ranges: Arc<[AtomicRange]>,
     /// Handle to the work-stealing statistics.
     #[cfg(feature = "log_parallelism")]
     stats: Arc<Mutex<WorkStealingStats>>,
 }
 
 impl Range for WorkStealingRange {
-    type Iter = WorkStealingRangeIterator;
+    type Iter<'a> = WorkStealingRangeIterator<'a>;
 
-    fn iter(&self) -> Self::Iter {
+    fn iter(&self) -> Self::Iter<'_> {
         WorkStealingRangeIterator {
             id: self.id,
-            ranges: self.ranges.clone(),
+            ranges: &self.ranges,
             #[cfg(feature = "log_parallelism")]
             stats: WorkStealingStats::default(),
             #[cfg(feature = "log_parallelism")]
@@ -369,11 +371,11 @@ impl AddAssign<&WorkStealingStats> for WorkStealingStats {
 }
 
 /// An iterator for the [`WorkStealingRange`].
-pub struct WorkStealingRangeIterator {
+pub struct WorkStealingRangeIterator<'a> {
     /// Index of the thread that owns this range.
     id: usize,
     /// Handle to the ranges of all the threads.
-    ranges: Arc<Vec<AtomicRange>>,
+    ranges: &'a [AtomicRange],
     /// Local work-stealing statistics.
     #[cfg(feature = "log_parallelism")]
     stats: WorkStealingStats,
@@ -382,7 +384,7 @@ pub struct WorkStealingRangeIterator {
     global_stats: Arc<Mutex<WorkStealingStats>>,
 }
 
-impl Iterator for WorkStealingRangeIterator {
+impl Iterator for WorkStealingRangeIterator<'_> {
     type Item = usize;
 
     fn next(&mut self) -> Option<usize> {
@@ -434,7 +436,7 @@ impl Iterator for WorkStealingRangeIterator {
     }
 }
 
-impl WorkStealingRangeIterator {
+impl WorkStealingRangeIterator<'_> {
     /// Helper function for the iterator implementation, to steal a range from
     /// another thread when this thread's range is empty.
     fn steal(
