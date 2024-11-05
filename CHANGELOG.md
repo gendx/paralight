@@ -43,7 +43,7 @@ and this project adheres to
   results would exceed `u32::MAX`. This could notably have happened if the input
   length multiplied by `max(2, number of threads)` would exceed `u32::MAX`.
 
-## 0.0.2 - 2024-01-01
+## 0.0.2 - 2024-10-01
 
 ### Added
 
