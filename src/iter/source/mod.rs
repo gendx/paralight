@@ -71,7 +71,7 @@ pub trait IntoParallelRefSource<'data> {
     /// Converts `&self` into a parallel source to be processed on the given
     /// thread pool.
     ///
-    /// ```rust
+    /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool_builder = ThreadPoolBuilder {
@@ -124,7 +124,7 @@ pub trait IntoParallelRefMutSource<'data> {
     /// Converts `&mut self` into a parallel source to be processed on the given
     /// thread pool.
     ///
-    /// ```rust
+    /// ```
     /// # use paralight::iter::{IntoParallelRefMutSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool_builder = ThreadPoolBuilder {

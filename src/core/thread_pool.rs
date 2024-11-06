@@ -88,7 +88,7 @@ pub struct ThreadPoolBuilder {
 impl ThreadPoolBuilder {
     /// Spawn a scoped thread pool.
     ///
-    /// ```rust
+    /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
     /// let pool_builder = ThreadPoolBuilder {

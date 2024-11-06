@@ -90,7 +90,7 @@ pub trait ParallelIterator: Sized {
     /// - `finalize` function to transform an accumulator into an output,
     /// - `reduce` function to reduce a pair of outputs into one output.
     ///
-    /// ```rust
+    /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIterator, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let pool_builder = ThreadPoolBuilder {
