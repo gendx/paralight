@@ -214,7 +214,7 @@ mod test {
             range_strategy,
             cpu_pinning: CpuPinningPolicy::No,
         };
-        let sum = pool_builder.scope(|mut thread_pool| {
+        let _ = pool_builder.scope(|mut thread_pool| {
             // The input can be local.
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
             thread_pool.pipeline(
@@ -232,7 +232,6 @@ mod test {
                 |a, b| a + b,
             )
         });
-        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
     fn test_some_panics(range_strategy: RangeStrategy) {
@@ -241,7 +240,7 @@ mod test {
             range_strategy,
             cpu_pinning: CpuPinningPolicy::No,
         };
-        let sum = pool_builder.scope(|mut thread_pool| {
+        let _ = pool_builder.scope(|mut thread_pool| {
             // The input can be local.
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
             thread_pool.pipeline(
@@ -259,7 +258,6 @@ mod test {
                 |a, b| a + b,
             )
         });
-        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
     fn test_many_panics(range_strategy: RangeStrategy) {
@@ -268,7 +266,7 @@ mod test {
             range_strategy,
             cpu_pinning: CpuPinningPolicy::No,
         };
-        let sum = pool_builder.scope(|mut thread_pool| {
+        let _ = pool_builder.scope(|mut thread_pool| {
             // The input can be local.
             let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
             thread_pool.pipeline(
@@ -286,7 +284,6 @@ mod test {
                 |a, b| a + b,
             )
         });
-        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
     fn test_fn_once(range_strategy: RangeStrategy) {
