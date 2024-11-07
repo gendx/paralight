@@ -27,12 +27,12 @@ where
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool, ZipableSource};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
-    /// # let pool_builder = ThreadPoolBuilder {
+    /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # };
-    /// # pool_builder.scope(|mut thread_pool| {
+    /// # }
+    /// # .build();
     /// let left = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let right = [11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
     ///
@@ -44,18 +44,17 @@ where
     ///
     /// assert_eq!(sum_left, 5 * 11); // 1 + ... + 10
     /// assert_eq!(sum_right, 10 * 21 - 5 * 11); // 11 + ... + 20
-    /// # });
     /// ```
     ///
     /// ```should_panic
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool, ZipableSource};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
-    /// # let pool_builder = ThreadPoolBuilder {
+    /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # };
-    /// # pool_builder.scope(|mut thread_pool| {
+    /// # }
+    /// # .build();
     /// let left = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let right = [11, 12, 13, 14, 15];
     ///
@@ -64,7 +63,6 @@ where
     ///     .with_thread_pool(&mut thread_pool)
     ///     .map(|(&a, &b)| (a, b))
     ///     .reduce(|| (0, 0), |(a, b), (c, d)| (a + c, b + d));
-    /// # });
     /// ```
     fn zip_eq(self) -> ZipEq<Self> {
         ZipEq(self)
@@ -77,12 +75,12 @@ where
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool, ZipableSource};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
-    /// # let pool_builder = ThreadPoolBuilder {
+    /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # };
-    /// # pool_builder.scope(|mut thread_pool| {
+    /// # }
+    /// # .build();
     /// let left = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let right = [11, 12, 13, 14, 15];
     ///
@@ -97,7 +95,6 @@ where
     ///
     /// assert_eq!(sum_left, 5 * 11); // 1 + ... + 10
     /// assert_eq!(sum_right, 15 * 8 - 5 * 11); // 11 + ... + 15
-    /// # });
     /// ```
     fn zip_max(self) -> ZipMax<Self> {
         ZipMax(self)
@@ -109,12 +106,12 @@ where
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool, ZipableSource};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
-    /// # let pool_builder = ThreadPoolBuilder {
+    /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # };
-    /// # pool_builder.scope(|mut thread_pool| {
+    /// # }
+    /// # .build();
     /// let left = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let right = [11, 12, 13, 14, 15];
     ///
@@ -127,7 +124,6 @@ where
     ///
     /// assert_eq!(sum_left, 5 * 3); // 1 + ... + 5
     /// assert_eq!(sum_right, 15 * 8 - 5 * 11); // 11 + ... + 15
-    /// # });
     /// ```
     fn zip_min(self) -> ZipMin<Self> {
         ZipMin(self)

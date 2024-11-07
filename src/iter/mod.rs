@@ -23,10 +23,7 @@ use std::cmp::Ordering;
 /// [`ParallelIterator`].
 pub trait WithThreadPool: ParallelSource {
     /// Attaches the given [`ThreadPool`] to this [`ParallelSource`].
-    fn with_thread_pool<'pool, 'scope: 'pool>(
-        self,
-        thread_pool: &'pool mut ThreadPool<'scope>,
-    ) -> BaseParallelIterator<'pool, 'scope, Self> {
+    fn with_thread_pool(self, thread_pool: &mut ThreadPool) -> BaseParallelIterator<'_, Self> {
         BaseParallelIterator {
             thread_pool,
             source: self,
@@ -40,14 +37,12 @@ impl<S: ParallelSource> WithThreadPool for S {}
 /// [`with_thread_pool()`](WithThreadPool::with_thread_pool) method on
 /// [`WithThreadPool`].
 #[must_use = "iterator adaptors are lazy"]
-pub struct BaseParallelIterator<'pool, 'scope: 'pool, S: ParallelSource> {
-    thread_pool: &'pool mut ThreadPool<'scope>,
+pub struct BaseParallelIterator<'pool, S: ParallelSource> {
+    thread_pool: &'pool mut ThreadPool,
     source: S,
 }
 
-impl<'pool, 'scope: 'pool, S: ParallelSource> ParallelIterator
-    for BaseParallelIterator<'pool, 'scope, S>
-{
+impl<S: ParallelSource> ParallelIterator for BaseParallelIterator<'_, S> {
     type Item = S::Item;
 
     fn pipeline<Output: Send, Accum>(
@@ -93,19 +88,18 @@ pub trait ParallelIterator: Sized {
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIterator, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
-    /// # let pool_builder = ThreadPoolBuilder {
+    /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # };
-    /// # pool_builder.scope(|mut thread_pool| {
+    /// # }
+    /// # .build();
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let sum = input
     ///     .par_iter()
     ///     .with_thread_pool(&mut thread_pool)
     ///     .pipeline(|| 0, |acc, _, x| acc + x, |acc| acc, |x, y| x + y);
     /// assert_eq!(sum, 5 * 11);
-    /// # });
     /// ```
     fn pipeline<Output: Send, Accum>(
         self,
@@ -130,12 +124,12 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
-    /// # let pool = ThreadPoolBuilder {
+    /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # };
-    /// # pool.scope(|mut thread_pool| {
+    /// # }
+    /// # .build();
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(Box::new);
     /// let sum = input
     ///     .par_iter()
@@ -149,7 +143,6 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///         },
     ///     );
     /// assert_eq!(*sum, 5 * 11);
-    /// # });
     /// ```
     fn cloned<'a, T>(self) -> Cloned<Self>
     where
@@ -171,12 +164,12 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
-    /// # let pool = ThreadPoolBuilder {
+    /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # };
-    /// # pool.scope(|mut thread_pool| {
+    /// # }
+    /// # .build();
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let sum = input
     ///     .par_iter()
@@ -184,7 +177,6 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///     .copied()
     ///     .reduce(|| 0, |x, y| x + y);
     /// assert_eq!(sum, 5 * 11);
-    /// # });
     /// ```
     fn copied<'a, T>(self) -> Copied<Self>
     where
@@ -200,12 +192,12 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
-    /// # let pool = ThreadPoolBuilder {
+    /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # };
-    /// # pool.scope(|mut thread_pool| {
+    /// # }
+    /// # .build();
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let sum_even = input
     ///     .par_iter()
@@ -214,7 +206,6 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///     .copied()
     ///     .reduce(|| 0, |x, y| x + y);
     /// assert_eq!(sum_even, 5 * 6);
-    /// # });
     /// ```
     fn filter<F>(self, f: F) -> Filter<Self, F>
     where
@@ -230,12 +221,12 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
-    /// # let pool = ThreadPoolBuilder {
+    /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # };
-    /// # pool.scope(|mut thread_pool| {
+    /// # }
+    /// # .build();
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let sum = input
     ///     .par_iter()
@@ -243,7 +234,6 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///     .filter_map(|&x| if x != 2 { Some(x * 3) } else { None })
     ///     .reduce(|| 0, |x, y| x + y);
     /// assert_eq!(sum, 3 * (5 * 11 - 2));
-    /// # });
     /// ```
     ///
     /// Mapping to a non-[`Send`] non-[`Sync`] type such as [`Rc`](std::rc::Rc)
@@ -255,12 +245,12 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # };
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # use std::rc::Rc;
-    /// # let pool = ThreadPoolBuilder {
+    /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # };
-    /// # pool.scope(|mut thread_pool| {
+    /// # }
+    /// # .build();
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let sum_even = input
     ///     .par_iter()
@@ -268,7 +258,6 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///     .filter_map(|&x| if x % 2 == 0 { Some(Rc::new(x)) } else { None })
     ///     .pipeline(|| 0, |acc, _, x| acc + *x, |acc| acc, |a, b| a + b);
     /// assert_eq!(sum_even, 5 * 6);
-    /// # });
     /// ```
     fn filter_map<T, F>(self, f: F) -> FilterMap<Self, F>
     where
@@ -284,12 +273,12 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # use std::collections::HashSet;
     /// # use std::sync::Mutex;
-    /// # let pool = ThreadPoolBuilder {
+    /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # };
-    /// # pool.scope(|mut thread_pool| {
+    /// # }
+    /// # .build();
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let set = Mutex::new(HashSet::new());
     /// input
@@ -299,7 +288,6 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///         set.lock().unwrap().insert(x);
     ///     });
     /// assert_eq!(set.into_inner().unwrap(), (1..=10).collect());
-    /// # });
     /// ```
     fn for_each<F>(self, f: F)
     where
@@ -323,12 +311,12 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # use std::sync::atomic::{AtomicUsize, Ordering};
-    /// # let pool = ThreadPoolBuilder {
+    /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # };
-    /// # pool.scope(|mut thread_pool| {
+    /// # }
+    /// # .build();
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let inspections = AtomicUsize::new(0);
     ///
@@ -343,7 +331,6 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// assert_eq!(min, Some(&1));
     /// assert_eq!(inspections.load(Ordering::Relaxed), 10);
-    /// # });
     /// ```
     fn inspect<F>(self, f: F) -> Inspect<Self, F>
     where
@@ -358,12 +345,12 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
-    /// # let pool = ThreadPoolBuilder {
+    /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # };
-    /// # pool.scope(|mut thread_pool| {
+    /// # }
+    /// # .build();
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let double_sum = input
     ///     .par_iter()
@@ -371,7 +358,6 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///     .map(|&x| x * 2)
     ///     .reduce(|| 0, |x, y| x + y);
     /// assert_eq!(double_sum, 10 * 11);
-    /// # });
     /// ```
     ///
     /// Mapping to a non-[`Send`] non-[`Sync`] type such as [`Rc`](std::rc::Rc)
@@ -383,12 +369,12 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # };
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # use std::rc::Rc;
-    /// # let pool = ThreadPoolBuilder {
+    /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # };
-    /// # pool.scope(|mut thread_pool| {
+    /// # }
+    /// # .build();
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let sum = input
     ///     .par_iter()
@@ -396,7 +382,6 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///     .map(|&x| Rc::new(x))
     ///     .pipeline(|| 0, |acc, _, x| acc + *x, |acc| acc, |a, b| a + b);
     /// assert_eq!(sum, 5 * 11);
-    /// # });
     /// ```
     fn map<T, F>(self, f: F) -> Map<Self, F>
     where
@@ -411,16 +396,15 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
-    /// # let pool = ThreadPoolBuilder {
+    /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # };
-    /// # pool.scope(|mut thread_pool| {
+    /// # }
+    /// # .build();
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let max = input.par_iter().with_thread_pool(&mut thread_pool).max();
     /// assert_eq!(max, Some(&10));
-    /// # });
     /// ```
     fn max(self) -> Option<Self::Item>
     where
@@ -447,12 +431,12 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
-    /// # let pool = ThreadPoolBuilder {
+    /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # };
-    /// # pool.scope(|mut thread_pool| {
+    /// # }
+    /// # .build();
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// // Custom comparison function where even numbers are smaller than all odd numbers.
     /// let max = input
@@ -460,7 +444,6 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///     .with_thread_pool(&mut thread_pool)
     ///     .max_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
     /// assert_eq!(max, Some(&9));
-    /// # });
     /// ```
     fn max_by<F>(self, f: F) -> Option<Self::Item>
     where
@@ -495,12 +478,12 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
-    /// # let pool = ThreadPoolBuilder {
+    /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # };
-    /// # pool.scope(|mut thread_pool| {
+    /// # }
+    /// # .build();
     /// let input = ["ccc", "aaaaa", "dd", "e", "bbbb"];
     ///
     /// let max = input.par_iter().with_thread_pool(&mut thread_pool).max();
@@ -511,7 +494,6 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///     .with_thread_pool(&mut thread_pool)
     ///     .max_by_key(|x| x.len());
     /// assert_eq!(max_by_len, Some(&"aaaaa"));
-    /// # });
     /// ```
     fn max_by_key<T, F>(self, f: F) -> Option<Self::Item>
     where
@@ -530,16 +512,15 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
-    /// # let pool = ThreadPoolBuilder {
+    /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # };
-    /// # pool.scope(|mut thread_pool| {
+    /// # }
+    /// # .build();
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let min = input.par_iter().with_thread_pool(&mut thread_pool).min();
     /// assert_eq!(min, Some(&1));
-    /// # });
     /// ```
     fn min(self) -> Option<Self::Item>
     where
@@ -566,12 +547,12 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
-    /// # let pool = ThreadPoolBuilder {
+    /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # };
-    /// # pool.scope(|mut thread_pool| {
+    /// # }
+    /// # .build();
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// // Custom comparison function where even numbers are smaller than all odd numbers.
     /// let min = input
@@ -579,7 +560,6 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///     .with_thread_pool(&mut thread_pool)
     ///     .min_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
     /// assert_eq!(min, Some(&2));
-    /// # });
     /// ```
     fn min_by<F>(self, f: F) -> Option<Self::Item>
     where
@@ -614,12 +594,12 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
-    /// # let pool = ThreadPoolBuilder {
+    /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # };
-    /// # pool.scope(|mut thread_pool| {
+    /// # }
+    /// # .build();
     /// let input = ["ccc", "aaaaa", "dd", "e", "bbbb"];
     ///
     /// let min = input.par_iter().with_thread_pool(&mut thread_pool).min();
@@ -630,7 +610,6 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///     .with_thread_pool(&mut thread_pool)
     ///     .min_by_key(|x| x.len());
     /// assert_eq!(min_by_len, Some(&"e"));
-    /// # });
     /// ```
     fn min_by_key<T, F>(self, f: F) -> Option<Self::Item>
     where
@@ -649,12 +628,12 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
-    /// # let pool = ThreadPoolBuilder {
+    /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # };
-    /// # pool.scope(|mut thread_pool| {
+    /// # }
+    /// # .build();
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let sum = input
     ///     .par_iter()
@@ -662,7 +641,6 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///     .copied()
     ///     .reduce(|| 0, |x, y| x + y);
     /// assert_eq!(sum, 5 * 11);
-    /// # });
     /// ```
     ///
     /// Under the hood, each worker thread may call `init` and `f` in arbitrary
@@ -680,19 +658,18 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
-    /// # let pool = ThreadPoolBuilder {
+    /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # };
-    /// # pool.scope(|mut thread_pool| {
+    /// # }
+    /// # .build();
     /// let sum = []
     ///     .par_iter()
     ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
     ///     .reduce(|| 0, |x, y| x + y);
     /// assert_eq!(sum, 0);
-    /// # });
     /// ```
     fn reduce<Init, F>(self, init: Init, f: F) -> Self::Item
     where

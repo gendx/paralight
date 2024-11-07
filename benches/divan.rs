@@ -136,22 +136,22 @@ mod paralight {
     ) {
         let input = (0..len as u64).collect::<Vec<u64>>();
         let input_slice = input.as_slice();
-        let pool_builder = ThreadPoolBuilder {
+        let mut thread_pool = ThreadPoolBuilder {
             num_threads: ThreadCount::try_from(NUM_THREADS).unwrap(),
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
-        };
-        pool_builder.scope(move |mut thread_pool| {
-            bencher
-                .counter(BytesCount::of_many::<u64>(len))
-                .bench_local(|| {
-                    black_box(input_slice)
-                        .par_iter()
-                        .with_thread_pool(&mut thread_pool)
-                        .copied()
-                        .reduce(|| 0, |x, y| x + y)
-                });
-        });
+        }
+        .build();
+
+        bencher
+            .counter(BytesCount::of_many::<u64>(len))
+            .bench_local(|| {
+                black_box(input_slice)
+                    .par_iter()
+                    .with_thread_pool(&mut thread_pool)
+                    .copied()
+                    .reduce(|| 0, |x, y| x + y)
+            });
     }
 
     #[divan::bench(consts = NUM_THREADS, args = LENGTHS)]
@@ -177,24 +177,24 @@ mod paralight {
         let right_slice = right.as_slice();
         let output_slice = output.as_mut_slice();
 
-        let pool_builder = ThreadPoolBuilder {
+        let mut thread_pool = ThreadPoolBuilder {
             num_threads: ThreadCount::try_from(NUM_THREADS).unwrap(),
             range_strategy,
             cpu_pinning: CpuPinningPolicy::IfSupported,
-        };
-        pool_builder.scope(move |mut thread_pool| {
-            bencher
-                .counter(BytesCount::of_many::<u64>(len * 2))
-                .bench_local(|| {
-                    (
-                        black_box(left_slice).par_iter(),
-                        black_box(right_slice).par_iter(),
-                        black_box(output_slice.par_iter_mut()),
-                    )
-                        .zip_eq()
-                        .with_thread_pool(&mut thread_pool)
-                        .for_each(|(&a, &b, out)| *out = a + b)
-                });
-        });
+        }
+        .build();
+
+        bencher
+            .counter(BytesCount::of_many::<u64>(len * 2))
+            .bench_local(|| {
+                (
+                    black_box(left_slice).par_iter(),
+                    black_box(right_slice).par_iter(),
+                    black_box(output_slice.par_iter_mut()),
+                )
+                    .zip_eq()
+                    .with_thread_pool(&mut thread_pool)
+                    .for_each(|(&a, &b, out)| *out = a + b)
+            });
     }
 }

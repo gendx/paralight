@@ -21,38 +21,34 @@ use paralight::iter::{
 };
 use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
 
-// Define thread pool parameters.
-let pool_builder = ThreadPoolBuilder {
+// Create a thread pool with the given parameters.
+let mut thread_pool = ThreadPoolBuilder {
     num_threads: ThreadCount::AvailableParallelism,
     range_strategy: RangeStrategy::WorkStealing,
     cpu_pinning: CpuPinningPolicy::No,
-};
+}
+.build();
 
-// Create a scoped thread pool.
-pool_builder.scope(
-    |mut thread_pool| {
-        // Compute the sum of a slice.
-        let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        let sum = input
-            .par_iter()
-            .with_thread_pool(&mut thread_pool)
-            .copied()
-            .reduce(|| 0, |x, y| x + y);
-        assert_eq!(sum, 5 * 11);
+// Compute the sum of a slice.
+let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+let sum = input
+    .par_iter()
+    .with_thread_pool(&mut thread_pool)
+    .copied()
+    .reduce(|| 0, |x, y| x + y);
+assert_eq!(sum, 5 * 11);
 
-        // Add slices together.
-        let left = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-        let right = [11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
-        let mut output = [0; 10];
+// Add slices together.
+let left = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+let right = [11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
+let mut output = [0; 10];
 
-        (left.par_iter(), right.par_iter(), output.par_iter_mut())
-            .zip_eq()
-            .with_thread_pool(&mut thread_pool)
-            .for_each(|(&a, &b, out)| *out = a + b);
+(left.par_iter(), right.par_iter(), output.par_iter_mut())
+    .zip_eq()
+    .with_thread_pool(&mut thread_pool)
+    .for_each(|(&a, &b, out)| *out = a + b);
 
-        assert_eq!(output, [12, 14, 16, 18, 20, 22, 24, 26, 28, 30]);
-    },
-);
+assert_eq!(output, [12, 14, 16, 18, 20, 22, 24, 26, 28, 30]);
 ```
 
 Note: In principle, Paralight could be extended to support other inputs than
@@ -144,6 +140,100 @@ free and other worker threads are done (especially with the
 [`Fixed`](RangeStrategy::Fixed) strategy). This of course depends on how the
 scheduler works on your OS.
 
+## Managing the thread pool life-cycle
+
+To release the resources (i.e. the worker threads) created by a
+[`ThreadPool`](ThreadPool), simply [`drop()`](drop) it.
+
+To use a thread pool in parallel pipelines, note that the
+[`with_thread_pool()`](iter::WithThreadPool::with_thread_pool) function takes
+the thread pool by mutable reference [`&mut`](reference). This is a deliberate
+design choice because only one pipeline can be run at a time (on a given pool).
+
+This means that if you want to create a global thread pool, you will have to
+wrap it in a [`Mutex`](std::sync::Mutex) (or other suitable synchronization
+primitive) and manually lock it. You can for example combine it with the
+[`LazyLock`](std::sync::LazyLock) pattern.
+
+```rust,no_run
+use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
+use paralight::{
+    CpuPinningPolicy, RangeStrategy, ThreadPool, ThreadCount, ThreadPoolBuilder,
+};
+use std::ops::DerefMut;
+use std::sync::{LazyLock, Mutex};
+
+// A static thread pool protected by a mutex.
+static THREAD_POOL: LazyLock<Mutex<ThreadPool>> = LazyLock::new(|| {
+    Mutex::new(
+        ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy: RangeStrategy::WorkStealing,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build(),
+    )
+});
+
+let items = (0..100).collect::<Vec<_>>();
+let sum = items
+    .par_iter()
+    .with_thread_pool(THREAD_POOL.lock().unwrap().deref_mut())
+    .copied()
+    .reduce(|| 0, |a, b| a + b);
+assert_eq!(sum, 99 * 50);
+```
+
+However, if you wrap a thread pool in a mutex like this, be mindful of potential
+panics or deadlocks if you try to run several nested parallel iterators on the
+same thread pool!
+
+This limitation isn't specific to Paralight though, this happens for any usage
+of a [`Mutex`](std::sync::Mutex) that you try to lock recursively while already
+acquired.
+
+This pitfall is the reason why Paralight doesn't provide an implicit global
+thread pool.
+
+```rust,no_run
+# use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
+# use paralight::{
+#     CpuPinningPolicy, RangeStrategy, ThreadPool, ThreadCount, ThreadPoolBuilder,
+# };
+# use std::ops::DerefMut;
+# use std::sync::{LazyLock, Mutex};
+#
+# static THREAD_POOL: LazyLock<Mutex<ThreadPool>> = LazyLock::new(|| {
+#     Mutex::new(
+#         ThreadPoolBuilder {
+#             num_threads: ThreadCount::AvailableParallelism,
+#             range_strategy: RangeStrategy::WorkStealing,
+#             cpu_pinning: CpuPinningPolicy::No,
+#         }
+#         .build(),
+#     )
+# });
+let matrix = (0..100)
+    .map(|i| (0..100).map(|j| i + j).collect::<Vec<_>>())
+    .collect::<Vec<_>>();
+
+let sum = matrix
+    .par_iter()
+    // Lock the mutex on the outer loop (over the rows).
+    .with_thread_pool(THREAD_POOL.lock().unwrap().deref_mut())
+    .map(|row| {
+        row.par_iter()
+            // ⚠️ Trying to lock the mutex again here will panic or deadlock!
+            .with_thread_pool(THREAD_POOL.lock().unwrap().deref_mut())
+            .copied()
+            .reduce(|| 0, |a, b| a + b)
+    })
+    .reduce(|| 0, |a, b| a + b);
+
+// ⚠️ This statement is never reached due to the panic/deadlock!
+assert_eq!(sum, 990_000);
+```
+
 ## Limitations
 
 With the [`WorkStealing`](RangeStrategy::WorkStealing) strategy, inputs with
@@ -153,23 +243,19 @@ more than [`u32::MAX`](u32::MAX) elements are currently not supported.
 use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
 use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
 
-let pool_builder = ThreadPoolBuilder {
+let mut thread_pool = ThreadPoolBuilder {
     num_threads: ThreadCount::AvailableParallelism,
     range_strategy: RangeStrategy::WorkStealing,
     cpu_pinning: CpuPinningPolicy::No,
-};
+}
+.build();
 
-let sum = pool_builder.scope(
-    |mut thread_pool| {
-        let input = vec![0u8; 5_000_000_000];
-        input
-            .par_iter()
-            .with_thread_pool(&mut thread_pool)
-            .copied()
-            .reduce(|| 0, |x, y| x + y)
-    },
-);
-assert_eq!(sum, 0);
+let input = vec![0u8; 5_000_000_000];
+let _sum = input
+    .par_iter()
+    .with_thread_pool(&mut thread_pool)
+    .copied()
+    .reduce(|| 0, |x, y| x + y);
 ```
 
 ## Debugging

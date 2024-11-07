@@ -32,7 +32,7 @@ use std::convert::TryFrom;
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex};
-use std::thread::{Scope, ScopedJoinHandle};
+use std::thread::JoinHandle;
 
 /// Number of threads to spawn in a thread pool.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -86,7 +86,7 @@ pub struct ThreadPoolBuilder {
 }
 
 impl ThreadPoolBuilder {
-    /// Spawn a scoped thread pool.
+    /// Spawns a thread pool.
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
@@ -96,55 +96,36 @@ impl ThreadPoolBuilder {
     ///     range_strategy: RangeStrategy::WorkStealing,
     ///     cpu_pinning: CpuPinningPolicy::No,
     /// };
+    /// let mut thread_pool = pool_builder.build();
     ///
-    /// let sum = pool_builder.scope(|mut thread_pool| {
-    ///     let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    ///     input
-    ///         .par_iter()
-    ///         .with_thread_pool(&mut thread_pool)
-    ///         .copied()
-    ///         .reduce(|| 0, |x, y| x + y)
-    /// });
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .reduce(|| 0, |x, y| x + y);
     /// assert_eq!(sum, 5 * 11);
     /// ```
-    pub fn scope<R>(&self, f: impl FnOnce(ThreadPool) -> R) -> R {
-        std::thread::scope(|scope| {
-            let thread_pool = ThreadPool::new(
-                scope,
-                self.num_threads,
-                self.range_strategy,
-                self.cpu_pinning,
-            );
-            f(thread_pool)
-        })
+    pub fn build(&self) -> ThreadPool {
+        ThreadPool::new(self)
     }
 }
 
-/// A thread pool tied to a scope, that can process inputs into outputs of the
-/// given types.
+/// A thread pool that can execute parallel pipelines.
 ///
 /// This type doesn't expose any public methods. You can interact with it via
-/// the [`ThreadPoolBuilder::scope()`] function to create a thread pool, and the
+/// the [`ThreadPoolBuilder::build()`] function to create a thread pool, and the
 /// [`with_thread_pool()`](crate::iter::WithThreadPool::with_thread_pool) method
 /// to attach a thread pool to a parallel iterator.
-///
-/// See also [`std::thread::scope()`] for what scoped threads mean and what the
-/// `'scope` lifetime refers to.
-pub struct ThreadPool<'scope> {
-    inner: ThreadPoolEnum<'scope>,
+pub struct ThreadPool {
+    inner: ThreadPoolEnum,
 }
 
-impl<'scope> ThreadPool<'scope> {
-    /// Creates a new pool tied to the given scope, spawning the given number of
-    /// worker threads.
-    fn new(
-        thread_scope: &'scope Scope<'scope, '_>,
-        num_threads: ThreadCount,
-        range_strategy: RangeStrategy,
-        cpu_pinning: CpuPinningPolicy,
-    ) -> Self {
+impl ThreadPool {
+    /// Creates a new thread pool using the given parameters.
+    fn new(builder: &ThreadPoolBuilder) -> Self {
         Self {
-            inner: ThreadPoolEnum::new(thread_scope, num_threads, range_strategy, cpu_pinning),
+            inner: ThreadPoolEnum::new(builder),
         }
     }
 
@@ -163,38 +144,32 @@ impl<'scope> ThreadPool<'scope> {
     }
 }
 
-enum ThreadPoolEnum<'scope> {
-    Fixed(ThreadPoolImpl<'scope, FixedRangeFactory>),
-    WorkStealing(ThreadPoolImpl<'scope, WorkStealingRangeFactory>),
+/// Underlying [`ThreadPool`] implementation, dispatching over the
+/// [`RangeStrategy`].
+enum ThreadPoolEnum {
+    Fixed(ThreadPoolImpl<FixedRangeFactory>),
+    WorkStealing(ThreadPoolImpl<WorkStealingRangeFactory>),
 }
 
-impl<'scope> ThreadPoolEnum<'scope> {
-    /// Creates a new pool tied to the given scope, spawning the given number of
-    /// worker threads.
-    fn new(
-        thread_scope: &'scope Scope<'scope, '_>,
-        num_threads: ThreadCount,
-        range_strategy: RangeStrategy,
-        cpu_pinning: CpuPinningPolicy,
-    ) -> Self {
-        let num_threads: NonZeroUsize = match num_threads {
+impl ThreadPoolEnum {
+    /// Creates a new thread pool using the given parameters.
+    fn new(builder: &ThreadPoolBuilder) -> Self {
+        let num_threads: NonZeroUsize = match builder.num_threads {
             ThreadCount::AvailableParallelism => std::thread::available_parallelism()
                 .expect("Getting the available parallelism failed"),
             ThreadCount::Count(count) => count,
         };
         let num_threads: usize = num_threads.into();
-        match range_strategy {
+        match builder.range_strategy {
             RangeStrategy::Fixed => ThreadPoolEnum::Fixed(ThreadPoolImpl::new(
-                thread_scope,
                 num_threads,
                 FixedRangeFactory::new(num_threads),
-                cpu_pinning,
+                builder.cpu_pinning,
             )),
             RangeStrategy::WorkStealing => ThreadPoolEnum::WorkStealing(ThreadPoolImpl::new(
-                thread_scope,
                 num_threads,
                 WorkStealingRangeFactory::new(num_threads),
-                cpu_pinning,
+                builder.cpu_pinning,
             )),
         }
     }
@@ -220,32 +195,28 @@ impl<'scope> ThreadPoolEnum<'scope> {
     }
 }
 
-struct ThreadPoolImpl<'scope, F: RangeFactory> {
+/// Underlying [`ThreadPool`] implementation, specialized to a
+/// [`RangeStrategy`].
+struct ThreadPoolImpl<F: RangeFactory> {
     /// Handles to all the worker threads in the pool.
-    threads: Vec<WorkerThreadHandle<'scope>>,
+    threads: Vec<WorkerThreadHandle>,
     /// Orchestrator for the work ranges distributed to the threads.
     range_orchestrator: F::Orchestrator,
     /// Pipeline to map and reduce inputs into an output.
     pipeline: Lender<DynLifetimeSyncPipeline<F::Range>>,
 }
 
-/// Handle to a worker thread in the pool.
-struct WorkerThreadHandle<'scope> {
+/// Handle to a worker thread in a thread pool.
+struct WorkerThreadHandle {
     /// Thread handle object.
-    handle: ScopedJoinHandle<'scope, ()>,
+    handle: JoinHandle<()>,
 }
 
-impl<'scope, F: RangeFactory> ThreadPoolImpl<'scope, F> {
-    /// Creates a new pool tied to the given scope, spawning the given number of
-    /// worker threads.
-    fn new(
-        thread_scope: &'scope Scope<'scope, '_>,
-        num_threads: usize,
-        range_factory: F,
-        cpu_pinning: CpuPinningPolicy,
-    ) -> Self
+impl<F: RangeFactory> ThreadPoolImpl<F> {
+    /// Creates a new thread pool using the given parameters.
+    fn new(num_threads: usize, range_factory: F, cpu_pinning: CpuPinningPolicy) -> Self
     where
-        F::Range: Send + 'scope,
+        F::Range: Send + 'static,
     {
         let (lender, borrowers) = make_lending_group(num_threads);
 
@@ -278,7 +249,7 @@ impl<'scope, F: RangeFactory> ThreadPoolImpl<'scope, F> {
                     pipeline: borrower,
                 };
                 WorkerThreadHandle {
-                    handle: thread_scope.spawn(move || {
+                    handle: std::thread::spawn(move || {
                         #[cfg(all(
                             not(miri),
                             any(
@@ -360,7 +331,7 @@ impl<'scope, F: RangeFactory> ThreadPoolImpl<'scope, F> {
     }
 }
 
-impl<F: RangeFactory> Drop for ThreadPoolImpl<'_, F> {
+impl<F: RangeFactory> Drop for ThreadPoolImpl<F> {
     /// Joins all the threads in the pool.
     #[allow(clippy::single_match, clippy::unused_enumerate_index)]
     fn drop(&mut self) {
