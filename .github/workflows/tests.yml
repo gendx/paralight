@@ -13,8 +13,8 @@ jobs:
           - test_features: ""
           - all_test_features: ""
           - rust: nightly
-            test_features: ",nightly_tests"
-            all_test_features: "--features=nightly_tests"
+            test_features: ",nightly,nightly_tests"
+            all_test_features: "--features=nightly,nightly_tests"
       fail-fast: false
     runs-on: ubuntu-latest
     env:

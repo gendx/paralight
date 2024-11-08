@@ -15,6 +15,7 @@
 )]
 #![cfg_attr(not(test), forbid(clippy::undocumented_unsafe_blocks))]
 #![cfg_attr(all(test, feature = "nightly_tests"), feature(negative_impls))]
+#![cfg_attr(feature = "nightly", feature(step_trait))]
 
 mod core;
 pub mod iter;
@@ -26,8 +27,8 @@ pub use core::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPool, ThreadP
 mod test {
     use super::*;
     use crate::iter::{
-        IntoParallelRefMutSource, IntoParallelRefSource, ParallelIterator, ParallelIteratorExt,
-        ParallelSourceExt, WithThreadPool, ZipableSource,
+        IntoParallelRefMutSource, IntoParallelRefSource, IntoParallelSource, ParallelIterator,
+        ParallelIteratorExt, ParallelSourceExt, WithThreadPool, ZipableSource,
     };
     use std::cell::Cell;
     use std::collections::HashSet;
@@ -108,11 +109,23 @@ mod test {
                 test_pipeline_local_lifetime_input,
                 test_pipeline_local_lifetime_output,
                 test_pipeline_local_lifetime_accumulator,
-                test_source_par_iter,
+                test_source_slice,
                 #[cfg(feature = "nightly_tests")]
-                test_source_par_iter_not_send,
-                test_source_par_iter_mut,
-                test_source_par_iter_mut_not_sync,
+                test_source_slice_not_send,
+                test_source_slice_mut,
+                test_source_slice_mut_not_sync,
+                test_source_range,
+                #[cfg(feature = "nightly")]
+                test_source_range_u64,
+                #[cfg(feature = "nightly")]
+                test_source_range_u128_too_large => fail("cannot iterate over a range with more than usize::MAX (18446744073709551615) items"),
+                test_source_range_inclusive,
+                #[cfg(feature = "nightly")]
+                test_source_range_inclusive_u64,
+                #[cfg(feature = "nightly")]
+                test_source_range_inclusive_u64_too_large => fail("cannot iterate over a range with more than usize::MAX (18446744073709551615) items"),
+                #[cfg(feature = "nightly")]
+                test_source_range_inclusive_u128_too_large => fail("cannot iterate over a range with more than usize::MAX (18446744073709551615) items"),
                 test_source_adaptor_chain,
                 test_source_adaptor_enumerate,
                 test_source_adaptor_rev,
@@ -789,7 +802,7 @@ mod test {
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_source_par_iter(range_strategy: RangeStrategy) {
+    fn test_source_slice(range_strategy: RangeStrategy) {
         let mut thread_pool = ThreadPoolBuilder {
             num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
@@ -807,7 +820,7 @@ mod test {
     }
 
     #[cfg(feature = "nightly_tests")]
-    fn test_source_par_iter_not_send(range_strategy: RangeStrategy) {
+    fn test_source_slice_not_send(range_strategy: RangeStrategy) {
         let mut thread_pool = ThreadPoolBuilder {
             num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
@@ -824,7 +837,7 @@ mod test {
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_source_par_iter_mut(range_strategy: RangeStrategy) {
+    fn test_source_slice_mut(range_strategy: RangeStrategy) {
         let mut thread_pool = ThreadPoolBuilder {
             num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
@@ -841,7 +854,7 @@ mod test {
         assert_eq!(values, (0..=INPUT_LEN).map(|x| x * 2).collect::<Vec<_>>());
     }
 
-    fn test_source_par_iter_mut_not_sync(range_strategy: RangeStrategy) {
+    fn test_source_slice_mut_not_sync(range_strategy: RangeStrategy) {
         let mut thread_pool = ThreadPoolBuilder {
             num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
@@ -861,6 +874,117 @@ mod test {
                 .map(|x| Cell::new(x * 2))
                 .collect::<Vec<_>>()
         );
+    }
+
+    fn test_source_range(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let sum = (0..INPUT_LEN as usize)
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .reduce(|| 0, |x, y| x + y);
+
+        assert_eq!(sum, (INPUT_LEN as usize - 1) * INPUT_LEN as usize / 2);
+    }
+
+    #[cfg(feature = "nightly")]
+    fn test_source_range_u64(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let sum = (0..INPUT_LEN)
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .reduce(|| 0, |x, y| x + y);
+
+        assert_eq!(sum, (INPUT_LEN - 1) * INPUT_LEN / 2);
+    }
+
+    #[cfg(feature = "nightly")]
+    fn test_source_range_u128_too_large(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let _ = (0u128..0x1_0000_0000_0000_0000)
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .reduce(|| 0, |x, y| x + y);
+    }
+
+    fn test_source_range_inclusive(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let sum = (0..=INPUT_LEN as usize)
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .reduce(|| 0, |x, y| x + y);
+
+        assert_eq!(sum, INPUT_LEN as usize * (INPUT_LEN as usize + 1) / 2);
+    }
+
+    #[cfg(feature = "nightly")]
+    fn test_source_range_inclusive_u64(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let sum = (0..=INPUT_LEN)
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .reduce(|| 0, |x, y| x + y);
+
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    #[cfg(feature = "nightly")]
+    fn test_source_range_inclusive_u64_too_large(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let _ = (0..=u64::MAX)
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .reduce(|| 0, |x, y| x + y);
+    }
+
+    #[cfg(feature = "nightly")]
+    fn test_source_range_inclusive_u128_too_large(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let _ = (0u128..=0x1_0000_0000_0000_0000)
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .reduce(|| 0, |x, y| x + y);
     }
 
     fn test_source_adaptor_chain(range_strategy: RangeStrategy) {

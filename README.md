@@ -10,9 +10,10 @@
 [![Build Status](https://github.com/gendx/paralight/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/gendx/paralight/actions/workflows/build.yml)
 [![Test Status](https://github.com/gendx/paralight/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/gendx/paralight/actions/workflows/tests.yml)
 
-This library allows you to distribute computation over slices among multiple
-threads. Each thread processes a subset of the items, and a final step reduces
-the outputs from all threads into a single result.
+This library allows you to distribute computation over slices (and other
+*indexed* sources) among multiple threads. Each thread processes a subset of the
+items, and a final step reduces the outputs from all threads into a single
+result.
 
 ```rust
 use paralight::iter::{
@@ -51,9 +52,10 @@ let mut output = [0; 10];
 assert_eq!(output, [12, 14, 16, 18, 20, 22, 24, 26, 28, 30]);
 ```
 
-Note: In principle, Paralight could be extended to support other inputs than
-slices as long as they are *indexed*, but for now only slices are supported.
-Come back to check when future versions are published!
+Paralight currently supports inputs that are a combination of slices and ranges,
+but can be extended to support other sources as long as they are *indexed*. This
+is done via the [`ParallelSource`](iter::ParallelSource) and
+[`IntoParallelSource`](iter::IntoParallelSource) traits.
 
 ## Thread pool configuration
 
@@ -240,7 +242,7 @@ With the [`WorkStealing`](RangeStrategy::WorkStealing) strategy, inputs with
 more than [`u32::MAX`](u32::MAX) elements are currently not supported.
 
 ```rust,should_panic
-use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
+use paralight::iter::{IntoParallelSource, ParallelIteratorExt, WithThreadPool};
 use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
 
 let mut thread_pool = ThreadPoolBuilder {
@@ -250,11 +252,9 @@ let mut thread_pool = ThreadPoolBuilder {
 }
 .build();
 
-let input = vec![0u8; 5_000_000_000];
-let _sum = input
-    .par_iter()
+let _sum = (0..5_000_000_000_usize)
+    .into_par_iter()
     .with_thread_pool(&mut thread_pool)
-    .copied()
     .reduce(|| 0, |x, y| x + y);
 ```
 
@@ -274,6 +274,16 @@ logged. Only the _indices_ of the items in the input may be present in the logs.
 If you're concerned that these indices leak too much information about your
 data, you need to make sure that you depend on Paralight with the `log` and
 `log_parallelism` features disabled.
+
+## Experimental nightly APIs
+
+Some experimental APIs are available under the `nightly` Cargo feature, for
+users who compile with a
+[nightly](https://rust-lang.github.io/rustup/concepts/channels.html#working-with-nightly-rust)
+Rust toolchain. As the underlying implementation is based on
+[experimental features](https://doc.rust-lang.org/unstable-book/) of the Rust
+language, these APIs are provided without guarantee and may break at any time
+when a new nightly toolchain is released.
 
 ## Disclaimer
 

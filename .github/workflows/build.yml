@@ -26,7 +26,20 @@ jobs:
         run: cargo build --verbose --all --no-default-features
       - name: Build (log feature)
         run: cargo build --verbose --all --no-default-features --features=log
-      - name: Build (all features)
-        run: cargo build --verbose --all --all-features
+      - name: Build (log_parallelism feature)
+        run: cargo build --verbose --all --no-default-features --features=log_parallelism
       - name: Build (default features)
         run: cargo build --verbose --all
+
+      - name: Build (nightly feature)
+        if: ${{ matrix.rust == 'nightly' }}
+        run: cargo build --verbose --all --no-default-features --features=nightly
+      - name: Build (nightly + log features)
+        if: ${{ matrix.rust == 'nightly' }}
+        run: cargo build --verbose --all --no-default-features --features=nightly,log
+      - name: Build (nightly + log_parallelism features)
+        if: ${{ matrix.rust == 'nightly' }}
+        run: cargo build --verbose --all --no-default-features --features=nightly,log_parallelism
+      - name: Build (nightly + default features)
+        if: ${{ matrix.rust == 'nightly' }}
+        run: cargo build --verbose --all --features=nightly
