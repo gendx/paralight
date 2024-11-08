@@ -17,7 +17,7 @@ result.
 
 ```rust
 use paralight::iter::{
-    IntoParallelRefSource, IntoParallelRefMutSource, ParallelIteratorExt, WithThreadPool,
+    IntoParallelRefSource, IntoParallelRefMutSource, ParallelIteratorExt, ParallelSourceExt,
     ZipableSource,
 };
 use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
@@ -148,7 +148,7 @@ To release the resources (i.e. the worker threads) created by a
 [`ThreadPool`](ThreadPool), simply [`drop()`](drop) it.
 
 To use a thread pool in parallel pipelines, note that the
-[`with_thread_pool()`](iter::WithThreadPool::with_thread_pool) function takes
+[`with_thread_pool()`](iter::ParallelSourceExt::with_thread_pool) function takes
 the thread pool by mutable reference [`&mut`](reference). This is a deliberate
 design choice because only one pipeline can be run at a time (on a given pool).
 
@@ -158,7 +158,7 @@ primitive) and manually lock it. You can for example combine it with the
 [`LazyLock`](std::sync::LazyLock) pattern.
 
 ```rust,no_run
-use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
+use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
 use paralight::{
     CpuPinningPolicy, RangeStrategy, ThreadPool, ThreadCount, ThreadPoolBuilder,
 };
@@ -198,7 +198,7 @@ This pitfall is the reason why Paralight doesn't provide an implicit global
 thread pool.
 
 ```rust,no_run
-# use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
+# use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
 # use paralight::{
 #     CpuPinningPolicy, RangeStrategy, ThreadPool, ThreadCount, ThreadPoolBuilder,
 # };
@@ -242,7 +242,7 @@ With the [`WorkStealing`](RangeStrategy::WorkStealing) strategy, inputs with
 more than [`u32::MAX`](u32::MAX) elements are currently not supported.
 
 ```rust,should_panic
-use paralight::iter::{IntoParallelSource, ParallelIteratorExt, WithThreadPool};
+use paralight::iter::{IntoParallelSource, ParallelIteratorExt, ParallelSourceExt};
 use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
 
 let mut thread_pool = ThreadPoolBuilder {

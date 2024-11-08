@@ -25,7 +25,9 @@ where
     /// [`ParallelSource`] will panic.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool, ZipableSource};
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+    /// # };
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -47,7 +49,9 @@ where
     /// ```
     ///
     /// ```should_panic
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool, ZipableSource};
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+    /// # };
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -73,7 +77,9 @@ where
     /// [`None`] for indices beyond a given source's length.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool, ZipableSource};
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+    /// # };
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -104,7 +110,9 @@ where
     /// input sources lengths.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool, ZipableSource};
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+    /// # };
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,

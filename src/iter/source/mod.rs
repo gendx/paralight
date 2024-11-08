@@ -10,6 +10,9 @@ pub mod range;
 pub mod slice;
 pub mod zip;
 
+use super::ParallelIterator;
+use crate::ThreadPool;
+
 /// An object describing how to fetch items from a [`ParallelSource`].
 pub struct SourceDescriptor<Item: Send, FetchItem: Fn(usize) -> Item + Sync> {
     /// Number of items that the source produces.
@@ -22,9 +25,9 @@ pub struct SourceDescriptor<Item: Send, FetchItem: Fn(usize) -> Item + Sync> {
 /// provides additional methods (iterator adaptors) as an extension of this
 /// trait.
 ///
-/// This can be turned into a [`ParallelIterator`](super::ParallelIterator) by
-/// attaching a [`ThreadPool`](crate::ThreadPool) via the
-/// [`with_thread_pool()`](super::WithThreadPool::with_thread_pool) function.
+/// This can be turned into a [`ParallelIterator`] by attaching a [`ThreadPool`]
+/// via the [`with_thread_pool()`](ParallelSourceExt::with_thread_pool)
+/// function.
 pub trait ParallelSource: Sized {
     /// The type of items that this parallel source produces.
     ///
@@ -75,7 +78,7 @@ pub trait IntoParallelRefSource<'data> {
     /// thread pool.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -127,7 +130,7 @@ pub trait IntoParallelRefMutSource<'data> {
     /// thread pool.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefMutSource, ParallelIteratorExt, WithThreadPool};
+    /// # use paralight::iter::{IntoParallelRefMutSource, ParallelIteratorExt, ParallelSourceExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -171,9 +174,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// [`enumerate()`](Self::enumerate), [`take()`](Self::take), etc.).
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, WithThreadPool,
-    /// # };
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -203,9 +204,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// items of this source.
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, WithThreadPool,
-    /// # };
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -235,9 +234,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// [`take()`](Self::take), etc.).
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, WithThreadPool,
-    /// # };
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -267,9 +264,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// this source has fewer than `n` items.
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, WithThreadPool,
-    /// # };
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -288,9 +283,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// ```
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, WithThreadPool,
-    /// # };
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -322,9 +315,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// produces no item if this source has fewer than `n` items.
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, WithThreadPool,
-    /// # };
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -343,9 +334,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// ```
     ///
     /// ```should_panic
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, WithThreadPool,
-    /// # };
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -375,9 +364,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// this source has fewer than `n` items.
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, WithThreadPool,
-    /// # };
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -396,9 +383,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// ```
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, WithThreadPool,
-    /// # };
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -429,9 +414,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// produces all the items if this source has fewer than `n` items.
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, WithThreadPool,
-    /// # };
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -450,9 +433,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// ```
     ///
     /// ```should_panic
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, WithThreadPool,
-    /// # };
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
     /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -472,6 +453,34 @@ pub trait ParallelSourceExt: ParallelSource {
         TakeExact {
             inner: self,
             len: n,
+        }
+    }
+
+    /// Attaches the given [`ThreadPool`] to this [`ParallelSource`] and obtain
+    /// a [`ParallelIterator`].
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
+    /// let mut thread_pool = ThreadPoolBuilder {
+    ///     num_threads: ThreadCount::AvailableParallelism,
+    ///     range_strategy: RangeStrategy::WorkStealing,
+    ///     cpu_pinning: CpuPinningPolicy::No,
+    /// }
+    /// .build();
+    ///
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .reduce(|| 0, |x, y| x + y);
+    /// assert_eq!(sum, 5 * 11);
+    /// ```
+    fn with_thread_pool(self, thread_pool: &mut ThreadPool) -> BaseParallelIterator<'_, Self> {
+        BaseParallelIterator {
+            thread_pool,
+            source: self,
         }
     }
 }
@@ -638,5 +647,35 @@ impl<Inner: ParallelSource> ParallelSource for TakeExact<Inner> {
             len: self.len,
             fetch_item: descriptor.fetch_item,
         }
+    }
+}
+
+/// This struct is created by the
+/// [`with_thread_pool()`](ParallelSourceExt::with_thread_pool) method on
+/// [`ParallelSourceExt`].
+#[must_use = "iterator adaptors are lazy"]
+pub struct BaseParallelIterator<'pool, S: ParallelSource> {
+    thread_pool: &'pool mut ThreadPool,
+    source: S,
+}
+
+impl<S: ParallelSource> ParallelIterator for BaseParallelIterator<'_, S> {
+    type Item = S::Item;
+
+    fn pipeline<Output: Send, Accum>(
+        self,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(Accum, usize, Self::Item) -> Accum + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+    ) -> Output {
+        let source_descriptor = self.source.descriptor();
+        self.thread_pool.pipeline(
+            source_descriptor.len,
+            init,
+            |acc, index| process_item(acc, index, (source_descriptor.fetch_item)(index)),
+            finalize,
+            reduce,
+        )
     }
 }

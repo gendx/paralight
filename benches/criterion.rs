@@ -142,7 +142,7 @@ mod rayon {
 mod paralight {
     use criterion::{black_box, Bencher};
     use paralight::iter::{
-        IntoParallelRefMutSource, IntoParallelRefSource, ParallelIteratorExt, WithThreadPool,
+        IntoParallelRefMutSource, IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt,
         ZipableSource,
     };
     use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};

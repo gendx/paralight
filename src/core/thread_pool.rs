@@ -89,7 +89,7 @@ impl ThreadPoolBuilder {
     /// Spawns a thread pool.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
     /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
     /// let pool_builder = ThreadPoolBuilder {
     ///     num_threads: ThreadCount::AvailableParallelism,
@@ -115,8 +115,8 @@ impl ThreadPoolBuilder {
 ///
 /// This type doesn't expose any public methods. You can interact with it via
 /// the [`ThreadPoolBuilder::build()`] function to create a thread pool, and the
-/// [`with_thread_pool()`](crate::iter::WithThreadPool::with_thread_pool) method
-/// to attach a thread pool to a parallel iterator.
+/// [`with_thread_pool()`](crate::iter::ParallelSourceExt::with_thread_pool)
+/// method to attach a thread pool to a parallel iterator.
 pub struct ThreadPool {
     inner: ThreadPoolEnum,
 }

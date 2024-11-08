@@ -29,7 +29,7 @@ mod test {
     use super::*;
     use crate::iter::{
         IntoParallelRefMutSource, IntoParallelRefSource, IntoParallelSource, ParallelIterator,
-        ParallelIteratorExt, ParallelSourceExt, WithThreadPool, ZipableSource,
+        ParallelIteratorExt, ParallelSourceExt, ZipableSource,
     };
     use std::cell::Cell;
     use std::collections::HashSet;
