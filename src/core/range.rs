@@ -40,6 +40,7 @@ pub trait RangeOrchestrator {
 
     /// Hook to display various debugging statistics.
     #[cfg(feature = "log_parallelism")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "log_parallelism")))]
     fn print_statistics(&self) {}
 }
 
@@ -133,6 +134,7 @@ pub struct WorkStealingRangeFactory {
     ranges: Arc<[AtomicRange]>,
     /// Handle to the work-stealing statistics.
     #[cfg(feature = "log_parallelism")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "log_parallelism")))]
     stats: Arc<Mutex<WorkStealingStats>>,
 }
 
@@ -175,6 +177,7 @@ pub struct WorkStealingRangeOrchestrator {
     ranges: Arc<[AtomicRange]>,
     /// Handle to the work-stealing statistics.
     #[cfg(feature = "log_parallelism")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "log_parallelism")))]
     stats: Arc<Mutex<WorkStealingStats>>,
 }
 
@@ -201,6 +204,7 @@ impl RangeOrchestrator for WorkStealingRangeOrchestrator {
     }
 
     #[cfg(feature = "log_parallelism")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "log_parallelism")))]
     fn print_statistics(&self) {
         let stats = self.stats.lock().unwrap();
         log_info!("Work-stealing statistics:");
@@ -221,6 +225,7 @@ pub struct WorkStealingRange {
     ranges: Arc<[AtomicRange]>,
     /// Handle to the work-stealing statistics.
     #[cfg(feature = "log_parallelism")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "log_parallelism")))]
     stats: Arc<Mutex<WorkStealingStats>>,
 }
 
@@ -342,6 +347,7 @@ impl PackedRange {
 }
 
 #[cfg(feature = "log_parallelism")]
+#[cfg_attr(docsrs, doc(cfg(feature = "log_parallelism")))]
 #[derive(Default)]
 pub struct WorkStealingStats {
     /// Number of times this thread successfully incremented its range.
@@ -378,9 +384,11 @@ pub struct WorkStealingRangeIterator<'a> {
     ranges: &'a [AtomicRange],
     /// Local work-stealing statistics.
     #[cfg(feature = "log_parallelism")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "log_parallelism")))]
     stats: WorkStealingStats,
     /// Handle to the global work-stealing statistics.
     #[cfg(feature = "log_parallelism")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "log_parallelism")))]
     global_stats: Arc<Mutex<WorkStealingStats>>,
 }
 

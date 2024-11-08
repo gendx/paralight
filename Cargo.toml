@@ -12,6 +12,10 @@ exclude = [".github/*"]
 edition = "2021"
 rust-version = "1.75.0"
 
+[package.metadata.docs.rs]
+features = ["log", "log_parallelism"]
+rustdoc-args = ["--cfg", "docsrs"]
+
 [features]
 default = []
 log = ["dep:log"]

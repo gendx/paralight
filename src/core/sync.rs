@@ -173,6 +173,7 @@ impl<T: LifetimeParameterized> Lender<T> {
 pub struct Borrower<T: LifetimeParameterized> {
     /// Thread index.
     #[cfg(feature = "log")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "log")))]
     id: usize,
     /// Color of the current round.
     round: RoundColor,
@@ -264,9 +265,11 @@ impl<T: LifetimeParameterized> Borrower<T> {
 struct Notifier<'a> {
     /// Thread index.
     #[cfg(feature = "log")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "log")))]
     id: usize,
     /// Color of the current round.
     #[cfg(feature = "log")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "log")))]
     round: RoundColor,
     /// Number of worker threads active in the current round.
     num_active_threads: &'a AtomicUsize,
