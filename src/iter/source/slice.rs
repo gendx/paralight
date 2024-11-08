@@ -8,7 +8,7 @@
 
 use super::{IntoParallelSource, ParallelSource, SourceDescriptor};
 
-/// A parallel source over a slice. This struct is created by the
+/// A parallel source over a [slice](slice). This struct is created by the
 /// [`par_iter()`](super::IntoParallelRefSource::par_iter) method on
 /// [`IntoParallelRefSource`](super::IntoParallelRefSource).
 #[must_use = "iterator adaptors are lazy"]
@@ -37,8 +37,8 @@ impl<'data, T: Sync> ParallelSource for SliceParallelSource<'data, T> {
 }
 
 #[allow(clippy::too_long_first_doc_paragraph)]
-/// A parallel source over a mutable slice. This struct is created by the
-/// [`par_iter_mut()`](super::IntoParallelRefMutSource::par_iter_mut) method
+/// A parallel source over a [mutable slice](slice). This struct is created by
+/// the [`par_iter_mut()`](super::IntoParallelRefMutSource::par_iter_mut) method
 /// on [`IntoParallelRefMutSource`](super::IntoParallelRefMutSource).
 #[must_use = "iterator adaptors are lazy"]
 pub struct MutSliceParallelSource<'data, T> {

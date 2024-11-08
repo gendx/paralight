@@ -18,7 +18,9 @@ pub struct SourceDescriptor<Item: Send, FetchItem: Fn(usize) -> Item + Sync> {
     pub fetch_item: FetchItem,
 }
 
-/// A source to produce items in parallel.
+/// A source to produce items in parallel. The [`ParallelSourceExt`] trait
+/// provides additional methods (iterator adaptors) as an extension of this
+/// trait.
 ///
 /// This can be turned into a [`ParallelIterator`](super::ParallelIterator) by
 /// attaching a [`ThreadPool`](crate::ThreadPool) via the

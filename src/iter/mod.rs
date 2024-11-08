@@ -23,6 +23,25 @@ use std::cmp::Ordering;
 /// [`ParallelIterator`].
 pub trait WithThreadPool: ParallelSource {
     /// Attaches the given [`ThreadPool`] to this [`ParallelSource`].
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, WithThreadPool};
+    /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
+    /// let mut thread_pool = ThreadPoolBuilder {
+    ///     num_threads: ThreadCount::AvailableParallelism,
+    ///     range_strategy: RangeStrategy::WorkStealing,
+    ///     cpu_pinning: CpuPinningPolicy::No,
+    /// }
+    /// .build();
+    ///
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .reduce(|| 0, |x, y| x + y);
+    /// assert_eq!(sum, 5 * 11);
+    /// ```
     fn with_thread_pool(self, thread_pool: &mut ThreadPool) -> BaseParallelIterator<'_, Self> {
         BaseParallelIterator {
             thread_pool,

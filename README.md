@@ -40,14 +40,14 @@ let sum = input
 assert_eq!(sum, 5 * 11);
 
 // Add slices together.
+let mut output = [0; 10];
 let left = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 let right = [11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
-let mut output = [0; 10];
 
-(left.par_iter(), right.par_iter(), output.par_iter_mut())
+(output.par_iter_mut(), left.par_iter(), right.par_iter())
     .zip_eq()
     .with_thread_pool(&mut thread_pool)
-    .for_each(|(&a, &b, out)| *out = a + b);
+    .for_each(|(out, &a, &b)| *out = a + b);
 
 assert_eq!(output, [12, 14, 16, 18, 20, 22, 24, 26, 28, 30]);
 ```
