@@ -142,20 +142,21 @@ free and other worker threads are done (especially with the
 [`Fixed`](RangeStrategy::Fixed) strategy). This of course depends on how the
 scheduler works on your OS.
 
-## Managing the thread pool life-cycle
+## Using a thread pool
+
+To create parallel pipelines, be mindful that the
+[`with_thread_pool()`](iter::ParallelSourceExt::with_thread_pool) function takes
+the thread pool by mutable reference [`&mut`](reference). This is a deliberate
+design choice because only one pipeline can be run at a time on a given thread
+pool.
 
 To release the resources (i.e. the worker threads) created by a
 [`ThreadPool`](ThreadPool), simply [`drop()`](drop) it.
 
-To use a thread pool in parallel pipelines, note that the
-[`with_thread_pool()`](iter::ParallelSourceExt::with_thread_pool) function takes
-the thread pool by mutable reference [`&mut`](reference). This is a deliberate
-design choice because only one pipeline can be run at a time (on a given pool).
-
-This means that if you want to create a global thread pool, you will have to
-wrap it in a [`Mutex`](std::sync::Mutex) (or other suitable synchronization
-primitive) and manually lock it. You can for example combine it with the
-[`LazyLock`](std::sync::LazyLock) pattern.
+If you want to create a global thread pool, you will have to wrap it in a
+[`Mutex`](std::sync::Mutex) (or other suitable synchronization primitive) and
+manually lock it to obtain a suitable `&mut ThreadPool`. You can for example
+combine a mutex with the [`LazyLock`](std::sync::LazyLock) pattern.
 
 ```rust,no_run
 use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
