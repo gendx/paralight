@@ -163,6 +163,12 @@ macro_rules! assert_eq_lens {
     }
 }
 
+macro_rules! min_lens {
+    ( $descriptors:expr, $zero:tt, $($i:tt),* ) => {
+        $descriptors.0.len $( .min($descriptors.$i.len) )+
+    }
+}
+
 macro_rules! zipable_tuple {
     ( $($tuple:ident $i:tt),+ ) => {
         impl<$($tuple),+> ZipableSource for ($($tuple),+)
@@ -216,13 +222,9 @@ macro_rules! zipable_tuple {
             fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
                 let tuple = self.0;
                 let descriptors = ( $(tuple.$i.descriptor()),+ );
-                let mut len = None;
-                $( len = Some(match len {
-                    None => descriptors.$i.len,
-                    Some(len) => descriptors.$i.len.min(len),
-                }); )+
+                let len = min_lens!(descriptors, $($i),+);
                 SourceDescriptor {
-                    len: len.unwrap_or(0),
+                    len,
                     fetch_item: move |index| {
                         ( $( (descriptors.$i.fetch_item)(index) ),+ )
                     },
@@ -243,3 +245,46 @@ zipable_tuple!(A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8);
 zipable_tuple!(A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9);
 zipable_tuple!(A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9, K 10);
 zipable_tuple!(A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9, K 10, L 11);
+
+#[cfg(test)]
+mod test {
+    struct LenField {
+        len: usize,
+    }
+
+    fn len(len: usize) -> LenField {
+        LenField { len }
+    }
+
+    #[test]
+    fn assert_eq_lens() {
+        assert_eq_lens!((len(1), len(1)), 0, 1);
+        assert_eq_lens!((len(1), len(1), len(1)), 0, 1, 2);
+        assert_eq_lens!((len(1), len(1), len(1), len(1)), 0, 1, 2, 3);
+    }
+
+    #[test]
+    #[should_panic(expected = "called zip_eq() with sources of different lengths")]
+    fn assert_eq_lens_unequal_2() {
+        assert_eq_lens!((len(1), len(2)), 0, 1);
+    }
+
+    #[test]
+    #[should_panic(expected = "called zip_eq() with sources of different lengths")]
+    fn assert_eq_lens_unequal_3() {
+        assert_eq_lens!((len(1), len(1), len(2)), 0, 1, 2);
+    }
+
+    #[test]
+    fn min_lens() {
+        assert_eq!(min_lens!((len(1), len(2)), 0, 1), 1);
+        assert_eq!(min_lens!((len(2), len(1)), 0, 1), 1);
+
+        assert_eq!(min_lens!((len(1), len(2), len(3)), 0, 1, 2), 1);
+        assert_eq!(min_lens!((len(1), len(3), len(2)), 0, 1, 2), 1);
+        assert_eq!(min_lens!((len(2), len(1), len(3)), 0, 1, 2), 1);
+        assert_eq!(min_lens!((len(2), len(3), len(1)), 0, 1, 2), 1);
+        assert_eq!(min_lens!((len(3), len(1), len(2)), 0, 1, 2), 1);
+        assert_eq!(min_lens!((len(3), len(2), len(1)), 0, 1, 2), 1);
+    }
+}
