@@ -128,6 +128,7 @@ mod test {
                 #[cfg(feature = "nightly")]
                 test_source_range_inclusive_u128_too_large => fail("cannot iterate over a range with more than usize::MAX (18446744073709551615) items"),
                 test_source_adaptor_chain,
+                test_source_adaptor_chain_overflow => fail("called chain() with sources that together produce more than usize::MAX (18446744073709551615) items"),
                 test_source_adaptor_enumerate,
                 test_source_adaptor_rev,
                 test_source_adaptor_skip,
@@ -1006,6 +1007,21 @@ mod test {
             .reduce(|| 0, |x, y| x + y);
 
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_source_adaptor_chain_overflow(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let _ = (0..usize::MAX)
+            .into_par_iter()
+            .chain((0..1).into_par_iter())
+            .with_thread_pool(&mut thread_pool)
+            .reduce(|| 0, |x, y| x + y);
     }
 
     fn test_source_adaptor_enumerate(range_strategy: RangeStrategy) {
