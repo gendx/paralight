@@ -6,6 +6,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.0.4 - 2024-11-12
+
+### Added
+
+- Support for mutable slices (producing mutable references to the items) and
+  ranges (producing integers) as parallel sources.
+- The `ParallelSource` trait, as an intermediate interface between parallel
+  sources and iterators, with 7 adaptors: `chain()`, `enumerate()`, `rev()`,
+  `skip()`, `skip_exact()`, `take()` and `take_exact()`.
+- 3 adaptors on tuples (up to 12 elements) of parallel sources, via the
+  `ZipableSource` trait: `zip_eq()`, `zip_max()` and `zip_min()`.
+- A `nightly` feature for experimental APIs available only with a Rust nightly
+  toolchain.
+- A benchmark for element-wise addition of slices.
+
+### Changed
+
+- Thread pools are now static rather than scoped: replaced the
+  `ThreadPoolBuilder::scope()` function by `ThreadPoolBuilder::build()` and
+  removed the `'scope` lifetime parameter of the corresponding `ThreadPool`
+  struct.
+- The `par_iter()` and similar methods don't take a thread pool parameter
+  anymore: a thread pool is attached later via the new `with_thread_pool()`
+  method.
+
+### Removed
+
+- The `IntoParallelIterator` trait, in favor of the new traits
+  `IntoParallelSource`, `IntoParallelRefSource` and `IntoParallelRefMutSource`.
+
+### Fixes
+
+- The benchmarks now correctly compute the throughput (they were underestimating
+  the size by one item beforehand).
+
 ## 0.0.3 - 2024-10-22
 
 ### Added
