@@ -169,13 +169,13 @@ mod paralight {
         len: usize,
         range_strategy: RangeStrategy,
     ) {
+        let mut output = vec![0; len];
         let left = (0..len as u64).collect::<Vec<u64>>();
         let right = (0..len as u64).collect::<Vec<u64>>();
-        let mut output = vec![0; len];
 
+        let output_slice = output.as_mut_slice();
         let left_slice = left.as_slice();
         let right_slice = right.as_slice();
-        let output_slice = output.as_mut_slice();
 
         let mut thread_pool = ThreadPoolBuilder {
             num_threads: ThreadCount::try_from(NUM_THREADS).unwrap(),
@@ -188,13 +188,13 @@ mod paralight {
             .counter(BytesCount::of_many::<u64>(len * 2))
             .bench_local(|| {
                 (
+                    black_box(output_slice.par_iter_mut()),
                     black_box(left_slice).par_iter(),
                     black_box(right_slice).par_iter(),
-                    black_box(output_slice.par_iter_mut()),
                 )
                     .zip_eq()
                     .with_thread_pool(&mut thread_pool)
-                    .for_each(|(&a, &b, out)| *out = a + b)
+                    .for_each(|(out, &a, &b)| *out = a + b)
             });
     }
 }
