@@ -28,7 +28,7 @@ where
     /// # use paralight::iter::{
     /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
     /// # };
-    /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -52,7 +52,7 @@ where
     /// # use paralight::iter::{
     /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
     /// # };
-    /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -80,7 +80,7 @@ where
     /// # use paralight::iter::{
     /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
     /// # };
-    /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -113,7 +113,7 @@ where
     /// # use paralight::iter::{
     /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
     /// # };
-    /// # use paralight::{CpuPinningPolicy, ThreadCount, RangeStrategy, ThreadPoolBuilder};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
