@@ -14,6 +14,11 @@ use std::ops::{Range, RangeInclusive};
 /// A parallel source over a [`Range`]. This struct is created by the
 /// [`into_par_iter()`](IntoParallelSource::into_par_iter) method on
 /// [`IntoParallelSource`].
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelSource`] and
+/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it
+/// is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct RangeParallelSource<T> {
     range: Range<T>,
@@ -78,6 +83,11 @@ impl ParallelSource for RangeParallelSource<usize> {
 /// A parallel source over a [`RangeInclusive`]. This struct is created by the
 /// [`into_par_iter()`](IntoParallelSource::into_par_iter) method on
 /// [`IntoParallelSource`].
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelSource`] and
+/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it
+/// is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct RangeInclusiveParallelSource<T> {
     range: RangeInclusive<T>,

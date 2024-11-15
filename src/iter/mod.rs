@@ -10,6 +10,7 @@
 
 mod source;
 
+pub use source::range::{RangeInclusiveParallelSource, RangeParallelSource};
 pub use source::slice::{MutSliceParallelSource, SliceParallelSource};
 pub use source::zip::{ZipEq, ZipMax, ZipMin, ZipableSource};
 pub use source::{
@@ -66,6 +67,9 @@ pub trait ParallelIterator: Sized {
 }
 
 /// Additional methods provided for types that implement [`ParallelIterator`].
+///
+/// See also [`ParallelSourceExt`] for more adaptors that only apply to parallel
+/// sources (earlier in the pipeline).
 pub trait ParallelIteratorExt: ParallelIterator {
     /// Returns a parallel iterator that produces items that are cloned from the
     /// items of this iterator. This is useful if you have an iterator over
@@ -142,7 +146,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     }
 
     /// Returns a parallel iterator that produces only the items for which the
-    /// predicate `f` returns `true`.
+    /// predicate `f` returns [`true`].
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
@@ -171,7 +175,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
 
     /// Applies the function `f` to each item of this iterator, returning a
     /// parallel iterator that produces the mapped items `x` for which `f`
-    /// returns `Some(x)` and skips the items for which `f` returns `None`.
+    /// returns [`Some(x)`](Option::Some) and skips the items for which `f`
+    /// returns [`None`].
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
@@ -640,6 +645,10 @@ impl<T: ParallelIterator> ParallelIteratorExt for T {}
 
 /// This struct is created by the [`cloned()`](ParallelIteratorExt::cloned)
 /// method on [`ParallelIteratorExt`].
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelIterator`] and [`ParallelIteratorExt`] traits, but
+/// it is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct Cloned<Inner: ParallelIterator> {
     inner: Inner,
@@ -670,6 +679,10 @@ where
 
 /// This struct is created by the [`copied()`](ParallelIteratorExt::copied)
 /// method on [`ParallelIteratorExt`].
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelIterator`] and [`ParallelIteratorExt`] traits, but
+/// it is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct Copied<Inner: ParallelIterator> {
     inner: Inner,
@@ -700,6 +713,10 @@ where
 
 /// This struct is created by the [`filter()`](ParallelIteratorExt::filter)
 /// method on [`ParallelIteratorExt`].
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelIterator`] and [`ParallelIteratorExt`] traits, but
+/// it is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct Filter<Inner: ParallelIterator, F> {
     inner: Inner,
@@ -737,6 +754,10 @@ where
 /// This struct is created by the
 /// [`filter_map()`](ParallelIteratorExt::filter_map) method on
 /// [`ParallelIteratorExt`].
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelIterator`] and [`ParallelIteratorExt`] traits, but
+/// it is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct FilterMap<Inner: ParallelIterator, F> {
     inner: Inner,
@@ -770,6 +791,10 @@ where
 
 /// This struct is created by the [`inspect()`](ParallelIteratorExt::inspect)
 /// method on [`ParallelIteratorExt`].
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelIterator`] and [`ParallelIteratorExt`] traits, but
+/// it is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct Inspect<Inner: ParallelIterator, F> {
     inner: Inner,
@@ -803,6 +828,10 @@ where
 
 /// This struct is created by the [`map()`](ParallelIteratorExt::map) method on
 /// [`ParallelIteratorExt`].
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelIterator`] and [`ParallelIteratorExt`] traits, but
+/// it is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct Map<Inner: ParallelIterator, F> {
     inner: Inner,

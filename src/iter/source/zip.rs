@@ -140,16 +140,31 @@ where
 
 /// This struct is created by the [`zip_eq()`](ZipableSource::zip_eq) method on
 /// [`ZipableSource`].
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelSource`] and
+/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it
+/// is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct ZipEq<T>(T);
 
 /// This struct is created by the [`zip_max()`](ZipableSource::zip_max) method
 /// on [`ZipableSource`].
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelSource`] and
+/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it
+/// is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct ZipMax<T>(T);
 
 /// This struct is created by the [`zip_min()`](ZipableSource::zip_min) method
 /// on [`ZipableSource`].
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelSource`] and
+/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it
+/// is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct ZipMin<T>(T);
 

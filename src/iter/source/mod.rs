@@ -6,6 +6,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+//! Parallel sources from which parallel iterators are derived.
+
 pub mod range;
 pub mod slice;
 pub mod zip;
@@ -489,6 +491,10 @@ impl<T: ParallelSource> ParallelSourceExt for T {}
 
 /// This struct is created by the [`chain()`](ParallelSourceExt::chain) method
 /// on [`ParallelSourceExt`].
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelSource`] and [`ParallelSourceExt`] traits, but it
+/// is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct Chain<First, Second> {
     first: First,
@@ -524,6 +530,10 @@ impl<T: Send, First: ParallelSource<Item = T>, Second: ParallelSource<Item = T>>
 
 /// This struct is created by the [`enumerate()`](ParallelSourceExt::enumerate)
 /// method on [`ParallelSourceExt`].
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelSource`] and [`ParallelSourceExt`] traits, but it
+/// is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct Enumerate<Inner> {
     inner: Inner,
@@ -543,6 +553,10 @@ impl<Inner: ParallelSource> ParallelSource for Enumerate<Inner> {
 
 /// This struct is created by the [`rev()`](ParallelSourceExt::rev) method on
 /// [`ParallelSourceExt`].
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelSource`] and [`ParallelSourceExt`] traits, but it
+/// is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct Rev<Inner> {
     inner: Inner,
@@ -562,6 +576,10 @@ impl<Inner: ParallelSource> ParallelSource for Rev<Inner> {
 
 /// This struct is created by the [`skip()`](ParallelSourceExt::skip) method on
 /// [`ParallelSourceExt`].
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelSource`] and [`ParallelSourceExt`] traits, but it
+/// is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct Skip<Inner> {
     inner: Inner,
@@ -583,6 +601,10 @@ impl<Inner: ParallelSource> ParallelSource for Skip<Inner> {
 /// This struct is created by the
 /// [`skip_exact()`](ParallelSourceExt::skip_exact) method on
 /// [`ParallelSourceExt`].
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelSource`] and [`ParallelSourceExt`] traits, but it
+/// is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct SkipExact<Inner> {
     inner: Inner,
@@ -607,6 +629,10 @@ impl<Inner: ParallelSource> ParallelSource for SkipExact<Inner> {
 
 /// This struct is created by the [`take()`](ParallelSourceExt::take) method on
 /// [`ParallelSourceExt`].
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelSource`] and [`ParallelSourceExt`] traits, but it
+/// is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct Take<Inner> {
     inner: Inner,
@@ -628,6 +654,10 @@ impl<Inner: ParallelSource> ParallelSource for Take<Inner> {
 /// This struct is created by the
 /// [`take_exact()`](ParallelSourceExt::take_exact) method on
 /// [`ParallelSourceExt`].
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelSource`] and [`ParallelSourceExt`] traits, but it
+/// is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct TakeExact<Inner> {
     inner: Inner,
@@ -653,6 +683,10 @@ impl<Inner: ParallelSource> ParallelSource for TakeExact<Inner> {
 /// This struct is created by the
 /// [`with_thread_pool()`](ParallelSourceExt::with_thread_pool) method on
 /// [`ParallelSourceExt`].
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelSource`] and [`ParallelSourceExt`] traits, but it
+/// is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct BaseParallelIterator<'pool, S: ParallelSource> {
     thread_pool: &'pool mut ThreadPool,

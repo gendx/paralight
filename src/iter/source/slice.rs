@@ -11,6 +11,11 @@ use super::{IntoParallelSource, ParallelSource, SourceDescriptor};
 /// A parallel source over a [slice](slice). This struct is created by the
 /// [`par_iter()`](super::IntoParallelRefSource::par_iter) method on
 /// [`IntoParallelRefSource`](super::IntoParallelRefSource).
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelSource`] and
+/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it
+/// is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct SliceParallelSource<'data, T> {
     slice: &'data [T],
@@ -40,6 +45,11 @@ impl<'data, T: Sync> ParallelSource for SliceParallelSource<'data, T> {
 /// A parallel source over a [mutable slice](slice). This struct is created by
 /// the [`par_iter_mut()`](super::IntoParallelRefMutSource::par_iter_mut) method
 /// on [`IntoParallelRefMutSource`](super::IntoParallelRefMutSource).
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelSource`] and
+/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it
+/// is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct MutSliceParallelSource<'data, T> {
     slice: &'data mut [T],
