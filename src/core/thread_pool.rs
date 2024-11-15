@@ -424,6 +424,7 @@ impl<R: Range> ThreadContext<R> {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
 
     #[test]
     fn test_thread_count_try_from_usize() {
@@ -432,5 +433,110 @@ mod test {
             ThreadCount::try_from(1),
             Ok(ThreadCount::Count(NonZeroUsize::try_from(1).unwrap()))
         );
+    }
+
+    #[test]
+    fn test_build_thread_pool_available_parallelism() {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy: RangeStrategy::Fixed,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        let sum = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .reduce(|| 0, |x, y| x + y);
+
+        assert_eq!(sum, 5 * 11);
+    }
+
+    #[test]
+    fn test_build_thread_pool_fixed_thread_count() {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::try_from(4).unwrap(),
+            range_strategy: RangeStrategy::Fixed,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        let sum = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .reduce(|| 0, |x, y| x + y);
+
+        assert_eq!(sum, 5 * 11);
+    }
+
+    #[test]
+    fn test_build_thread_pool_cpu_pinning_if_supported() {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy: RangeStrategy::Fixed,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
+        }
+        .build();
+
+        let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        let sum = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .reduce(|| 0, |x, y| x + y);
+
+        assert_eq!(sum, 5 * 11);
+    }
+
+    #[cfg(all(
+        not(miri),
+        any(
+            target_os = "android",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "linux"
+        )
+    ))]
+    #[test]
+    fn test_build_thread_pool_cpu_pinning_always() {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy: RangeStrategy::Fixed,
+            cpu_pinning: CpuPinningPolicy::Always,
+        }
+        .build();
+
+        let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        let sum = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .reduce(|| 0, |x, y| x + y);
+
+        assert_eq!(sum, 5 * 11);
+    }
+
+    #[cfg(any(
+        miri,
+        not(any(
+            target_os = "android",
+            target_os = "dragonfly",
+            target_os = "freebsd",
+            target_os = "linux"
+        ))
+    ))]
+    #[test]
+    #[should_panic = "Pinning threads to CPUs is not implemented on this platform."]
+    fn test_build_thread_pool_cpu_pinning_always_not_supported() {
+        ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy: RangeStrategy::Fixed,
+            cpu_pinning: CpuPinningPolicy::Always,
+        }
+        .build();
     }
 }
