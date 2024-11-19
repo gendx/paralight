@@ -261,6 +261,53 @@ pub trait ParallelIteratorExt: ParallelIterator {
         )
     }
 
+    /// Runs `f` on each item of this iterator, together with a per-thread
+    /// mutable value returned by `init`.
+    ///
+    /// The `init` function will be called only once per worker thread. The
+    /// companion value returned by `init` doesn't need to be [`Send`] nor
+    /// [`Sync`].
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelRefMutSource, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// use rand::Rng;
+    ///
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let mut bits: [bool; 128] = [true; 128];
+    /// bits
+    ///     .par_iter_mut()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .for_each_init(
+    ///         rand::thread_rng,
+    ///         |rng, bit| if rng.gen() { *bit = false; },
+    ///     );
+    ///
+    /// // The probability that these checks fail is negligible.
+    /// assert!(bits.iter().any(|&x| x));
+    /// assert!(bits.iter().any(|&x| !x));
+    /// ```
+    fn for_each_init<T, Init, F>(self, init: Init, f: F)
+    where
+        Init: Fn() -> T + Sync,
+        F: Fn(&mut T, Self::Item) + Sync,
+    {
+        self.pipeline(
+            init,
+            |mut t, _index, item| {
+                f(&mut t, item);
+                t
+            },
+            /* finalize */ |_| (),
+            /* reduce */ |(), ()| (),
+        )
+    }
+
     /// Runs the function `f` on each item of this iterator in a pass-through
     /// manner, returning a parallel iterator producing the original items.
     ///
@@ -348,6 +395,50 @@ pub trait ParallelIteratorExt: ParallelIterator {
         F: Fn(Self::Item) -> T + Sync,
     {
         Map { inner: self, f }
+    }
+
+    /// Applies the function `f` to each item of this iterator, together with a
+    /// per-thread mutable value returned by `init`, and returns a parallel
+    /// iterator producing the mapped items.
+    ///
+    /// The `init` function will be called only once per worker thread. The
+    /// companion value returned by `init` doesn't need to be [`Send`] nor
+    /// [`Sync`].
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// use rand::Rng;
+    ///
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let randomized_sum = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .map_init(
+    ///         rand::thread_rng,
+    ///         |rng, &x| if rng.gen() { x * 2 } else { x * 3 },
+    ///     )
+    ///     .reduce(|| 0, |x, y| x + y);
+    ///
+    /// assert!(randomized_sum >= 10 * 11);
+    /// assert!(randomized_sum <= 15 * 11);
+    /// ```
+    fn map_init<I, Init, T, F>(self, init: Init, f: F) -> MapInit<Self, Init, F>
+    where
+        Init: Fn() -> I + Sync,
+        F: Fn(&mut I, Self::Item) -> T + Sync,
+    {
+        MapInit {
+            inner: self,
+            init,
+            f,
+        }
     }
 
     /// Returns the maximal item of this iterator, or [`None`] if this iterator
@@ -855,6 +946,45 @@ where
             init,
             |accum, index, item| process_item(accum, index, (self.f)(item)),
             finalize,
+            reduce,
+        )
+    }
+}
+
+/// This struct is created by the [`map_init()`](ParallelIteratorExt::map_init)
+/// method on [`ParallelIteratorExt`].
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelIterator`] and [`ParallelIteratorExt`] traits, but
+/// it is nonetheless public because of the `must_use` annotation.
+#[must_use = "iterator adaptors are lazy"]
+pub struct MapInit<Inner: ParallelIterator, Init, F> {
+    inner: Inner,
+    init: Init,
+    f: F,
+}
+
+impl<Inner: ParallelIterator, I, Init, T, F> ParallelIterator for MapInit<Inner, Init, F>
+where
+    Init: Fn() -> I + Sync,
+    F: Fn(&mut I, Inner::Item) -> T + Sync,
+{
+    type Item = T;
+
+    fn pipeline<Output: Send, Accum>(
+        self,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(Accum, usize, Self::Item) -> Accum + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+    ) -> Output {
+        self.inner.pipeline(
+            || ((self.init)(), init()),
+            |(mut i, accum), index, item| {
+                let accum = process_item(accum, index, (self.f)(&mut i, item));
+                (i, accum)
+            },
+            |(_, accum)| finalize(accum),
             reduce,
         )
     }

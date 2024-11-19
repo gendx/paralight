@@ -31,6 +31,7 @@ mod test {
         IntoParallelRefMutSource, IntoParallelRefSource, IntoParallelSource, ParallelIterator,
         ParallelIteratorExt, ParallelSourceExt, ZipableSource,
     };
+    use rand::Rng;
     use std::cell::Cell;
     use std::collections::HashSet;
     use std::rc::Rc;
@@ -146,8 +147,10 @@ mod test {
                 test_adaptor_filter,
                 test_adaptor_filter_map,
                 test_adaptor_for_each,
+                test_adaptor_for_each_init,
                 test_adaptor_inspect,
                 test_adaptor_map,
+                test_adaptor_map_init,
                 test_adaptor_max,
                 test_adaptor_max_by,
                 test_adaptor_max_by_key,
@@ -1366,6 +1369,29 @@ mod test {
         assert_eq!(set, (0..=INPUT_LEN).collect());
     }
 
+    fn test_adaptor_for_each_init(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let mut values = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        values
+            .par_iter_mut()
+            .with_thread_pool(&mut thread_pool)
+            .for_each_init(rand::thread_rng, |rng, x| {
+                if rng.gen() {
+                    *x *= 2
+                };
+            });
+
+        let sum: u64 = values.iter().sum();
+        assert!(sum >= INPUT_LEN * (INPUT_LEN + 1) / 2);
+        assert!(sum <= INPUT_LEN * (INPUT_LEN + 1));
+    }
+
     fn test_adaptor_inspect(range_strategy: RangeStrategy) {
         let mut thread_pool = ThreadPoolBuilder {
             num_threads: ThreadCount::AvailableParallelism,
@@ -1423,6 +1449,28 @@ mod test {
         assert_eq!(sum1, 42 * INPUT_LEN * (INPUT_LEN + 1) / 2);
         assert_eq!(sum2, 42 * INPUT_LEN * (INPUT_LEN + 1) / 2);
         assert_eq!(sum3, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_adaptor_map_init(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let sum = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .map_init(
+                rand::thread_rng,
+                |rng, &x| if rng.gen() { x * 2 } else { x * 3 },
+            )
+            .reduce(|| 0, |x, y| x + y);
+
+        assert!(sum >= INPUT_LEN * (INPUT_LEN + 1));
+        assert!(sum <= 3 * INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
     fn test_adaptor_max(range_strategy: RangeStrategy) {
