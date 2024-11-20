@@ -9,6 +9,7 @@
 use crate::macros::log_debug;
 #[cfg(feature = "log_parallelism")]
 use crate::macros::{log_info, log_trace};
+use crossbeam_utils::CachePadded;
 #[cfg(feature = "log_parallelism")]
 use std::ops::AddAssign;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -245,8 +246,7 @@ impl Range for WorkStealingRange {
 }
 
 /// A [start, end) pair that can atomically be modified.
-#[repr(align(64))]
-struct AtomicRange(AtomicU64);
+struct AtomicRange(CachePadded<AtomicU64>);
 
 impl Default for AtomicRange {
     #[inline(always)]
@@ -259,7 +259,7 @@ impl AtomicRange {
     /// Creates a new atomic range.
     #[inline(always)]
     fn new(range: PackedRange) -> Self {
-        AtomicRange(AtomicU64::new(range.0))
+        AtomicRange(CachePadded::new(AtomicU64::new(range.0)))
     }
 
     /// Atomically loads the range.

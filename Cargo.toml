@@ -24,6 +24,7 @@ nightly = []
 nightly_tests = []
 
 [dependencies]
+crossbeam-utils = "0.8.20"
 log = { optional = true, version = "0.4" }
 
 # Platforms that support `libc::sched_setaffinity()`.
