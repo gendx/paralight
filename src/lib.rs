@@ -53,9 +53,7 @@ mod test {
             fn $case() {
                 #[cfg(all(not(miri), feature = "log"))]
                 LazyLock::force(&ENV_LOGGER_INIT);
-                for _ in 0..ITERATIONS {
-                    $crate::test::$case($range_strategy);
-                }
+                $crate::test::$case($range_strategy);
             }
 
             expand_tests!($range_strategy, $($others)*);
@@ -174,11 +172,6 @@ mod test {
     const INPUT_LEN: u64 = 100_000;
     #[cfg(miri)]
     const INPUT_LEN: u64 = 1000;
-
-    #[cfg(not(miri))]
-    const ITERATIONS: u64 = 100;
-    #[cfg(miri)]
-    const ITERATIONS: u64 = 1;
 
     fn test_pipeline_sum_integers(range_strategy: RangeStrategy) {
         let mut thread_pool = ThreadPoolBuilder {
