@@ -10,6 +10,7 @@
 
 use super::util::{DynLifetimeView, LifetimeParameterized, Status};
 use crate::macros::{log_debug, log_error};
+use crossbeam_utils::CachePadded;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 
@@ -64,37 +65,44 @@ pub fn make_lending_group<T: LifetimeParameterized>(
     num_threads: usize,
 ) -> (Lender<T>, Vec<Borrower<T>>) {
     let round = RoundColor::Blue;
-    let num_active_threads = Arc::new(AtomicUsize::new(0));
-    let num_panicking_threads = Arc::new(AtomicUsize::new(0));
-    let worker_status = Arc::new(Status::new(WorkerStatus::Round(round)));
-    let main_status = Arc::new(Status::new(MainStatus::Waiting));
-
-    let value = Arc::new(RwLock::new(DynLifetimeView::empty()));
+    let shared_context = Arc::new(SharedContext {
+        num_active_threads: CachePadded::new(AtomicUsize::new(0)),
+        num_panicking_threads: CachePadded::new(AtomicUsize::new(0)),
+        worker_status: Status::new(WorkerStatus::Round(round)),
+        main_status: Status::new(MainStatus::Waiting),
+        value: RwLock::new(DynLifetimeView::empty()),
+    });
 
     let borrowers = (0..num_threads)
         .map(|_id| Borrower {
             #[cfg(feature = "log")]
             id: _id,
             round,
-            num_active_threads: num_active_threads.clone(),
-            num_panicking_threads: num_panicking_threads.clone(),
-            worker_status: worker_status.clone(),
-            main_status: main_status.clone(),
-            value: value.clone(),
+            shared_context: shared_context.clone(),
         })
         .collect();
 
     let lender = Lender {
         num_threads,
-        num_active_threads,
-        num_panicking_threads,
         round,
-        worker_status,
-        main_status,
-        value,
+        shared_context,
     };
 
     (lender, borrowers)
+}
+
+/// Context shared between the main thread and the worker threads.
+struct SharedContext<T: LifetimeParameterized> {
+    /// Number of worker threads active in the current round.
+    num_active_threads: CachePadded<AtomicUsize>,
+    /// Number of worker threads that panicked in the current round.
+    num_panicking_threads: CachePadded<AtomicUsize>,
+    /// Status of the worker threads.
+    worker_status: Status<WorkerStatus>,
+    /// Status of the main thread.
+    main_status: Status<MainStatus>,
+    /// Value shared with the worker threads.
+    value: RwLock<DynLifetimeView<T>>,
 }
 
 /// Context for the main thread to lend values of type `T` to the worker
@@ -102,25 +110,18 @@ pub fn make_lending_group<T: LifetimeParameterized>(
 pub struct Lender<T: LifetimeParameterized> {
     /// Number of worker threads in the pool.
     num_threads: usize,
-    /// Number of worker threads active in the current round.
-    num_active_threads: Arc<AtomicUsize>,
-    /// Number of worker threads that panicked in the current round.
-    num_panicking_threads: Arc<AtomicUsize>,
     /// Color of the current round.
     round: RoundColor,
-    /// Status of the worker threads.
-    worker_status: Arc<Status<WorkerStatus>>,
-    /// Status of the main thread.
-    main_status: Arc<Status<MainStatus>>,
-    /// Value shared with the worker threads.
-    value: Arc<RwLock<DynLifetimeView<T>>>,
+    /// Context shared between the main thread and the worker threads.
+    shared_context: Arc<SharedContext<T>>,
 }
 
 impl<T: LifetimeParameterized> Lender<T> {
     /// Lend the given value to the worker threads, waiting for the worker
     /// threads to be done borrowing it.
     pub fn lend(&mut self, value: &T::T<'_>) {
-        self.num_active_threads
+        self.shared_context
+            .num_active_threads
             .store(self.num_threads, Ordering::SeqCst);
 
         self.round.toggle();
@@ -129,19 +130,25 @@ impl<T: LifetimeParameterized> Lender<T> {
         // Safety note: The reference set here is valid until the call to `clear()` at
         // the end of this function, which is after all the worker threads are done
         // reading it (as synchronized with `main_status`).
-        self.value.write().unwrap().set(value);
+        self.shared_context.value.write().unwrap().set(value);
         log_debug!("[main thread, round {round:?}] Ready to compute a parallel pipeline.");
 
-        self.worker_status.notify_all(WorkerStatus::Round(round));
+        self.shared_context
+            .worker_status
+            .notify_all(WorkerStatus::Round(round));
 
         log_debug!("[main thread, round {round:?}] Waiting for all threads to finish computing this pipeline.");
 
         let mut guard = self
+            .shared_context
             .main_status
             .wait_while(|status| *status == MainStatus::Waiting);
         assert_eq!(*guard, MainStatus::Ready);
 
-        let num_panicking_threads = self.num_panicking_threads.load(Ordering::SeqCst);
+        let num_panicking_threads = self
+            .shared_context
+            .num_panicking_threads
+            .load(Ordering::SeqCst);
         if num_panicking_threads != 0 {
             log_error!(
                 "[main thread, round {round:?}] {num_panicking_threads} worker thread(s) panicked!"
@@ -158,13 +165,15 @@ impl<T: LifetimeParameterized> Lender<T> {
         // Safety note: the reference (previously set at the beginning of this function)
         // is cleared here after all the worker threads are done reading it (as
         // synchronized with `main_status`).
-        self.value.write().unwrap().clear();
+        self.shared_context.value.write().unwrap().clear();
     }
 
     /// Notify the worker threads to exit.
     pub fn finish_workers(&mut self) {
         log_debug!("[main thread] Notifying threads to finish...");
-        self.worker_status.notify_all(WorkerStatus::Finished);
+        self.shared_context
+            .worker_status
+            .notify_all(WorkerStatus::Finished);
     }
 }
 
@@ -177,16 +186,8 @@ pub struct Borrower<T: LifetimeParameterized> {
     id: usize,
     /// Color of the current round.
     round: RoundColor,
-    /// Number of worker threads active in the current round.
-    num_active_threads: Arc<AtomicUsize>,
-    /// Number of worker threads that panicked in the current round.
-    num_panicking_threads: Arc<AtomicUsize>,
-    /// Status of the worker threads.
-    worker_status: Arc<Status<WorkerStatus>>,
-    /// Status of the main thread.
-    main_status: Arc<Status<MainStatus>>,
-    /// Value shared by the main thread.
-    value: Arc<RwLock<DynLifetimeView<T>>>,
+    /// Context shared between the main thread and the worker threads.
+    shared_context: Arc<SharedContext<T>>,
 }
 
 impl<T: LifetimeParameterized> Borrower<T> {
@@ -206,10 +207,14 @@ impl<T: LifetimeParameterized> Borrower<T> {
             self.id
         );
 
-        let worker_status: WorkerStatus = *self.worker_status.wait_while(|status| match status {
-            WorkerStatus::Finished => false,
-            WorkerStatus::Round(r) => *r != round,
-        });
+        let worker_status: WorkerStatus =
+            *self
+                .shared_context
+                .worker_status
+                .wait_while(|status| match status {
+                    WorkerStatus::Finished => false,
+                    WorkerStatus::Round(r) => *r != round,
+                });
         match worker_status {
             WorkerStatus::Finished => {
                 log_debug!(
@@ -234,13 +239,11 @@ impl<T: LifetimeParameterized> Borrower<T> {
                     id: self.id,
                     #[cfg(feature = "log")]
                     round,
-                    num_active_threads: &self.num_active_threads,
-                    num_panicking_threads: &self.num_panicking_threads,
-                    main_status: &self.main_status,
+                    shared_context: &self.shared_context,
                 };
 
                 {
-                    let guard = self.value.read().unwrap();
+                    let guard = self.shared_context.value.read().unwrap();
                     // SAFETY:
                     // - The output lifetime doesn't outlive the underlying `T`, as the main thread
                     //   waits until the [`Notifier`]s from all worker threads are dropped before
@@ -262,7 +265,7 @@ impl<T: LifetimeParameterized> Borrower<T> {
 
 /// Object whose destructor notifies the main thread that a worker thread has
 /// finished its computing round (or has panicked).
-struct Notifier<'a> {
+struct Notifier<'a, T: LifetimeParameterized> {
     /// Thread index.
     #[cfg(feature = "log")]
     #[cfg_attr(docsrs, doc(cfg(feature = "log")))]
@@ -271,15 +274,11 @@ struct Notifier<'a> {
     #[cfg(feature = "log")]
     #[cfg_attr(docsrs, doc(cfg(feature = "log")))]
     round: RoundColor,
-    /// Number of worker threads active in the current round.
-    num_active_threads: &'a AtomicUsize,
-    /// Number of worker threads that panicked in the current round.
-    num_panicking_threads: &'a AtomicUsize,
-    /// Status of the main thread.
-    main_status: &'a Status<MainStatus>,
+    /// Context shared between the main thread and the worker threads.
+    shared_context: &'a SharedContext<T>,
 }
 
-impl Drop for Notifier<'_> {
+impl<T: LifetimeParameterized> Drop for Notifier<'_, T> {
     fn drop(&mut self) {
         #[cfg(feature = "log")]
         let round = self.round;
@@ -291,10 +290,15 @@ impl Drop for Notifier<'_> {
                 "[thread {}] Detected panic in this thread, notifying the main thread",
                 self.id
             );
-            self.num_panicking_threads.fetch_add(1, Ordering::SeqCst);
+            self.shared_context
+                .num_panicking_threads
+                .fetch_add(1, Ordering::SeqCst);
         }
 
-        let thread_count = self.num_active_threads.fetch_sub(1, Ordering::SeqCst);
+        let thread_count = self
+            .shared_context
+            .num_active_threads
+            .fetch_sub(1, Ordering::SeqCst);
         assert!(thread_count > 0);
         log_debug!(
             "[thread {}, round {round:?}] Decremented the number of active threads: {}.",
@@ -309,7 +313,11 @@ impl Drop for Notifier<'_> {
                 self.id
             );
 
-            match self.main_status.try_notify_one(MainStatus::Ready) {
+            match self
+                .shared_context
+                .main_status
+                .try_notify_one(MainStatus::Ready)
+            {
                 Ok(_) => log_debug!(
                     "[thread {}, round {round:?}] Notified the main thread.",
                     self.id
