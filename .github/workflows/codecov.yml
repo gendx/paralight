@@ -3,6 +3,8 @@ name: Code coverage
 jobs:
   coverage:
     runs-on: ubuntu-latest
+    env:
+      RUST_LOG: "debug"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
