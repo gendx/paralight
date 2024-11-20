@@ -14,6 +14,7 @@ use super::range::{
 use super::sync::{make_lending_group, Borrower, Lender, WorkerState};
 use super::util::LifetimeParameterized;
 use crate::macros::{log_debug, log_error, log_warn};
+use crossbeam_utils::CachePadded;
 // Platforms that support `libc::sched_setaffinity()`.
 #[cfg(all(
     not(miri),
@@ -31,6 +32,7 @@ use nix::{
 use std::convert::TryFrom;
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
@@ -142,6 +144,31 @@ impl ThreadPool {
         self.inner
             .pipeline(input_len, init, process_item, finalize, reduce)
     }
+
+    /// Processes an input of the given length in parallel and returns the
+    /// aggregated output.
+    ///
+    /// With this variant, the pipeline may terminate early after any call to
+    /// `process_item` that returns [`PipelineCircuit::Break`].
+    pub(crate) fn short_circuiting_pipeline<Output: Send, Accum>(
+        &mut self,
+        input_len: usize,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(Accum, usize) -> (PipelineCircuit, Accum) + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+    ) -> Output {
+        self.inner
+            .short_circuiting_pipeline(input_len, init, process_item, finalize, reduce)
+    }
+}
+
+/// State of a short-circuiting pipeline.
+pub enum PipelineCircuit {
+    /// The pipeline can continue.
+    Continue,
+    /// The pipeline can short-circuit and break.
+    Break,
 }
 
 /// Underlying [`ThreadPool`] implementation, dispatching over the
@@ -190,6 +217,29 @@ impl ThreadPoolEnum {
             }
             ThreadPoolEnum::WorkStealing(inner) => {
                 inner.pipeline(input_len, init, process_item, finalize, reduce)
+            }
+        }
+    }
+
+    /// Processes an input of the given length in parallel and returns the
+    /// aggregated output.
+    ///
+    /// With this variant, the pipeline may terminate early after any call to
+    /// `process_item` that returns [`PipelineCircuit::Break`].
+    fn short_circuiting_pipeline<Output: Send, Accum>(
+        &mut self,
+        input_len: usize,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(Accum, usize) -> (PipelineCircuit, Accum) + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+    ) -> Output {
+        match self {
+            ThreadPoolEnum::Fixed(inner) => {
+                inner.short_circuiting_pipeline(input_len, init, process_item, finalize, reduce)
+            }
+            ThreadPoolEnum::WorkStealing(inner) => {
+                inner.short_circuiting_pipeline(input_len, init, process_item, finalize, reduce)
             }
         }
     }
@@ -329,6 +379,41 @@ impl<F: RangeFactory> ThreadPoolImpl<F> {
             .reduce(reduce)
             .unwrap()
     }
+
+    /// Processes an input of the given length in parallel and returns the
+    /// aggregated output.
+    ///
+    /// With this variant, the pipeline may terminate early after any call to
+    /// `process_item` that returns [`PipelineCircuit::Break`].
+    fn short_circuiting_pipeline<Output: Send, Accum>(
+        &mut self,
+        input_len: usize,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(Accum, usize) -> (PipelineCircuit, Accum) + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+    ) -> Output {
+        self.range_orchestrator.reset_ranges(input_len);
+
+        let num_threads = self.threads.len();
+        let outputs = (0..num_threads)
+            .map(|_| Mutex::new(None))
+            .collect::<Arc<[_]>>();
+
+        self.pipeline.lend(&ShortCircuitingPipelineImpl {
+            fuse: Fuse::new(),
+            outputs: outputs.clone(),
+            init,
+            process_item,
+            finalize,
+        });
+
+        outputs
+            .iter()
+            .map(move |output| output.lock().unwrap().take().unwrap())
+            .reduce(reduce)
+            .unwrap()
+    }
 }
 
 impl<F: RangeFactory> Drop for ThreadPoolImpl<F> {
@@ -394,6 +479,86 @@ where
         }
         let output = (self.finalize)(accumulator);
         *self.outputs[worker_id].lock().unwrap() = Some(output);
+    }
+}
+
+struct ShortCircuitingPipelineImpl<
+    Output,
+    Accum,
+    Init: Fn() -> Accum,
+    ProcessItem: Fn(Accum, usize) -> (PipelineCircuit, Accum),
+    Finalize: Fn(Accum) -> Output,
+> {
+    fuse: Fuse,
+    outputs: Arc<[Mutex<Option<Output>>]>,
+    init: Init,
+    process_item: ProcessItem,
+    finalize: Finalize,
+}
+
+impl<R, Output, Accum, Init, ProcessItem, Finalize> Pipeline<R>
+    for ShortCircuitingPipelineImpl<Output, Accum, Init, ProcessItem, Finalize>
+where
+    R: Range,
+    Init: Fn() -> Accum,
+    ProcessItem: Fn(Accum, usize) -> (PipelineCircuit, Accum),
+    Finalize: Fn(Accum) -> Output,
+{
+    fn run(&self, worker_id: usize, range: &R) {
+        let mut accumulator = (self.init)();
+        let mut it = range.iter();
+
+        while let FuseState::Unset = self.fuse.load() {
+            let Some(i) = it.next() else {
+                break;
+            };
+            let (circuit, acc) = (self.process_item)(accumulator, i);
+            accumulator = acc;
+
+            match circuit {
+                PipelineCircuit::Continue => continue,
+                PipelineCircuit::Break => {
+                    self.fuse.set();
+                    break;
+                }
+            }
+        }
+
+        let output = (self.finalize)(accumulator);
+        *self.outputs[worker_id].lock().unwrap() = Some(output);
+    }
+}
+
+/// A fuse is an atomic object that starts unset and can transition once to the
+/// set state.
+///
+/// Under the hood, this contains an atomic boolean aligned to a cache line to
+/// avoid any risk of false sharing performance overhead.
+struct Fuse(CachePadded<AtomicBool>);
+
+/// State of a [`Fuse`].
+enum FuseState {
+    Unset,
+    Set,
+}
+
+impl Fuse {
+    /// Creates a new fuse in the [`Unset`](FuseState::Unset) state.
+    fn new() -> Self {
+        Fuse(CachePadded::new(AtomicBool::new(false)))
+    }
+
+    /// Reads the current state of this fuse.
+    fn load(&self) -> FuseState {
+        match self.0.load(Ordering::Relaxed) {
+            false => FuseState::Unset,
+            true => FuseState::Set,
+        }
+    }
+
+    /// Sets this fuse to the [`Set`](FuseState::Set) state.
+    fn set(&self) {
+        self.0.store(true, Ordering::Relaxed)
     }
 }
 

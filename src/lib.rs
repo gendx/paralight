@@ -22,7 +22,9 @@ mod core;
 pub mod iter;
 mod macros;
 
-pub use core::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPool, ThreadPoolBuilder};
+pub use core::{
+    CpuPinningPolicy, PipelineCircuit, RangeStrategy, ThreadCount, ThreadPool, ThreadPoolBuilder,
+};
 
 #[cfg(test)]
 mod test {
@@ -142,10 +144,13 @@ mod test {
                 test_source_adaptor_zip_eq_unequal => fail("called zip_eq() with sources of different lengths"),
                 test_source_adaptor_zip_max,
                 test_source_adaptor_zip_min,
+                test_adaptor_all,
+                test_adaptor_any,
                 test_adaptor_cloned,
                 test_adaptor_copied,
                 test_adaptor_filter,
                 test_adaptor_filter_map,
+                test_adaptor_find_any,
                 test_adaptor_for_each,
                 test_adaptor_for_each_init,
                 test_adaptor_inspect,
@@ -1270,6 +1275,70 @@ mod test {
         assert_eq!(sum_right, 3 * INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
+    fn test_adaptor_all(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let all_even = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .all(|&x| x % 2 == 0);
+        let all_small = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .all(|&x| x <= INPUT_LEN);
+        let all_large = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .all(|&x| x > INPUT_LEN);
+        let all_empty = []
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .all(|_: &u64| false);
+
+        assert!(!all_even);
+        assert!(all_small);
+        assert!(!all_large);
+        assert!(all_empty);
+    }
+
+    fn test_adaptor_any(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let any_even = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .any(|&x| x % 2 == 0);
+        let any_small = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .any(|&x| x <= INPUT_LEN);
+        let any_large = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .any(|&x| x > INPUT_LEN);
+        let any_empty = []
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .any(|_: &u64| true);
+
+        assert!(any_even);
+        assert!(any_small);
+        assert!(!any_large);
+        assert!(!any_empty);
+    }
+
     fn test_adaptor_cloned(range_strategy: RangeStrategy) {
         let mut thread_pool = ThreadPoolBuilder {
             num_threads: ThreadCount::AvailableParallelism,
@@ -1346,6 +1415,53 @@ mod test {
             .pipeline(|| 0, |acc, _, x| acc + x, |acc| acc, |a, b| a + b);
 
         assert_eq!(sum, 3 * INPUT_LEN * (INPUT_LEN / 2 + 1) / 2);
+    }
+
+    fn test_adaptor_find_any(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let first = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .find_any(|&x| x == 0);
+        let last = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .find_any(|&x| x == INPUT_LEN);
+        let end = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .find_any(|&x| x == INPUT_LEN + 1);
+        let forty_two = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .find_any(|&x| x == 42);
+        let even = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .find_any(|&x| x % 2 == 0);
+        let empty = []
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .find_any(|_: &&u64| true);
+
+        assert_eq!(first, Some(0));
+        assert_eq!(last, Some(INPUT_LEN));
+        assert_eq!(end, None);
+        assert_eq!(forty_two, if INPUT_LEN >= 42 { Some(42) } else { None });
+        assert!(even.unwrap() % 2 == 0);
+        assert_eq!(empty, None);
     }
 
     fn test_adaptor_for_each(range_strategy: RangeStrategy) {

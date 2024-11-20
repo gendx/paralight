@@ -10,6 +10,7 @@
 
 mod source;
 
+use crate::PipelineCircuit;
 pub use source::range::{RangeInclusiveParallelSource, RangeParallelSource};
 pub use source::slice::{MutSliceParallelSource, SliceParallelSource};
 pub use source::zip::{ZipEq, ZipMax, ZipMin, ZipableSource};
@@ -64,6 +65,137 @@ pub trait ParallelIterator: Sized {
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
     ) -> Output;
+
+    /// Runs the pipeline defined by the given functions on this iterator.
+    ///
+    /// # Parameters
+    ///
+    /// - `init` function to create a new (per-thread) accumulator,
+    /// - `process_item` function to accumulate an item into the accumulator,
+    /// - `finalize` function to transform an accumulator into an output,
+    /// - `reduce` function to reduce a pair of outputs into one output.
+    ///
+    /// Contrary to [`pipeline()`](Self::pipeline), the `process_item` function
+    /// can return [`PipelineCircuit::Break`] to indicate that the pipeline
+    /// should terminate early.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIterator, ParallelSourceExt};
+    /// # use paralight::{
+    /// #     CpuPinningPolicy, PipelineCircuit, RangeStrategy, ThreadCount, ThreadPoolBuilder,
+    /// # };
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let any_even = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .short_circuiting_pipeline(
+    ///         || false,
+    ///         |_, _, x| {
+    ///             if x % 2 == 0 {
+    ///                 (PipelineCircuit::Break, true)
+    ///             } else {
+    ///                 (PipelineCircuit::Continue, false)
+    ///             }
+    ///         },
+    ///         |acc| acc,
+    ///         |x, y| x || y,
+    ///     );
+    /// assert_eq!(any_even, true);
+    /// ```
+    fn short_circuiting_pipeline<Output: Send, Accum>(
+        self,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(Accum, usize, Self::Item) -> (PipelineCircuit, Accum) + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+    ) -> Output;
+}
+
+/// An internal object describing how to transform items in a
+/// [`ParallelAdaptor`].
+pub struct ParallelAdaptorDescriptor<
+    Item,
+    Inner: ParallelIterator,
+    TransformItem: Fn(Inner::Item) -> Option<Item> + Sync,
+> {
+    /// The underlying parallel iterator that this adaptor builds on top of.
+    inner: Inner,
+    /// Function to transform an item from the inner iterator into the adapted
+    /// iterator.
+    transform_item: TransformItem,
+}
+
+/// An internal trait to define iterator adaptors. Types that implement this
+/// trait automatically implement [`ParallelIterator`] and
+/// [`ParallelIteratorExt`].
+pub trait ParallelAdaptor {
+    /// The type of items that this parallel iterator adaptor produces.
+    ///
+    /// As for [`ParallelIterator`] this type has no particular [`Send`] nor
+    /// [`Sync`] bounds.
+    type Item;
+    /// The underlying parallel iterator that this type adapts on top of.
+    type Inner: ParallelIterator;
+
+    /// Definition of the parallel adaptor.
+    // We can't really avoid the complexity in the result type as the function may come from an
+    // anonymous lambda.
+    #[allow(clippy::type_complexity)]
+    fn descriptor(
+        self,
+    ) -> ParallelAdaptorDescriptor<
+        Self::Item,
+        Self::Inner,
+        impl Fn(<Self::Inner as ParallelIterator>::Item) -> Option<Self::Item> + Sync,
+    >;
+}
+
+impl<T: ParallelAdaptor> ParallelIterator for T {
+    type Item = T::Item;
+
+    fn pipeline<Output: Send, Accum>(
+        self,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(Accum, usize, Self::Item) -> Accum + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+    ) -> Output {
+        let descriptor = self.descriptor();
+        descriptor.inner.pipeline(
+            init,
+            |accum, index, item| match (descriptor.transform_item)(item) {
+                Some(item) => process_item(accum, index, item),
+                None => accum,
+            },
+            finalize,
+            reduce,
+        )
+    }
+
+    fn short_circuiting_pipeline<Output: Send, Accum>(
+        self,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(Accum, usize, Self::Item) -> (PipelineCircuit, Accum) + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+    ) -> Output {
+        let descriptor = self.descriptor();
+        descriptor.inner.short_circuiting_pipeline(
+            init,
+            |accum, index, item| match (descriptor.transform_item)(item) {
+                Some(item) => process_item(accum, index, item),
+                None => (PipelineCircuit::Continue, accum),
+            },
+            finalize,
+            reduce,
+        )
+    }
 }
 
 /// Additional methods provided for types that implement [`ParallelIterator`].
@@ -71,6 +203,128 @@ pub trait ParallelIterator: Sized {
 /// See also [`ParallelSourceExt`] for more adaptors that only apply to parallel
 /// sources (earlier in the pipeline).
 pub trait ParallelIteratorExt: ParallelIterator {
+    /// Returns [`true`] if all items produced by this iterator satisfy the
+    /// predicate `f`, and [`false`] otherwise.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    ///
+    /// let all_even = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .all(|&x| x % 2 == 0);
+    /// assert!(!all_even);
+    ///
+    /// let all_positive = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .all(|&x| x > 0);
+    /// assert!(all_positive);
+    /// ```
+    ///
+    /// This returns [`true`] if the iterator is empty.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input: [i32; 0] = [];
+    ///
+    /// let all_empty = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .all(|_| false);
+    /// assert!(all_empty);
+    /// ```
+    fn all<F>(self, f: F) -> bool
+    where
+        F: Fn(Self::Item) -> bool + Sync,
+    {
+        self.short_circuiting_pipeline(
+            || true,
+            |_, _, item| match f(item) {
+                true => (PipelineCircuit::Continue, true),
+                false => (PipelineCircuit::Break, false),
+            },
+            |acc| acc,
+            |x, y| x && y,
+        )
+    }
+
+    /// Returns [`true`] if any item produced by this iterator satisfies the
+    /// predicate `f`, and [`false`] otherwise.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    ///
+    /// let any_even = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .any(|&x| x % 2 == 0);
+    /// assert!(any_even);
+    ///
+    /// let any_zero = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .any(|&x| x == 0);
+    /// assert!(!any_zero);
+    /// ```
+    ///
+    /// This returns [`false`] if the iterator is empty.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input: [i32; 0] = [];
+    ///
+    /// let any_empty = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .any(|_| true);
+    /// assert!(!any_empty);
+    /// ```
+    fn any<F>(self, f: F) -> bool
+    where
+        F: Fn(Self::Item) -> bool + Sync,
+    {
+        self.short_circuiting_pipeline(
+            || false,
+            |_, _, item| match f(item) {
+                true => (PipelineCircuit::Break, true),
+                false => (PipelineCircuit::Continue, false),
+            },
+            |acc| acc,
+            |x, y| x || y,
+        )
+    }
+
     /// Returns a parallel iterator that produces items that are cloned from the
     /// items of this iterator. This is useful if you have an iterator over
     /// [`&T`](reference) and want an iterator over `T`, when `T` is
@@ -224,6 +478,57 @@ pub trait ParallelIteratorExt: ParallelIterator {
         F: Fn(Self::Item) -> Option<T> + Sync,
     {
         FilterMap { inner: self, f }
+    }
+
+    /// Returns any item that satisfies the predicate `f`, or [`None`] if no
+    /// item satisfies it.
+    ///
+    /// If multiple items satisfy `f`, which one is returned is arbitrary.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    ///
+    /// let four = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .find_any(|&&x| x == 4);
+    /// assert_eq!(four, Some(&4));
+    ///
+    /// let twenty = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .find_any(|&&x| x == 20);
+    /// assert_eq!(twenty, None);
+    ///
+    /// let any_even = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .find_any(|&x| x % 2 == 0);
+    /// assert!(any_even.unwrap() % 2 == 0);
+    /// ```
+    fn find_any<F>(self, f: F) -> Option<Self::Item>
+    where
+        F: Fn(&Self::Item) -> bool + Sync,
+        Self::Item: Send,
+    {
+        self.short_circuiting_pipeline(
+            || None,
+            |_, _, item| match f(&item) {
+                true => (PipelineCircuit::Break, Some(item)),
+                false => (PipelineCircuit::Continue, None),
+            },
+            |acc| acc,
+            |x, y| x.or(y),
+        )
     }
 
     /// Runs `f` on each item of this parallel iterator.
@@ -745,26 +1050,25 @@ pub struct Cloned<Inner: ParallelIterator> {
     inner: Inner,
 }
 
-impl<'a, T, Inner: ParallelIterator> ParallelIterator for Cloned<Inner>
+impl<'a, T, Inner: ParallelIterator> ParallelAdaptor for Cloned<Inner>
 where
     T: Clone + 'a,
     Inner: ParallelIterator<Item = &'a T>,
 {
     type Item = T;
+    type Inner = Inner;
 
-    fn pipeline<Output: Send, Accum>(
+    fn descriptor(
         self,
-        init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize, Self::Item) -> Accum + Sync,
-        finalize: impl Fn(Accum) -> Output + Sync,
-        reduce: impl Fn(Output, Output) -> Output,
-    ) -> Output {
-        self.inner.pipeline(
-            init,
-            |accum, index, item| process_item(accum, index, item.clone()),
-            finalize,
-            reduce,
-        )
+    ) -> ParallelAdaptorDescriptor<
+        Self::Item,
+        Self::Inner,
+        impl Fn(<Self::Inner as ParallelIterator>::Item) -> Option<Self::Item> + Sync,
+    > {
+        ParallelAdaptorDescriptor {
+            inner: self.inner,
+            transform_item: |item| Some(item.clone()),
+        }
     }
 }
 
@@ -779,26 +1083,25 @@ pub struct Copied<Inner: ParallelIterator> {
     inner: Inner,
 }
 
-impl<'a, T, Inner: ParallelIterator> ParallelIterator for Copied<Inner>
+impl<'a, T, Inner: ParallelIterator> ParallelAdaptor for Copied<Inner>
 where
     T: Copy + 'a,
     Inner: ParallelIterator<Item = &'a T>,
 {
     type Item = T;
+    type Inner = Inner;
 
-    fn pipeline<Output: Send, Accum>(
+    fn descriptor(
         self,
-        init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize, Self::Item) -> Accum + Sync,
-        finalize: impl Fn(Accum) -> Output + Sync,
-        reduce: impl Fn(Output, Output) -> Output,
-    ) -> Output {
-        self.inner.pipeline(
-            init,
-            |accum, index, item| process_item(accum, index, *item),
-            finalize,
-            reduce,
-        )
+    ) -> ParallelAdaptorDescriptor<
+        Self::Item,
+        Self::Inner,
+        impl Fn(<Self::Inner as ParallelIterator>::Item) -> Option<Self::Item> + Sync,
+    > {
+        ParallelAdaptorDescriptor {
+            inner: self.inner,
+            transform_item: |item| Some(*item),
+        }
     }
 }
 
@@ -814,31 +1117,30 @@ pub struct Filter<Inner: ParallelIterator, F> {
     f: F,
 }
 
-impl<Inner: ParallelIterator, F> ParallelIterator for Filter<Inner, F>
+impl<Inner: ParallelIterator, F> ParallelAdaptor for Filter<Inner, F>
 where
     F: Fn(&Inner::Item) -> bool + Sync,
 {
     type Item = Inner::Item;
+    type Inner = Inner;
 
-    fn pipeline<Output: Send, Accum>(
+    fn descriptor(
         self,
-        init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize, Self::Item) -> Accum + Sync,
-        finalize: impl Fn(Accum) -> Output + Sync,
-        reduce: impl Fn(Output, Output) -> Output,
-    ) -> Output {
-        self.inner.pipeline(
-            init,
-            |accum, index, item| {
+    ) -> ParallelAdaptorDescriptor<
+        Self::Item,
+        Self::Inner,
+        impl Fn(<Self::Inner as ParallelIterator>::Item) -> Option<Self::Item> + Sync,
+    > {
+        ParallelAdaptorDescriptor {
+            inner: self.inner,
+            transform_item: move |item| {
                 if (self.f)(&item) {
-                    process_item(accum, index, item)
+                    Some(item)
                 } else {
-                    accum
+                    None
                 }
             },
-            finalize,
-            reduce,
-        )
+        }
     }
 }
 
@@ -855,28 +1157,24 @@ pub struct FilterMap<Inner: ParallelIterator, F> {
     f: F,
 }
 
-impl<Inner: ParallelIterator, T, F> ParallelIterator for FilterMap<Inner, F>
+impl<Inner: ParallelIterator, T, F> ParallelAdaptor for FilterMap<Inner, F>
 where
     F: Fn(Inner::Item) -> Option<T> + Sync,
 {
     type Item = T;
+    type Inner = Inner;
 
-    fn pipeline<Output: Send, Accum>(
+    fn descriptor(
         self,
-        init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize, Self::Item) -> Accum + Sync,
-        finalize: impl Fn(Accum) -> Output + Sync,
-        reduce: impl Fn(Output, Output) -> Output,
-    ) -> Output {
-        self.inner.pipeline(
-            init,
-            |accum, index, item| match (self.f)(item) {
-                Some(mapped_item) => process_item(accum, index, mapped_item),
-                None => accum,
-            },
-            finalize,
-            reduce,
-        )
+    ) -> ParallelAdaptorDescriptor<
+        Self::Item,
+        Self::Inner,
+        impl Fn(<Self::Inner as ParallelIterator>::Item) -> Option<Self::Item> + Sync,
+    > {
+        ParallelAdaptorDescriptor {
+            inner: self.inner,
+            transform_item: self.f,
+        }
     }
 }
 
@@ -892,28 +1190,27 @@ pub struct Inspect<Inner: ParallelIterator, F> {
     f: F,
 }
 
-impl<Inner: ParallelIterator, F> ParallelIterator for Inspect<Inner, F>
+impl<Inner: ParallelIterator, F> ParallelAdaptor for Inspect<Inner, F>
 where
     F: Fn(&Inner::Item) + Sync,
 {
     type Item = Inner::Item;
+    type Inner = Inner;
 
-    fn pipeline<Output: Send, Accum>(
+    fn descriptor(
         self,
-        init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize, Self::Item) -> Accum + Sync,
-        finalize: impl Fn(Accum) -> Output + Sync,
-        reduce: impl Fn(Output, Output) -> Output,
-    ) -> Output {
-        self.inner.pipeline(
-            init,
-            |accum, index, item| {
+    ) -> ParallelAdaptorDescriptor<
+        Self::Item,
+        Self::Inner,
+        impl Fn(<Self::Inner as ParallelIterator>::Item) -> Option<Self::Item> + Sync,
+    > {
+        ParallelAdaptorDescriptor {
+            inner: self.inner,
+            transform_item: move |item| {
                 (self.f)(&item);
-                process_item(accum, index, item)
+                Some(item)
             },
-            finalize,
-            reduce,
-        )
+        }
     }
 }
 
@@ -929,25 +1226,24 @@ pub struct Map<Inner: ParallelIterator, F> {
     f: F,
 }
 
-impl<Inner: ParallelIterator, T, F> ParallelIterator for Map<Inner, F>
+impl<Inner: ParallelIterator, T, F> ParallelAdaptor for Map<Inner, F>
 where
     F: Fn(Inner::Item) -> T + Sync,
 {
     type Item = T;
+    type Inner = Inner;
 
-    fn pipeline<Output: Send, Accum>(
+    fn descriptor(
         self,
-        init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize, Self::Item) -> Accum + Sync,
-        finalize: impl Fn(Accum) -> Output + Sync,
-        reduce: impl Fn(Output, Output) -> Output,
-    ) -> Output {
-        self.inner.pipeline(
-            init,
-            |accum, index, item| process_item(accum, index, (self.f)(item)),
-            finalize,
-            reduce,
-        )
+    ) -> ParallelAdaptorDescriptor<
+        Self::Item,
+        Self::Inner,
+        impl Fn(<Self::Inner as ParallelIterator>::Item) -> Option<Self::Item> + Sync,
+    > {
+        ParallelAdaptorDescriptor {
+            inner: self.inner,
+            transform_item: move |item| Some((self.f)(item)),
+        }
     }
 }
 
@@ -983,6 +1279,24 @@ where
             |(mut i, accum), index, item| {
                 let accum = process_item(accum, index, (self.f)(&mut i, item));
                 (i, accum)
+            },
+            |(_, accum)| finalize(accum),
+            reduce,
+        )
+    }
+
+    fn short_circuiting_pipeline<Output: Send, Accum>(
+        self,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(Accum, usize, Self::Item) -> (PipelineCircuit, Accum) + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+    ) -> Output {
+        self.inner.short_circuiting_pipeline(
+            || ((self.init)(), init()),
+            |(mut i, accum), index, item| {
+                let (circuit, accum) = process_item(accum, index, (self.f)(&mut i, item));
+                (circuit, (i, accum))
             },
             |(_, accum)| finalize(accum),
             reduce,
