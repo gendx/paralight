@@ -35,8 +35,7 @@ let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 let sum = input
     .par_iter()
     .with_thread_pool(&mut thread_pool)
-    .copied()
-    .reduce(|| 0, |x, y| x + y);
+    .sum::<i32>();
 assert_eq!(sum, 5 * 11);
 
 // Add slices together.
@@ -182,8 +181,7 @@ let items = (0..100).collect::<Vec<_>>();
 let sum = items
     .par_iter()
     .with_thread_pool(THREAD_POOL.lock().unwrap().deref_mut())
-    .copied()
-    .reduce(|| 0, |a, b| a + b);
+    .sum::<i32>();
 assert_eq!(sum, 99 * 50);
 ```
 
@@ -228,10 +226,9 @@ let sum = matrix
         row.par_iter()
             // ⚠️ Trying to lock the mutex again here will panic or deadlock!
             .with_thread_pool(THREAD_POOL.lock().unwrap().deref_mut())
-            .copied()
-            .reduce(|| 0, |a, b| a + b)
+            .sum::<i32>()
     })
-    .reduce(|| 0, |a, b| a + b);
+    .sum::<i32>();
 
 // ⚠️ This statement is never reached due to the panic/deadlock!
 assert_eq!(sum, 990_000);
@@ -256,7 +253,7 @@ let mut thread_pool = ThreadPoolBuilder {
 let _sum = (0..5_000_000_000_usize)
     .into_par_iter()
     .with_thread_pool(&mut thread_pool)
-    .reduce(|| 0, |x, y| x + y);
+    .sum::<usize>();
 ```
 
 ## Debugging

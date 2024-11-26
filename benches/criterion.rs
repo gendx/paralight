@@ -166,8 +166,7 @@ mod paralight {
             black_box(input_slice)
                 .par_iter()
                 .with_thread_pool(&mut thread_pool)
-                .copied()
-                .reduce(|| 0, |x, y| x + y)
+                .sum::<u64>()
         });
     }
 

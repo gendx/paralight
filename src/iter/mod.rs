@@ -10,7 +10,7 @@
 
 mod source;
 
-use crate::PipelineCircuit;
+use crate::{Accumulator, PipelineCircuit};
 pub use source::range::{RangeInclusiveParallelSource, RangeParallelSource};
 pub use source::slice::{MutSliceParallelSource, SliceParallelSource};
 pub use source::zip::{ZipEq, ZipMax, ZipMin, ZipableSource};
@@ -19,6 +19,7 @@ pub use source::{
     ParallelSourceExt, SourceDescriptor,
 };
 use std::cmp::Ordering;
+use std::iter::{Product, Sum};
 
 /// An iterator to process items in parallel. The [`ParallelIteratorExt`] trait
 /// provides additional methods (iterator adaptors) as an extension of this
@@ -115,6 +116,53 @@ pub trait ParallelIterator: Sized {
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
     ) -> Output;
+
+    /// Runs the pipeline defined by the given functions on this iterator.
+    ///
+    /// # Parameters
+    ///
+    /// - `accum` function to accumulate items into an output,
+    /// - `reduce` function to reduce a sequence of outputs into the final
+    ///   output.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIterator, ParallelSourceExt};
+    /// # use paralight::{
+    /// #     Accumulator, CpuPinningPolicy, PipelineCircuit, RangeStrategy, ThreadCount,
+    /// #     ThreadPoolBuilder,
+    /// # };
+    /// use std::iter::Sum;
+    ///
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .iter_pipeline(SumAccumulator, SumAccumulator);
+    /// assert_eq!(sum, 5 * 11);
+    ///
+    /// // Definition of an accumulator that sums items into an integer.
+    /// struct SumAccumulator;
+    ///
+    /// impl<Item> Accumulator<Item, i32> for SumAccumulator
+    /// where
+    ///     i32: Sum<Item>,
+    /// {
+    ///     fn accumulate(&self, iter: impl Iterator<Item = Item>) -> i32 {
+    ///         iter.sum()
+    ///     }
+    /// }
+    /// ```
+    fn iter_pipeline<Output: Send>(
+        self,
+        accum: impl Accumulator<Self::Item, Output> + Sync,
+        reduce: impl Accumulator<Output, Output>,
+    ) -> Output;
 }
 
 /// An internal object describing how to transform items in a
@@ -156,6 +204,22 @@ pub trait ParallelAdaptor {
     >;
 }
 
+struct AdaptorAccumulator<Inner, TransformItem> {
+    inner: Inner,
+    transform_item: TransformItem,
+}
+
+impl<InnerItem, Item, Output, Inner, TransformItem> Accumulator<InnerItem, Output>
+    for AdaptorAccumulator<Inner, TransformItem>
+where
+    Inner: Accumulator<Item, Output>,
+    TransformItem: Fn(InnerItem) -> Option<Item>,
+{
+    fn accumulate(&self, iter: impl Iterator<Item = InnerItem>) -> Output {
+        self.inner.accumulate(iter.filter_map(&self.transform_item))
+    }
+}
+
 impl<T: ParallelAdaptor> ParallelIterator for T {
     type Item = T::Item;
 
@@ -195,6 +259,19 @@ impl<T: ParallelAdaptor> ParallelIterator for T {
             finalize,
             reduce,
         )
+    }
+
+    fn iter_pipeline<Output: Send>(
+        self,
+        accum: impl Accumulator<Self::Item, Output> + Sync,
+        reduce: impl Accumulator<Output, Output>,
+    ) -> Output {
+        let descriptor = self.descriptor();
+        let accumulator = AdaptorAccumulator {
+            inner: accum,
+            transform_item: descriptor.transform_item,
+        };
+        descriptor.inner.iter_pipeline(accumulator, reduce)
     }
 }
 
@@ -416,8 +493,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///     .par_iter()
     ///     .with_thread_pool(&mut thread_pool)
     ///     .filter(|&&x| x % 2 == 0)
-    ///     .copied()
-    ///     .reduce(|| 0, |x, y| x + y);
+    ///     .sum::<i32>();
     /// assert_eq!(sum_even, 5 * 6);
     /// ```
     fn filter<F>(self, f: F) -> Filter<Self, F>
@@ -446,7 +522,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///     .par_iter()
     ///     .with_thread_pool(&mut thread_pool)
     ///     .filter_map(|&x| if x != 2 { Some(x * 3) } else { None })
-    ///     .reduce(|| 0, |x, y| x + y);
+    ///     .sum::<i32>();
     /// assert_eq!(sum, 3 * (5 * 11 - 2));
     /// ```
     ///
@@ -668,7 +744,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///     .par_iter()
     ///     .with_thread_pool(&mut thread_pool)
     ///     .map(|&x| x * 2)
-    ///     .reduce(|| 0, |x, y| x + y);
+    ///     .sum::<i32>();
     /// assert_eq!(double_sum, 10 * 11);
     /// ```
     ///
@@ -729,7 +805,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///         rand::thread_rng,
     ///         |rng, &x| if rng.gen() { x * 2 } else { x * 3 },
     ///     )
-    ///     .reduce(|| 0, |x, y| x + y);
+    ///     .sum::<i32>();
     ///
     /// assert!(randomized_sum >= 10 * 11);
     /// assert!(randomized_sum <= 15 * 11);
@@ -978,6 +1054,31 @@ pub trait ParallelIteratorExt: ParallelIterator {
             .map(|(_, x)| x)
     }
 
+    /// Returns the product of the items produced by this iterator.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let product = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .product::<i32>();
+    /// assert_eq!(product, 3628800);
+    /// ```
+    fn product<T>(self) -> T
+    where
+        T: Product<Self::Item> + Product<T> + Send,
+    {
+        self.iter_pipeline(ProductAccumulator, ProductAccumulator)
+    }
+
     /// Reduces the items produced by this iterator into a single item, using
     /// `f` to collapse pairs of items.
     ///
@@ -1034,6 +1135,53 @@ pub trait ParallelIteratorExt: ParallelIterator {
         Self::Item: Send,
     {
         self.pipeline(init, |acc, _index, item| f(acc, item), |acc| acc, &f)
+    }
+
+    /// Returns the sum of the items produced by this iterator.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// assert_eq!(sum, 5 * 11);
+    /// ```
+    fn sum<T>(self) -> T
+    where
+        T: Sum<Self::Item> + Sum<T> + Send,
+    {
+        self.iter_pipeline(SumAccumulator, SumAccumulator)
+    }
+}
+
+struct SumAccumulator;
+
+impl<Item, Output> Accumulator<Item, Output> for SumAccumulator
+where
+    Output: Sum<Item>,
+{
+    fn accumulate(&self, iter: impl Iterator<Item = Item>) -> Output {
+        iter.sum()
+    }
+}
+
+struct ProductAccumulator;
+
+impl<Item, Output> Accumulator<Item, Output> for ProductAccumulator
+where
+    Output: Product<Item>,
+{
+    fn accumulate(&self, iter: impl Iterator<Item = Item>) -> Output {
+        iter.product()
     }
 }
 
@@ -1301,5 +1449,38 @@ where
             |(_, accum)| finalize(accum),
             reduce,
         )
+    }
+
+    fn iter_pipeline<Output: Send>(
+        self,
+        accum: impl Accumulator<Self::Item, Output> + Sync,
+        reduce: impl Accumulator<Output, Output>,
+    ) -> Output {
+        let accumulator = MapInitAccumulator {
+            inner: accum,
+            init: self.init,
+            f: self.f,
+        };
+        self.inner.iter_pipeline(accumulator, reduce)
+    }
+}
+
+struct MapInitAccumulator<Inner, Init, F> {
+    inner: Inner,
+    init: Init,
+    f: F,
+}
+
+impl<Item, Output, Inner, I, Init, T, F> Accumulator<Item, Output>
+    for MapInitAccumulator<Inner, Init, F>
+where
+    Inner: Accumulator<T, Output>,
+    Init: Fn() -> I,
+    F: Fn(&mut I, Item) -> T,
+{
+    fn accumulate(&self, iter: impl Iterator<Item = Item>) -> Output {
+        let mut i = (self.init)();
+        self.inner
+            .accumulate(iter.map(|item| (self.f)(&mut i, item)))
     }
 }

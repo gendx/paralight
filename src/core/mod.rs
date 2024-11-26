@@ -14,5 +14,6 @@ mod thread_pool;
 mod util;
 
 pub use thread_pool::{
-    CpuPinningPolicy, PipelineCircuit, RangeStrategy, ThreadCount, ThreadPool, ThreadPoolBuilder,
+    Accumulator, CpuPinningPolicy, PipelineCircuit, RangeStrategy, ThreadCount, ThreadPool,
+    ThreadPoolBuilder,
 };

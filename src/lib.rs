@@ -23,7 +23,8 @@ pub mod iter;
 mod macros;
 
 pub use core::{
-    CpuPinningPolicy, PipelineCircuit, RangeStrategy, ThreadCount, ThreadPool, ThreadPoolBuilder,
+    Accumulator, CpuPinningPolicy, PipelineCircuit, RangeStrategy, ThreadCount, ThreadPool,
+    ThreadPoolBuilder,
 };
 
 #[cfg(test)]
@@ -160,7 +161,9 @@ mod test {
                 test_adaptor_min,
                 test_adaptor_min_by,
                 test_adaptor_min_by_key,
+                test_adaptor_product,
                 test_adaptor_reduce,
+                test_adaptor_sum,
             );
         };
     }
@@ -890,7 +893,7 @@ mod test {
         let sum = (0..INPUT_LEN as usize)
             .into_par_iter()
             .with_thread_pool(&mut thread_pool)
-            .reduce(|| 0, |x, y| x + y);
+            .sum::<usize>();
 
         assert_eq!(sum, (INPUT_LEN as usize - 1) * INPUT_LEN as usize / 2);
     }
@@ -907,7 +910,7 @@ mod test {
         let sum = (0..INPUT_LEN)
             .into_par_iter()
             .with_thread_pool(&mut thread_pool)
-            .reduce(|| 0, |x, y| x + y);
+            .sum::<u64>();
 
         assert_eq!(sum, (INPUT_LEN - 1) * INPUT_LEN / 2);
     }
@@ -924,7 +927,7 @@ mod test {
         let _ = (0u128..0x1_0000_0000_0000_0000)
             .into_par_iter()
             .with_thread_pool(&mut thread_pool)
-            .reduce(|| 0, |x, y| x + y);
+            .sum::<u128>();
     }
 
     fn test_source_range_inclusive(range_strategy: RangeStrategy) {
@@ -938,7 +941,7 @@ mod test {
         let sum = (0..=INPUT_LEN as usize)
             .into_par_iter()
             .with_thread_pool(&mut thread_pool)
-            .reduce(|| 0, |x, y| x + y);
+            .sum::<usize>();
 
         assert_eq!(sum, INPUT_LEN as usize * (INPUT_LEN as usize + 1) / 2);
     }
@@ -955,7 +958,7 @@ mod test {
         let sum = (0..=INPUT_LEN)
             .into_par_iter()
             .with_thread_pool(&mut thread_pool)
-            .reduce(|| 0, |x, y| x + y);
+            .sum::<u64>();
 
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
@@ -972,7 +975,7 @@ mod test {
         let _ = (0..=u64::MAX)
             .into_par_iter()
             .with_thread_pool(&mut thread_pool)
-            .reduce(|| 0, |x, y| x + y);
+            .sum::<u64>();
     }
 
     #[cfg(feature = "nightly")]
@@ -987,7 +990,7 @@ mod test {
         let _ = (0u128..=0x1_0000_0000_0000_0000)
             .into_par_iter()
             .with_thread_pool(&mut thread_pool)
-            .reduce(|| 0, |x, y| x + y);
+            .sum::<u128>();
     }
 
     fn test_source_adaptor_chain(range_strategy: RangeStrategy) {
@@ -1004,8 +1007,7 @@ mod test {
             .par_iter()
             .chain(input2.par_iter())
             .with_thread_pool(&mut thread_pool)
-            .copied()
-            .reduce(|| 0, |x, y| x + y);
+            .sum::<u64>();
 
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
@@ -1022,7 +1024,7 @@ mod test {
             .into_par_iter()
             .chain((0..1).into_par_iter())
             .with_thread_pool(&mut thread_pool)
-            .reduce(|| 0, |x, y| x + y);
+            .sum::<usize>();
     }
 
     fn test_source_adaptor_enumerate(range_strategy: RangeStrategy) {
@@ -1039,7 +1041,7 @@ mod test {
             .enumerate()
             .with_thread_pool(&mut thread_pool)
             .map(|(i, &x)| i as u64 * x)
-            .reduce(|| 0, |x, y| x + y);
+            .sum::<u64>();
 
         assert_eq!(
             sum_squares,
@@ -1062,7 +1064,7 @@ mod test {
             .enumerate()
             .with_thread_pool(&mut thread_pool)
             .map(|(i, &x)| i as u64 * x)
-            .reduce(|| 0, |x, y| x + y);
+            .sum::<u64>();
 
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN - 1) * (INPUT_LEN + 1) / 6);
     }
@@ -1080,14 +1082,12 @@ mod test {
             .par_iter()
             .skip(INPUT_LEN as usize / 2)
             .with_thread_pool(&mut thread_pool)
-            .copied()
-            .reduce(|| 0, |x, y| x + y);
+            .sum::<u64>();
         let sum_empty = input
             .par_iter()
             .skip(2 * INPUT_LEN as usize)
             .with_thread_pool(&mut thread_pool)
-            .copied()
-            .reduce(|| 0, |x, y| x + y);
+            .sum::<u64>();
 
         assert_eq!(sum, ((INPUT_LEN + 1) / 2) * ((3 * INPUT_LEN) / 2 + 1) / 2);
         assert_eq!(sum_empty, 0);
@@ -1106,8 +1106,7 @@ mod test {
             .par_iter()
             .skip_exact(INPUT_LEN as usize / 2)
             .with_thread_pool(&mut thread_pool)
-            .copied()
-            .reduce(|| 0, |x, y| x + y);
+            .sum::<u64>();
 
         assert_eq!(sum, ((INPUT_LEN + 1) / 2) * ((3 * INPUT_LEN) / 2 + 1) / 2);
     }
@@ -1125,8 +1124,7 @@ mod test {
             .par_iter()
             .skip_exact(2 * INPUT_LEN as usize)
             .with_thread_pool(&mut thread_pool)
-            .copied()
-            .reduce(|| 0, |x, y| x + y);
+            .sum::<u64>();
     }
 
     fn test_source_adaptor_take(range_strategy: RangeStrategy) {
@@ -1142,14 +1140,12 @@ mod test {
             .par_iter()
             .take(INPUT_LEN as usize / 2)
             .with_thread_pool(&mut thread_pool)
-            .copied()
-            .reduce(|| 0, |x, y| x + y);
+            .sum::<u64>();
         let sum_all = input
             .par_iter()
             .take(2 * INPUT_LEN as usize)
             .with_thread_pool(&mut thread_pool)
-            .copied()
-            .reduce(|| 0, |x, y| x + y);
+            .sum::<u64>();
 
         assert_eq!(sum, ((INPUT_LEN / 2) * (INPUT_LEN / 2 + 1)) / 2);
         assert_eq!(sum_all, INPUT_LEN * (INPUT_LEN + 1) / 2);
@@ -1168,8 +1164,7 @@ mod test {
             .par_iter()
             .take_exact(INPUT_LEN as usize / 2)
             .with_thread_pool(&mut thread_pool)
-            .copied()
-            .reduce(|| 0, |x, y| x + y);
+            .sum::<u64>();
 
         assert_eq!(sum, ((INPUT_LEN / 2) * (INPUT_LEN / 2 + 1)) / 2);
     }
@@ -1187,8 +1182,7 @@ mod test {
             .par_iter()
             .take_exact(2 * INPUT_LEN as usize)
             .with_thread_pool(&mut thread_pool)
-            .copied()
-            .reduce(|| 0, |x, y| x + y);
+            .sum::<u64>();
     }
 
     fn test_source_adaptor_zip_eq(range_strategy: RangeStrategy) {
@@ -1576,7 +1570,7 @@ mod test {
                 rand::thread_rng,
                 |rng, &x| if rng.gen() { x * 2 } else { x * 3 },
             )
-            .reduce(|| 0, |x, y| x + y);
+            .sum::<u64>();
 
         assert!(sum >= INPUT_LEN * (INPUT_LEN + 1));
         assert!(sum <= 3 * INPUT_LEN * (INPUT_LEN + 1) / 2);
@@ -1796,6 +1790,23 @@ mod test {
         assert_eq!(min_empty, None);
     }
 
+    fn test_adaptor_product(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (1..=INPUT_LEN).map(|_| -1).collect::<Vec<i32>>();
+        let product = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .product::<i32>();
+
+        assert_eq!(product, if INPUT_LEN % 2 == 0 { 1 } else { -1 });
+    }
+
     fn test_adaptor_reduce(range_strategy: RangeStrategy) {
         let mut thread_pool = ThreadPoolBuilder {
             num_threads: ThreadCount::AvailableParallelism,
@@ -1810,6 +1821,23 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .copied()
             .reduce(|| 0, |x, y| x + y);
+
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_adaptor_sum(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let sum = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
 
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }

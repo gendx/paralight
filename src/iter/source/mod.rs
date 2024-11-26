@@ -13,7 +13,7 @@ pub mod slice;
 pub mod zip;
 
 use super::ParallelIterator;
-use crate::{PipelineCircuit, ThreadPool};
+use crate::{Accumulator, PipelineCircuit, ThreadPool};
 
 /// An object describing how to fetch items from a [`ParallelSource`].
 pub struct SourceDescriptor<Item: Send, FetchItem: Fn(usize) -> Item + Sync> {
@@ -92,8 +92,7 @@ pub trait IntoParallelRefSource<'data> {
     /// let sum = input
     ///     .par_iter()
     ///     .with_thread_pool(&mut thread_pool)
-    ///     .copied()
-    ///     .reduce(|| 0, |x, y| x + y);
+    ///     .sum::<i32>();
     /// assert_eq!(sum, 5 * 11);
     /// ```
     fn par_iter(&'data self) -> Self::Source;
@@ -191,8 +190,7 @@ pub trait ParallelSourceExt: ParallelSource {
     ///     .chain(second.par_iter())
     ///     .take_exact(10)
     ///     .with_thread_pool(&mut thread_pool)
-    ///     .copied()
-    ///     .reduce(|| 0, |x, y| x + y);
+    ///     .sum::<i32>();
     /// assert_eq!(sum, 5 * 11);
     /// ```
     fn chain<T: ParallelSource<Item = Self::Item>>(self, next: T) -> Chain<Self, T> {
@@ -250,8 +248,7 @@ pub trait ParallelSourceExt: ParallelSource {
     ///     .rev()
     ///     .take_exact(10)
     ///     .with_thread_pool(&mut thread_pool)
-    ///     .copied()
-    ///     .reduce(|| 0, |x, y| x + y);
+    ///     .sum::<i32>();
     /// assert_eq!(sum, 5 * 11);
     /// ```
     fn rev(self) -> Rev<Self> {
@@ -279,8 +276,7 @@ pub trait ParallelSourceExt: ParallelSource {
     ///     .par_iter()
     ///     .skip(5)
     ///     .with_thread_pool(&mut thread_pool)
-    ///     .copied()
-    ///     .reduce(|| 0, |x, y| x + y);
+    ///     .sum::<i32>();
     /// assert_eq!(sum, 5 * 11 - 5 * 3);
     /// ```
     ///
@@ -298,8 +294,7 @@ pub trait ParallelSourceExt: ParallelSource {
     ///     .par_iter()
     ///     .skip(15)
     ///     .with_thread_pool(&mut thread_pool)
-    ///     .copied()
-    ///     .reduce(|| 0, |x, y| x + y);
+    ///     .sum::<i32>();
     /// assert_eq!(sum, 0);
     /// ```
     fn skip(self, n: usize) -> Skip<Self> {
@@ -330,8 +325,7 @@ pub trait ParallelSourceExt: ParallelSource {
     ///     .par_iter()
     ///     .skip_exact(5)
     ///     .with_thread_pool(&mut thread_pool)
-    ///     .copied()
-    ///     .reduce(|| 0, |x, y| x + y);
+    ///     .sum::<i32>();
     /// assert_eq!(sum, 5 * 11 - 5 * 3);
     /// ```
     ///
@@ -349,8 +343,7 @@ pub trait ParallelSourceExt: ParallelSource {
     ///     .par_iter()
     ///     .skip_exact(15)
     ///     .with_thread_pool(&mut thread_pool)
-    ///     .copied()
-    ///     .reduce(|| 0, |x, y| x + y);
+    ///     .sum::<i32>();
     /// ```
     fn skip_exact(self, n: usize) -> SkipExact<Self> {
         SkipExact {
@@ -379,8 +372,7 @@ pub trait ParallelSourceExt: ParallelSource {
     ///     .par_iter()
     ///     .take(5)
     ///     .with_thread_pool(&mut thread_pool)
-    ///     .copied()
-    ///     .reduce(|| 0, |x, y| x + y);
+    ///     .sum::<i32>();
     /// assert_eq!(sum, 5 * 3);
     /// ```
     ///
@@ -398,8 +390,7 @@ pub trait ParallelSourceExt: ParallelSource {
     ///     .par_iter()
     ///     .take(15)
     ///     .with_thread_pool(&mut thread_pool)
-    ///     .copied()
-    ///     .reduce(|| 0, |x, y| x + y);
+    ///     .sum::<i32>();
     /// assert_eq!(sum, 5 * 11);
     /// ```
     fn take(self, n: usize) -> Take<Self> {
@@ -429,8 +420,7 @@ pub trait ParallelSourceExt: ParallelSource {
     ///     .par_iter()
     ///     .take_exact(5)
     ///     .with_thread_pool(&mut thread_pool)
-    ///     .copied()
-    ///     .reduce(|| 0, |x, y| x + y);
+    ///     .sum::<i32>();
     /// assert_eq!(sum, 5 * 3);
     /// ```
     ///
@@ -448,8 +438,7 @@ pub trait ParallelSourceExt: ParallelSource {
     ///     .par_iter()
     ///     .take_exact(15)
     ///     .with_thread_pool(&mut thread_pool)
-    ///     .copied()
-    ///     .reduce(|| 0, |x, y| x + y);
+    ///     .sum::<i32>();
     /// ```
     fn take_exact(self, n: usize) -> TakeExact<Self> {
         TakeExact {
@@ -475,8 +464,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// let sum = input
     ///     .par_iter()
     ///     .with_thread_pool(&mut thread_pool)
-    ///     .copied()
-    ///     .reduce(|| 0, |x, y| x + y);
+    ///     .sum::<i32>();
     /// assert_eq!(sum, 5 * 11);
     /// ```
     fn with_thread_pool(self, thread_pool: &mut ThreadPool) -> BaseParallelIterator<'_, Self> {
@@ -728,5 +716,36 @@ impl<S: ParallelSource> ParallelIterator for BaseParallelIterator<'_, S> {
             finalize,
             reduce,
         )
+    }
+
+    fn iter_pipeline<Output: Send>(
+        self,
+        accum: impl Accumulator<Self::Item, Output> + Sync,
+        reduce: impl Accumulator<Output, Output>,
+    ) -> Output {
+        let source_descriptor = self.source.descriptor();
+        let accumulator = FetchAccumulator {
+            inner: accum,
+            fetch_item: source_descriptor.fetch_item,
+        };
+        self.thread_pool
+            .iter_pipeline(source_descriptor.len, accumulator, reduce)
+    }
+}
+
+struct FetchAccumulator<Inner, FetchItem> {
+    inner: Inner,
+    fetch_item: FetchItem,
+}
+
+impl<Item, Output, Inner, FetchItem> Accumulator<usize, Output>
+    for FetchAccumulator<Inner, FetchItem>
+where
+    Inner: Accumulator<Item, Output>,
+    FetchItem: Fn(usize) -> Item,
+{
+    fn accumulate(&self, iter: impl Iterator<Item = usize>) -> Output {
+        self.inner
+            .accumulate(iter.map(|index| (self.fetch_item)(index)))
     }
 }

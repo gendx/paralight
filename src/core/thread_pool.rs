@@ -104,8 +104,7 @@ impl ThreadPoolBuilder {
     /// let sum = input
     ///     .par_iter()
     ///     .with_thread_pool(&mut thread_pool)
-    ///     .copied()
-    ///     .reduce(|| 0, |x, y| x + y);
+    ///     .sum::<i32>();
     /// assert_eq!(sum, 5 * 11);
     /// ```
     pub fn build(&self) -> ThreadPool {
@@ -161,6 +160,17 @@ impl ThreadPool {
         self.inner
             .short_circuiting_pipeline(input_len, init, process_item, finalize, reduce)
     }
+
+    /// Processes an input of the given length in parallel and returns the
+    /// aggregated output.
+    pub(crate) fn iter_pipeline<Output: Send>(
+        &mut self,
+        input_len: usize,
+        accum: impl Accumulator<usize, Output> + Sync,
+        reduce: impl Accumulator<Output, Output>,
+    ) -> Output {
+        self.inner.iter_pipeline(input_len, accum, reduce)
+    }
 }
 
 /// State of a short-circuiting pipeline.
@@ -169,6 +179,16 @@ pub enum PipelineCircuit {
     Continue,
     /// The pipeline can short-circuit and break.
     Break,
+}
+
+/// Interface for an operation that accumulates items from an iterator into an
+/// output.
+///
+/// You can think of it as a variant of `Fn(impl Iterator) -> Output` made
+/// generic over the item and output types.
+pub trait Accumulator<Item, Output> {
+    /// Accumulates the items from the given iterator into an output.
+    fn accumulate(&self, iter: impl Iterator<Item = Item>) -> Output;
 }
 
 /// Underlying [`ThreadPool`] implementation, dispatching over the
@@ -241,6 +261,20 @@ impl ThreadPoolEnum {
             ThreadPoolEnum::WorkStealing(inner) => {
                 inner.short_circuiting_pipeline(input_len, init, process_item, finalize, reduce)
             }
+        }
+    }
+
+    /// Processes an input of the given length in parallel and returns the
+    /// aggregated output.
+    fn iter_pipeline<Output: Send>(
+        &mut self,
+        input_len: usize,
+        accum: impl Accumulator<usize, Output> + Sync,
+        reduce: impl Accumulator<Output, Output>,
+    ) -> Output {
+        match self {
+            ThreadPoolEnum::Fixed(inner) => inner.iter_pipeline(input_len, accum, reduce),
+            ThreadPoolEnum::WorkStealing(inner) => inner.iter_pipeline(input_len, accum, reduce),
         }
     }
 }
@@ -414,6 +448,33 @@ impl<F: RangeFactory> ThreadPoolImpl<F> {
             .reduce(reduce)
             .unwrap()
     }
+
+    /// Processes an input of the given length in parallel and returns the
+    /// aggregated output.
+    fn iter_pipeline<Output: Send>(
+        &mut self,
+        input_len: usize,
+        accum: impl Accumulator<usize, Output> + Sync,
+        reduce: impl Accumulator<Output, Output>,
+    ) -> Output {
+        self.range_orchestrator.reset_ranges(input_len);
+
+        let num_threads = self.threads.len();
+        let outputs = (0..num_threads)
+            .map(|_| Mutex::new(None))
+            .collect::<Arc<[_]>>();
+
+        self.pipeline.lend(&IterPipelineImpl {
+            outputs: outputs.clone(),
+            accum,
+        });
+
+        reduce.accumulate(
+            outputs
+                .iter()
+                .map(move |output| output.lock().unwrap().take().unwrap()),
+        )
+    }
 }
 
 impl<F: RangeFactory> Drop for ThreadPoolImpl<F> {
@@ -529,6 +590,22 @@ where
     }
 }
 
+struct IterPipelineImpl<Output, Accum: Accumulator<usize, Output>> {
+    outputs: Arc<[Mutex<Option<Output>>]>,
+    accum: Accum,
+}
+
+impl<R, Output, Accum> Pipeline<R> for IterPipelineImpl<Output, Accum>
+where
+    R: Range,
+    Accum: Accumulator<usize, Output>,
+{
+    fn run(&self, worker_id: usize, range: &R) {
+        let output = self.accum.accumulate(range.iter());
+        *self.outputs[worker_id].lock().unwrap() = Some(output);
+    }
+}
+
 /// A fuse is an atomic object that starts unset and can transition once to the
 /// set state.
 ///
@@ -613,8 +690,7 @@ mod test {
         let sum = input
             .par_iter()
             .with_thread_pool(&mut thread_pool)
-            .copied()
-            .reduce(|| 0, |x, y| x + y);
+            .sum::<i32>();
 
         assert_eq!(sum, 5 * 11);
     }
@@ -632,8 +708,7 @@ mod test {
         let sum = input
             .par_iter()
             .with_thread_pool(&mut thread_pool)
-            .copied()
-            .reduce(|| 0, |x, y| x + y);
+            .sum::<i32>();
 
         assert_eq!(sum, 5 * 11);
     }
@@ -651,8 +726,7 @@ mod test {
         let sum = input
             .par_iter()
             .with_thread_pool(&mut thread_pool)
-            .copied()
-            .reduce(|| 0, |x, y| x + y);
+            .sum::<i32>();
 
         assert_eq!(sum, 5 * 11);
     }
@@ -679,8 +753,7 @@ mod test {
         let sum = input
             .par_iter()
             .with_thread_pool(&mut thread_pool)
-            .copied()
-            .reduce(|| 0, |x, y| x + y);
+            .sum::<i32>();
 
         assert_eq!(sum, 5 * 11);
     }
