@@ -118,11 +118,13 @@ mod test {
                 test_source_slice_mut,
                 test_source_slice_mut_not_sync,
                 test_source_range,
+                test_source_range_backwards => fail("cannot iterate over a backward range"),
                 #[cfg(feature = "nightly")]
                 test_source_range_u64,
                 #[cfg(feature = "nightly")]
                 test_source_range_u128_too_large => fail("cannot iterate over a range with more than usize::MAX (18446744073709551615) items"),
                 test_source_range_inclusive,
+                test_source_range_inclusive_backwards => fail("cannot iterate over a backward range"),
                 #[cfg(feature = "nightly")]
                 test_source_range_inclusive_u64,
                 #[cfg(feature = "nightly")]
@@ -898,6 +900,21 @@ mod test {
         assert_eq!(sum, (INPUT_LEN as usize - 1) * INPUT_LEN as usize / 2);
     }
 
+    #[allow(clippy::reversed_empty_ranges)]
+    fn test_source_range_backwards(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        (10..0)
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .sum::<usize>();
+    }
+
     #[cfg(feature = "nightly")]
     fn test_source_range_u64(range_strategy: RangeStrategy) {
         let mut thread_pool = ThreadPoolBuilder {
@@ -924,7 +941,7 @@ mod test {
         }
         .build();
 
-        let _ = (0u128..0x1_0000_0000_0000_0000)
+        (0u128..0x1_0000_0000_0000_0000)
             .into_par_iter()
             .with_thread_pool(&mut thread_pool)
             .sum::<u128>();
@@ -944,6 +961,21 @@ mod test {
             .sum::<usize>();
 
         assert_eq!(sum, INPUT_LEN as usize * (INPUT_LEN as usize + 1) / 2);
+    }
+
+    #[allow(clippy::reversed_empty_ranges)]
+    fn test_source_range_inclusive_backwards(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        (10..=0)
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .sum::<usize>();
     }
 
     #[cfg(feature = "nightly")]
@@ -972,7 +1004,7 @@ mod test {
         }
         .build();
 
-        let _ = (0..=u64::MAX)
+        (0..=u64::MAX)
             .into_par_iter()
             .with_thread_pool(&mut thread_pool)
             .sum::<u64>();
@@ -987,7 +1019,7 @@ mod test {
         }
         .build();
 
-        let _ = (0u128..=0x1_0000_0000_0000_0000)
+        (0u128..=0x1_0000_0000_0000_0000)
             .into_par_iter()
             .with_thread_pool(&mut thread_pool)
             .sum::<u128>();
@@ -1020,7 +1052,7 @@ mod test {
         }
         .build();
 
-        let _ = (0..usize::MAX)
+        (0..usize::MAX)
             .into_par_iter()
             .chain((0..1).into_par_iter())
             .with_thread_pool(&mut thread_pool)
