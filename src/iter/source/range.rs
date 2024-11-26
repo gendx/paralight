@@ -40,11 +40,16 @@ impl<T: Step + Copy + Send + Sync> ParallelSource for RangeParallelSource<T> {
 
     fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
         let range = self.range;
-        let len = T::steps_between(&range.start, &range.end).unwrap_or_else(|| {
-            panic!(
-                "cannot iterate over a range with more than usize::MAX ({}) items",
-                usize::MAX
-            );
+        let (len_hint, len) = T::steps_between(&range.start, &range.end);
+        let len = len.unwrap_or_else(|| {
+            if len_hint == 0 {
+                panic!("cannot iterate over a backward range");
+            } else {
+                panic!(
+                    "cannot iterate over a range with more than usize::MAX ({}) items",
+                    usize::MAX
+                );
+            }
         });
         SourceDescriptor {
             len,
@@ -109,11 +114,16 @@ impl<T: Step + Copy + Send + Sync> ParallelSource for RangeInclusiveParallelSour
 
     fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
         let (start, end) = self.range.into_inner();
-        let len = T::steps_between(&start, &end).unwrap_or_else(|| {
-            panic!(
-                "cannot iterate over a range with more than usize::MAX ({}) items",
-                usize::MAX
-            );
+        let (len_hint, len) = T::steps_between(&start, &end);
+        let len = len.unwrap_or_else(|| {
+            if len_hint == 0 {
+                panic!("cannot iterate over a backward range");
+            } else {
+                panic!(
+                    "cannot iterate over a range with more than usize::MAX ({}) items",
+                    usize::MAX
+                );
+            }
         });
         let len = len.checked_add(1).unwrap_or_else(|| {
             panic!(
