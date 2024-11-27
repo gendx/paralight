@@ -436,8 +436,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// ```
     fn cloned<'a, T>(self) -> Cloned<Self>
     where
-        T: Clone + 'a,
         Self: ParallelIterator<Item = &'a T>,
+        T: Clone + 'a,
     {
         Cloned { inner: self }
     }
@@ -470,8 +470,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// ```
     fn copied<'a, T>(self) -> Copied<Self>
     where
-        T: Copy + 'a,
         Self: ParallelIterator<Item = &'a T>,
+        T: Copy + 'a,
     {
         Copied { inner: self }
     }
@@ -870,10 +870,10 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # }
     /// # .build();
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    /// // Custom comparison function where even numbers are smaller than all odd numbers.
     /// let max = input
     ///     .par_iter()
     ///     .with_thread_pool(&mut thread_pool)
+    ///     // Custom comparison function where even numbers are smaller than all odd numbers.
     ///     .max_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
     /// assert_eq!(max, Some(&9));
     /// ```
@@ -986,10 +986,10 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # }
     /// # .build();
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    /// // Custom comparison function where even numbers are smaller than all odd numbers.
     /// let min = input
     ///     .par_iter()
     ///     .with_thread_pool(&mut thread_pool)
+    ///     // Custom comparison function where even numbers are smaller than all odd numbers.
     ///     .min_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
     /// assert_eq!(min, Some(&2));
     /// ```

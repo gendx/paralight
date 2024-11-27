@@ -194,7 +194,6 @@ mod test {
             |acc| acc,
             |a, b| a + b,
         );
-
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -214,7 +213,6 @@ mod test {
             |acc| acc,
             |a, b| a + b,
         );
-
         assert_eq!(sum, 0);
     }
 
@@ -310,6 +308,8 @@ mod test {
             |acc| acc,
             |a, b| a + b,
         );
+        assert_eq!(sum1, INPUT_LEN * (INPUT_LEN + 1) / 2);
+
         let sum2 = thread_pool.pipeline(
             input.len(),
             || 0,
@@ -317,8 +317,6 @@ mod test {
             |acc| acc,
             |a, b| a + b,
         );
-
-        assert_eq!(sum1, INPUT_LEN * (INPUT_LEN + 1) / 2);
         assert_eq!(sum2, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -339,6 +337,8 @@ mod test {
             |acc| acc,
             |a, b| a + b,
         );
+        // n(n+1)/2
+        assert_eq!(sum1, INPUT_LEN * (INPUT_LEN + 1) / 2);
 
         let input = (0..=2 * INPUT_LEN).collect::<Vec<u64>>();
         let sum2 = thread_pool.pipeline(
@@ -348,9 +348,6 @@ mod test {
             |acc| acc,
             |a, b| a + b,
         );
-
-        // n(n+1)/2
-        assert_eq!(sum1, INPUT_LEN * (INPUT_LEN + 1) / 2);
         // 2n(2n+1)/2
         assert_eq!(sum2, INPUT_LEN * (2 * INPUT_LEN + 1));
     }
@@ -372,6 +369,8 @@ mod test {
             |acc| acc,
             |a, b| a + b,
         );
+        // n(n+1)/2
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
 
         let sum_squares = thread_pool.pipeline(
             input.len(),
@@ -383,9 +382,6 @@ mod test {
             |acc| acc,
             |a, b| a + b,
         );
-
-        // n(n+1)/2
-        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
         // n(n+1)(2n+1) / 6
         assert_eq!(
             sum_squares,
@@ -410,6 +406,7 @@ mod test {
             |acc| acc as u64,
             |a, b| (a + b) & 0xffff_ffff,
         );
+        assert_eq!(sum1, (INPUT_LEN * (INPUT_LEN + 1) / 2) & 0xffff_ffff);
 
         let sum2 = thread_pool.pipeline(
             input.len(),
@@ -418,8 +415,6 @@ mod test {
             |acc| acc,
             |a, b| a + b,
         );
-
-        assert_eq!(sum1, (INPUT_LEN * (INPUT_LEN + 1) / 2) & 0xffff_ffff);
         assert_eq!(sum2, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -440,6 +435,7 @@ mod test {
             |acc| acc,
             |a, b| a + b,
         );
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
 
         let input = (0..=INPUT_LEN)
             .map(|x| format!("{x}"))
@@ -451,8 +447,6 @@ mod test {
             |acc| acc as u64,
             |a, b| a + b,
         );
-
-        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
         assert_eq!(sum_lengths, expected_sum_lengths(INPUT_LEN));
     }
 
@@ -473,6 +467,7 @@ mod test {
             |acc| acc,
             |a, b| a + b,
         );
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
 
         let input = (0..=INPUT_LEN)
             .map(|i| (2 * i, 2 * i + 1))
@@ -487,8 +482,6 @@ mod test {
             |acc| acc,
             |(a, b), (x, y)| (a + x, b + y),
         );
-
-        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
         assert_eq!(
             sum_pairs,
             (
@@ -528,6 +521,7 @@ mod test {
             |acc| acc,
             |a, b| a + b,
         );
+        assert_eq!(sum1, INPUT_LEN * (INPUT_LEN + 1) / 2);
 
         let one = NotSend(1);
         let sum2 = thread_pool.pipeline(
@@ -540,6 +534,7 @@ mod test {
             |acc| acc,
             |a, b| a + b,
         );
+        assert_eq!(sum2, INPUT_LEN * (INPUT_LEN + 1) / 2);
 
         let one = NotSend(1);
         let sum3 = thread_pool.pipeline(
@@ -549,6 +544,7 @@ mod test {
             move |acc| acc * one.get(),
             |a, b| a + b,
         );
+        assert_eq!(sum3, INPUT_LEN * (INPUT_LEN + 1) / 2);
 
         let zero = NotSend(0);
         let sum4 = thread_pool.pipeline(
@@ -558,10 +554,6 @@ mod test {
             |acc| acc,
             move |a, b| a + b + zero.get(),
         );
-
-        assert_eq!(sum1, INPUT_LEN * (INPUT_LEN + 1) / 2);
-        assert_eq!(sum2, INPUT_LEN * (INPUT_LEN + 1) / 2);
-        assert_eq!(sum3, INPUT_LEN * (INPUT_LEN + 1) / 2);
         assert_eq!(sum4, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -583,7 +575,6 @@ mod test {
             |acc| acc,
             |a, b| a + b,
         );
-
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -606,7 +597,6 @@ mod test {
                 |a, b| Cell::new(a.get() + b.get()),
             )
             .get();
-
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -628,7 +618,6 @@ mod test {
             |acc| acc.0,
             |a, b| a + b,
         );
-
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -652,7 +641,6 @@ mod test {
             |acc| acc.get(),
             |a, b| a + b,
         );
-
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -676,7 +664,6 @@ mod test {
             |acc| *acc,
             |a, b| a + b,
         );
-
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -703,6 +690,7 @@ mod test {
             |acc| acc,
             |a, b| a + b,
         );
+        assert_eq!(sum1, INPUT_LEN * (INPUT_LEN + 1) / 2);
 
         let sum2 = thread_pool.pipeline(
             input.len(),
@@ -711,6 +699,7 @@ mod test {
             |acc| acc,
             |a, b| a + b,
         );
+        assert_eq!(sum2, INPUT_LEN * (INPUT_LEN + 1) / 2);
 
         let sum3 = thread_pool.pipeline(
             input.len(),
@@ -719,6 +708,7 @@ mod test {
             |acc| acc * *one_ref,
             |a, b| a + b,
         );
+        assert_eq!(sum3, INPUT_LEN * (INPUT_LEN + 1) / 2);
 
         let sum4 = thread_pool.pipeline(
             input.len(),
@@ -727,10 +717,6 @@ mod test {
             |acc| acc,
             |a, b| a + b + *zero_ref,
         );
-
-        assert_eq!(sum1, INPUT_LEN * (INPUT_LEN + 1) / 2);
-        assert_eq!(sum2, INPUT_LEN * (INPUT_LEN + 1) / 2);
-        assert_eq!(sum3, INPUT_LEN * (INPUT_LEN + 1) / 2);
         assert_eq!(sum4, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -746,6 +732,7 @@ mod test {
         // lifetime).
         let token = ();
         let token_ref = &token;
+
         let input = (0..=INPUT_LEN)
             .map(|x| (x, token_ref))
             .collect::<Vec<(u64, _)>>();
@@ -756,7 +743,6 @@ mod test {
             |acc| acc,
             |a, b| a + b,
         );
-
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -768,11 +754,12 @@ mod test {
         }
         .build();
 
-        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         // The pipeline output can borrow local values (and therefore have a local
         // lifetime).
         let token = ();
         let token_ref = &token;
+
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let sum = thread_pool
             .pipeline(
                 input.len(),
@@ -782,7 +769,6 @@ mod test {
                 |a, b| (a.0 + b.0, a.1),
             )
             .0;
-
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -798,6 +784,7 @@ mod test {
         // lifetime).
         let token = ();
         let token_ref = &token;
+
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let sum = thread_pool.pipeline(
             input.len(),
@@ -806,7 +793,6 @@ mod test {
             |acc| acc.0,
             |a, b| a + b,
         );
-
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -823,7 +809,6 @@ mod test {
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .pipeline(|| 0, |acc, _, x| acc + x, |acc| acc, |a, b| a + b);
-
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -841,7 +826,6 @@ mod test {
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .pipeline(|| 0, |acc, _, x| acc + x.get(), |acc| acc, |a, b| a + b);
-
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -858,7 +842,6 @@ mod test {
             .par_iter_mut()
             .with_thread_pool(&mut thread_pool)
             .for_each(|x| *x *= 2);
-
         assert_eq!(values, (0..=INPUT_LEN).map(|x| x * 2).collect::<Vec<_>>());
     }
 
@@ -875,7 +858,6 @@ mod test {
             .par_iter_mut()
             .with_thread_pool(&mut thread_pool)
             .for_each(|x| x.set(x.get() * 2));
-
         assert_eq!(
             values,
             (0..=INPUT_LEN)
@@ -896,7 +878,6 @@ mod test {
             .into_par_iter()
             .with_thread_pool(&mut thread_pool)
             .sum::<usize>();
-
         assert_eq!(sum, (INPUT_LEN as usize - 1) * INPUT_LEN as usize / 2);
     }
 
@@ -928,7 +909,6 @@ mod test {
             .into_par_iter()
             .with_thread_pool(&mut thread_pool)
             .sum::<u64>();
-
         assert_eq!(sum, (INPUT_LEN - 1) * INPUT_LEN / 2);
     }
 
@@ -959,7 +939,6 @@ mod test {
             .into_par_iter()
             .with_thread_pool(&mut thread_pool)
             .sum::<usize>();
-
         assert_eq!(sum, INPUT_LEN as usize * (INPUT_LEN as usize + 1) / 2);
     }
 
@@ -991,7 +970,6 @@ mod test {
             .into_par_iter()
             .with_thread_pool(&mut thread_pool)
             .sum::<u64>();
-
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -1040,7 +1018,6 @@ mod test {
             .chain(input2.par_iter())
             .with_thread_pool(&mut thread_pool)
             .sum::<u64>();
-
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -1074,7 +1051,6 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .map(|(i, &x)| i as u64 * x)
             .sum::<u64>();
-
         assert_eq!(
             sum_squares,
             INPUT_LEN * (INPUT_LEN + 1) * (2 * INPUT_LEN + 1) / 6
@@ -1097,7 +1073,6 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .map(|(i, &x)| i as u64 * x)
             .sum::<u64>();
-
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN - 1) * (INPUT_LEN + 1) / 6);
     }
 
@@ -1115,13 +1090,13 @@ mod test {
             .skip(INPUT_LEN as usize / 2)
             .with_thread_pool(&mut thread_pool)
             .sum::<u64>();
+        assert_eq!(sum, ((INPUT_LEN + 1) / 2) * ((3 * INPUT_LEN) / 2 + 1) / 2);
+
         let sum_empty = input
             .par_iter()
             .skip(2 * INPUT_LEN as usize)
             .with_thread_pool(&mut thread_pool)
             .sum::<u64>();
-
-        assert_eq!(sum, ((INPUT_LEN + 1) / 2) * ((3 * INPUT_LEN) / 2 + 1) / 2);
         assert_eq!(sum_empty, 0);
     }
 
@@ -1139,7 +1114,6 @@ mod test {
             .skip_exact(INPUT_LEN as usize / 2)
             .with_thread_pool(&mut thread_pool)
             .sum::<u64>();
-
         assert_eq!(sum, ((INPUT_LEN + 1) / 2) * ((3 * INPUT_LEN) / 2 + 1) / 2);
     }
 
@@ -1173,13 +1147,13 @@ mod test {
             .take(INPUT_LEN as usize / 2)
             .with_thread_pool(&mut thread_pool)
             .sum::<u64>();
+        assert_eq!(sum, ((INPUT_LEN / 2) * (INPUT_LEN / 2 + 1)) / 2);
+
         let sum_all = input
             .par_iter()
             .take(2 * INPUT_LEN as usize)
             .with_thread_pool(&mut thread_pool)
             .sum::<u64>();
-
-        assert_eq!(sum, ((INPUT_LEN / 2) * (INPUT_LEN / 2 + 1)) / 2);
         assert_eq!(sum_all, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -1197,7 +1171,6 @@ mod test {
             .take_exact(INPUT_LEN as usize / 2)
             .with_thread_pool(&mut thread_pool)
             .sum::<u64>();
-
         assert_eq!(sum, ((INPUT_LEN / 2) * (INPUT_LEN / 2 + 1)) / 2);
     }
 
@@ -1378,7 +1351,6 @@ mod test {
                     x
                 },
             );
-
         assert_eq!(*sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -1396,7 +1368,6 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .copied()
             .reduce(|| 0, |x, y| x + y);
-
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -1414,7 +1385,6 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .filter(|&&x| x % 2 == 0)
             .pipeline(|| 0, |acc, _, x| acc + *x, |acc| acc, |a, b| a + b);
-
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN / 2 + 1) / 2);
     }
 
@@ -1432,7 +1402,6 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .filter_map(|&x| if x % 2 == 0 { Some(x * 3) } else { None })
             .pipeline(|| 0, |acc, _, x| acc + x, |acc| acc, |a, b| a + b);
-
         assert_eq!(sum, 3 * INPUT_LEN * (INPUT_LEN / 2 + 1) / 2);
     }
 
@@ -1450,36 +1419,40 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .copied()
             .find_any(|&x| x == 0);
+        assert_eq!(first, Some(0));
+
         let last = input
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .copied()
             .find_any(|&x| x == INPUT_LEN);
+        assert_eq!(last, Some(INPUT_LEN));
+
         let end = input
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .copied()
             .find_any(|&x| x == INPUT_LEN + 1);
+        assert_eq!(end, None);
+
         let forty_two = input
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .copied()
             .find_any(|&x| x == 42);
+        assert_eq!(forty_two, if INPUT_LEN >= 42 { Some(42) } else { None });
+
         let even = input
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .copied()
             .find_any(|&x| x % 2 == 0);
+        assert!(even.unwrap() % 2 == 0);
+
         let empty = []
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .find_any(|_: &&u64| true);
-
-        assert_eq!(first, Some(0));
-        assert_eq!(last, Some(INPUT_LEN));
-        assert_eq!(end, None);
-        assert_eq!(forty_two, if INPUT_LEN >= 42 { Some(42) } else { None });
-        assert!(even.unwrap() % 2 == 0);
         assert_eq!(empty, None);
     }
 
@@ -1545,9 +1518,9 @@ mod test {
                 sum.fetch_add(x, Ordering::Relaxed);
             })
             .max();
-        let sum = sum.into_inner();
-
         assert_eq!(max, Some(INPUT_LEN));
+
+        let sum = sum.into_inner();
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -1565,6 +1538,7 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .map(|&x| x * 42)
             .pipeline(|| 0, |acc, _, x| acc + x, |acc| acc, |a, b| a + b);
+        assert_eq!(sum1, 42 * INPUT_LEN * (INPUT_LEN + 1) / 2);
 
         let sum2 = input
             .par_iter()
@@ -1572,6 +1546,7 @@ mod test {
             .map(|&x| x * 6)
             .map(|x| x * 7)
             .pipeline(|| 0, |acc, _, x| acc + x, |acc| acc, |a, b| a + b);
+        assert_eq!(sum2, 42 * INPUT_LEN * (INPUT_LEN + 1) / 2);
 
         let sum3 = input
             .par_iter()
@@ -1580,9 +1555,6 @@ mod test {
             // and isn't shared with other threads.
             .map(|&x| Rc::new(x))
             .pipeline(|| 0, |acc, _, x| acc + *x, |acc| acc, |a, b| a + b);
-
-        assert_eq!(sum1, 42 * INPUT_LEN * (INPUT_LEN + 1) / 2);
-        assert_eq!(sum2, 42 * INPUT_LEN * (INPUT_LEN + 1) / 2);
         assert_eq!(sum3, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -1622,6 +1594,7 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .copied()
             .max();
+        assert_eq!(max, Some(INPUT_LEN));
 
         input.truncate(1);
         let max_one = input
@@ -1629,6 +1602,7 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .copied()
             .max();
+        assert_eq!(max_one, Some(0));
 
         input.clear();
         let max_empty = input
@@ -1636,9 +1610,6 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .copied()
             .max();
-
-        assert_eq!(max, Some(INPUT_LEN));
-        assert_eq!(max_one, Some(0));
         assert_eq!(max_empty, None);
     }
 
@@ -1659,12 +1630,16 @@ mod test {
             .copied()
             .max_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
 
+        let last_odd = ((INPUT_LEN - 1) / 2) * 2 + 1;
+        assert_eq!(max, Some(last_odd));
+
         input.truncate(1);
         let max_one = input
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .copied()
             .max_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
+        assert_eq!(max_one, Some(0));
 
         input.clear();
         let max_empty = input
@@ -1672,10 +1647,6 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .copied()
             .max_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
-
-        let last_odd = ((INPUT_LEN - 1) / 2) * 2 + 1;
-        assert_eq!(max, Some(last_odd));
-        assert_eq!(max_one, Some(0));
         assert_eq!(max_empty, None);
     }
 
@@ -1695,6 +1666,7 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .copied()
             .max_by_key(|pair| pair.1);
+        assert_eq!(max, Some((0, INPUT_LEN)));
 
         input.truncate(1);
         let max_one = input
@@ -1702,6 +1674,7 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .copied()
             .max_by_key(|pair| pair.1);
+        assert_eq!(max_one, Some((0, INPUT_LEN)));
 
         input.clear();
         let max_empty = input
@@ -1709,9 +1682,6 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .copied()
             .max_by_key(|pair| pair.1);
-
-        assert_eq!(max, Some((0, INPUT_LEN)));
-        assert_eq!(max_one, Some((0, INPUT_LEN)));
         assert_eq!(max_empty, None);
     }
 
@@ -1729,6 +1699,7 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .copied()
             .min();
+        assert_eq!(min, Some(0));
 
         input.truncate(1);
         let min_one = input
@@ -1736,6 +1707,7 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .copied()
             .min();
+        assert_eq!(min_one, Some(0));
 
         input.clear();
         let min_empty = input
@@ -1743,9 +1715,6 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .copied()
             .min();
-
-        assert_eq!(min, Some(0));
-        assert_eq!(min_one, Some(0));
         assert_eq!(min_empty, None);
     }
 
@@ -1766,12 +1735,16 @@ mod test {
             .copied()
             .min_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
 
+        let first_even = 2;
+        assert_eq!(min, Some(first_even));
+
         input.truncate(1);
         let min_one = input
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .copied()
             .min_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
+        assert_eq!(min_one, Some(1));
 
         input.clear();
         let min_empty = input
@@ -1779,10 +1752,6 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .copied()
             .min_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
-
-        let first_even = 2;
-        assert_eq!(min, Some(first_even));
-        assert_eq!(min_one, Some(1));
         assert_eq!(min_empty, None);
     }
 
@@ -1802,6 +1771,7 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .copied()
             .min_by_key(|pair| pair.1);
+        assert_eq!(min, Some((INPUT_LEN, 0)));
 
         input.truncate(1);
         let min_one = input
@@ -1809,6 +1779,7 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .copied()
             .min_by_key(|pair| pair.1);
+        assert_eq!(min_one, Some((0, INPUT_LEN)));
 
         input.clear();
         let min_empty = input
@@ -1816,9 +1787,6 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .copied()
             .min_by_key(|pair| pair.1);
-
-        assert_eq!(min, Some((INPUT_LEN, 0)));
-        assert_eq!(min_one, Some((0, INPUT_LEN)));
         assert_eq!(min_empty, None);
     }
 
@@ -1835,7 +1803,6 @@ mod test {
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .product::<i32>();
-
         assert_eq!(product, if INPUT_LEN % 2 == 0 { 1 } else { -1 });
     }
 
@@ -1853,7 +1820,6 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .copied()
             .reduce(|| 0, |x, y| x + y);
-
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -1870,7 +1836,6 @@ mod test {
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .sum::<u64>();
-
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
