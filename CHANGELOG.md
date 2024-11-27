@@ -48,7 +48,7 @@ and this project adheres to
 - A parallel iterator trait implemented for slices, with 14 adaptors:
   `cloned()`, `copied()`, `filter()`, `filter_map()`, `for_each()`, `inspect()`,
   `map()`, `max()`, `max_by()`, `max_by_key()`, `min()`, `min_by()`,
-  `min_by_key()` and `reduce`.
+  `min_by_key()` and `reduce()`.
 - A thread pool configuration to control whether worker threads are pinned to
   CPUs.
 
