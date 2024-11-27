@@ -139,6 +139,9 @@ mod test {
                 test_source_adaptor_skip,
                 test_source_adaptor_skip_exact,
                 test_source_adaptor_skip_exact_too_much => fail("called skip_exact() with more items than this source produces"),
+                test_source_adaptor_step_by,
+                test_source_adaptor_step_by_zero => fail("called step_by() with a step of zero"),
+                test_source_adaptor_step_by_zero_empty => fail("called step_by() with a step of zero"),
                 test_source_adaptor_take,
                 test_source_adaptor_take_exact,
                 test_source_adaptor_take_exact_too_much => fail("called take_exact() with more items than this source produces"),
@@ -1144,6 +1147,75 @@ mod test {
         input
             .par_iter()
             .skip_exact(2 * INPUT_LEN as usize)
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+    }
+
+    fn test_source_adaptor_step_by(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let mut input = (0..=2 * INPUT_LEN).collect::<Vec<u64>>();
+        let sum_by_1 = input
+            .par_iter()
+            .step_by(1)
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+        assert_eq!(sum_by_1, INPUT_LEN * (2 * INPUT_LEN + 1));
+
+        let sum_by_2 = input
+            .par_iter()
+            .step_by(2)
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+        assert_eq!(sum_by_2, INPUT_LEN * (INPUT_LEN + 1));
+
+        input.truncate(2 * INPUT_LEN as usize);
+        let sum_by_2 = input
+            .par_iter()
+            .step_by(2)
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+        assert_eq!(sum_by_2, (INPUT_LEN - 1) * INPUT_LEN);
+
+        let sum_empty = []
+            .par_iter()
+            .step_by(2)
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+        assert_eq!(sum_empty, 0);
+    }
+
+    fn test_source_adaptor_step_by_zero(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        input
+            .par_iter()
+            .step_by(0)
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+    }
+
+    fn test_source_adaptor_step_by_zero_empty(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        [].par_iter()
+            .step_by(0)
             .with_thread_pool(&mut thread_pool)
             .sum::<u64>();
     }

@@ -352,6 +352,79 @@ pub trait ParallelSourceExt: ParallelSource {
         }
     }
 
+    /// Returns a parallel source that produces every `n`-th item from this
+    /// source, starting with the first one.
+    ///
+    /// In other words, the returned source produces the items at indices `0`,
+    /// `n`, `2*n`, etc.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    ///
+    /// let sum = input
+    ///     .par_iter()
+    ///     .step_by(2)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// assert_eq!(sum, 1 + 3 + 5 + 7 + 9);
+    ///
+    /// let sum = input
+    ///     .par_iter()
+    ///     .step_by(3)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// assert_eq!(sum, 1 + 4 + 7 + 10);
+    /// ```
+    ///
+    /// This panics if the step is zero, even if the underlying source is empty.
+    ///
+    /// ```should_panic
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let _ = input
+    ///     .par_iter()
+    ///     .step_by(0)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// ```
+    ///
+    /// ```should_panic
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let _ = []
+    ///     .par_iter()
+    ///     .step_by(0)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// ```
+    fn step_by(self, n: usize) -> StepBy<Self> {
+        StepBy {
+            inner: self,
+            step: n,
+        }
+    }
+
     /// Returns a parallel source that produces the first `n` items from this
     /// source, or all the items if this source has fewer than `n` items.
     ///
@@ -611,6 +684,36 @@ impl<Inner: ParallelSource> ParallelSource for SkipExact<Inner> {
         SourceDescriptor {
             len: descriptor.len - self.len,
             fetch_item: move |index| (descriptor.fetch_item)(self.len + index),
+        }
+    }
+}
+
+/// This struct is created by the
+/// [`step_by()`](ParallelSourceExt::step_by) method on [`ParallelSourceExt`].
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelSource`] and [`ParallelSourceExt`] traits, but it
+/// is nonetheless public because of the `must_use` annotation.
+#[must_use = "iterator adaptors are lazy"]
+pub struct StepBy<Inner> {
+    inner: Inner,
+    step: usize,
+}
+
+impl<Inner: ParallelSource> ParallelSource for StepBy<Inner> {
+    type Item = Inner::Item;
+
+    fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
+        let descriptor = self.inner.descriptor();
+        assert!(self.step != 0, "called step_by() with a step of zero");
+        let len = if descriptor.len == 0 {
+            0
+        } else {
+            (descriptor.len - 1) / self.step + 1
+        };
+        SourceDescriptor {
+            len,
+            fetch_item: move |index| (descriptor.fetch_item)(self.step * index),
         }
     }
 }
