@@ -122,17 +122,18 @@ mod test {
                 #[cfg(feature = "nightly")]
                 test_source_range_u64,
                 #[cfg(feature = "nightly")]
-                test_source_range_u128_too_large => fail("cannot iterate over a range with more than usize::MAX (18446744073709551615) items"),
+                test_source_range_u128_too_large => fail("cannot iterate over a range with more than usize::MAX items"),
                 test_source_range_inclusive,
                 test_source_range_inclusive_backwards => fail("cannot iterate over a backward range"),
+                test_source_range_inclusive_too_large => fail("cannot iterate over a range with more than usize::MAX items"),
                 #[cfg(feature = "nightly")]
                 test_source_range_inclusive_u64,
                 #[cfg(feature = "nightly")]
-                test_source_range_inclusive_u64_too_large => fail("cannot iterate over a range with more than usize::MAX (18446744073709551615) items"),
+                test_source_range_inclusive_u64_too_large => fail("cannot iterate over a range with more than usize::MAX items"),
                 #[cfg(feature = "nightly")]
-                test_source_range_inclusive_u128_too_large => fail("cannot iterate over a range with more than usize::MAX (18446744073709551615) items"),
+                test_source_range_inclusive_u128_too_large => fail("cannot iterate over a range with more than usize::MAX items"),
                 test_source_adaptor_chain,
-                test_source_adaptor_chain_overflow => fail("called chain() with sources that together produce more than usize::MAX (18446744073709551615) items"),
+                test_source_adaptor_chain_overflow => fail("called chain() with sources that together produce more than usize::MAX items"),
                 test_source_adaptor_enumerate,
                 test_source_adaptor_rev,
                 test_source_adaptor_skip,
@@ -952,6 +953,20 @@ mod test {
         .build();
 
         (10..=0)
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .sum::<usize>();
+    }
+
+    fn test_source_range_inclusive_too_large(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        (0..=usize::MAX)
             .into_par_iter()
             .with_thread_pool(&mut thread_pool)
             .sum::<usize>();

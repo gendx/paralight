@@ -501,7 +501,7 @@ impl<T: Send, First: ParallelSource<Item = T>, Second: ParallelSource<Item = T>>
             .len
             .checked_add(descriptor2.len)
             .unwrap_or_else(|| {
-                panic!("called chain() with sources that together produce more than usize::MAX ({}) items", usize::MAX);
+                panic!("called chain() with sources that together produce more than usize::MAX items ({})", usize::MAX);
             });
         SourceDescriptor {
             len,

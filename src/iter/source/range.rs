@@ -46,7 +46,7 @@ impl<T: Step + Copy + Send + Sync> ParallelSource for RangeParallelSource<T> {
                 panic!("cannot iterate over a backward range");
             } else {
                 panic!(
-                    "cannot iterate over a range with more than usize::MAX ({}) items",
+                    "cannot iterate over a range with more than usize::MAX items ({})",
                     usize::MAX
                 );
             }
@@ -120,14 +120,14 @@ impl<T: Step + Copy + Send + Sync> ParallelSource for RangeInclusiveParallelSour
                 panic!("cannot iterate over a backward range");
             } else {
                 panic!(
-                    "cannot iterate over a range with more than usize::MAX ({}) items",
+                    "cannot iterate over a range with more than usize::MAX items ({})",
                     usize::MAX
                 );
             }
         });
         let len = len.checked_add(1).unwrap_or_else(|| {
             panic!(
-                "cannot iterate over a range with more than usize::MAX ({}) items",
+                "cannot iterate over a range with more than usize::MAX items ({})",
                 usize::MAX
             );
         });
@@ -159,7 +159,7 @@ impl ParallelSource for RangeInclusiveParallelSource<usize> {
             .expect("cannot iterate over a backward range");
         let len = len.checked_add(1).unwrap_or_else(|| {
             panic!(
-                "cannot iterate over a range with more than usize::MAX ({}) items",
+                "cannot iterate over a range with more than usize::MAX items ({})",
                 usize::MAX
             );
         });
