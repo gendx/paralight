@@ -609,6 +609,9 @@ pub trait ParallelIteratorExt: ParallelIterator {
 
     /// Runs `f` on each item of this parallel iterator.
     ///
+    /// See also [`for_each_init()`](Self::for_each_init) if you need to
+    /// initialize a per-thread value and pass it together with each item.
+    ///
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
     /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
@@ -729,6 +732,9 @@ pub trait ParallelIteratorExt: ParallelIterator {
 
     /// Applies the function `f` to each item of this iterator, returning a
     /// parallel iterator producing the mapped items.
+    ///
+    /// See also [`map_init()`](Self::map_init) if you need to initialize a
+    /// per-thread value and pass it together with each item.
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
