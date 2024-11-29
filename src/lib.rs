@@ -26,8 +26,7 @@ pub mod iter;
 mod macros;
 
 pub use core::{
-    Accumulator, CpuPinningPolicy, PipelineCircuit, RangeStrategy, ThreadCount, ThreadPool,
-    ThreadPoolBuilder,
+    Accumulator, CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPool, ThreadPoolBuilder,
 };
 
 #[cfg(test)]

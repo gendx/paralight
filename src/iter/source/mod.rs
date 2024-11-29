@@ -13,7 +13,8 @@ pub mod slice;
 pub mod zip;
 
 use super::ParallelIterator;
-use crate::{Accumulator, PipelineCircuit, ThreadPool};
+use crate::{Accumulator, ThreadPool};
+use std::ops::ControlFlow;
 
 /// An object describing how to fetch items from a [`ParallelSource`].
 pub struct SourceDescriptor<Item: Send, FetchItem: Fn(usize) -> Item + Sync> {
@@ -804,11 +805,11 @@ impl<S: ParallelSource> ParallelIterator for BaseParallelIterator<'_, S> {
         )
     }
 
-    fn short_circuiting_pipeline<Output: Send, Accum>(
+    fn short_circuiting_pipeline<Output: Send, Accum, Break>(
         self,
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize, Self::Item) -> (PipelineCircuit, Accum) + Sync,
-        finalize: impl Fn(Accum) -> Output + Sync,
+        process_item: impl Fn(Accum, usize, Self::Item) -> ControlFlow<Break, Accum> + Sync,
+        finalize: impl Fn(ControlFlow<Break, Accum>) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
     ) -> Output {
         let source_descriptor = self.source.descriptor();

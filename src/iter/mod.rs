@@ -10,7 +10,7 @@
 
 mod source;
 
-use crate::{Accumulator, PipelineCircuit};
+use crate::Accumulator;
 pub use source::range::{RangeInclusiveParallelSource, RangeParallelSource};
 pub use source::slice::{MutSliceParallelSource, SliceParallelSource};
 pub use source::zip::{ZipEq, ZipMax, ZipMin, ZipableSource};
@@ -20,6 +20,7 @@ pub use source::{
 };
 use std::cmp::Ordering;
 use std::iter::{Product, Sum};
+use std::ops::ControlFlow;
 
 /// An iterator to process items in parallel. The [`ParallelIteratorExt`] trait
 /// provides additional methods (iterator adaptors) as an extension of this
@@ -77,14 +78,13 @@ pub trait ParallelIterator: Sized {
     /// - `reduce` function to reduce a pair of outputs into one output.
     ///
     /// Contrary to [`pipeline()`](Self::pipeline), the `process_item` function
-    /// can return [`PipelineCircuit::Break`] to indicate that the pipeline
-    /// should terminate early.
+    /// can return [`ControlFlow::Break`] to indicate that the pipeline should
+    /// terminate early.
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIterator, ParallelSourceExt};
-    /// # use paralight::{
-    /// #     CpuPinningPolicy, PipelineCircuit, RangeStrategy, ThreadCount, ThreadPoolBuilder,
-    /// # };
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use std::ops::ControlFlow;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -96,24 +96,24 @@ pub trait ParallelIterator: Sized {
     ///     .par_iter()
     ///     .with_thread_pool(&mut thread_pool)
     ///     .short_circuiting_pipeline(
-    ///         || false,
+    ///         || (),
     ///         |_, _, x| {
     ///             if x % 2 == 0 {
-    ///                 (PipelineCircuit::Break, true)
+    ///                 ControlFlow::Break(())
     ///             } else {
-    ///                 (PipelineCircuit::Continue, false)
+    ///                 ControlFlow::Continue(())
     ///             }
     ///         },
-    ///         |acc| acc,
+    ///         |acc| acc.is_break(),
     ///         |x, y| x || y,
     ///     );
     /// assert_eq!(any_even, true);
     /// ```
-    fn short_circuiting_pipeline<Output: Send, Accum>(
+    fn short_circuiting_pipeline<Output: Send, Accum, Break>(
         self,
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize, Self::Item) -> (PipelineCircuit, Accum) + Sync,
-        finalize: impl Fn(Accum) -> Output + Sync,
+        process_item: impl Fn(Accum, usize, Self::Item) -> ControlFlow<Break, Accum> + Sync,
+        finalize: impl Fn(ControlFlow<Break, Accum>) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
     ) -> Output;
 
@@ -128,8 +128,7 @@ pub trait ParallelIterator: Sized {
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIterator, ParallelSourceExt};
     /// # use paralight::{
-    /// #     Accumulator, CpuPinningPolicy, PipelineCircuit, RangeStrategy, ThreadCount,
-    /// #     ThreadPoolBuilder,
+    /// #     Accumulator, CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder,
     /// # };
     /// use std::iter::Sum;
     ///
@@ -242,11 +241,11 @@ impl<T: ParallelAdaptor> ParallelIterator for T {
         )
     }
 
-    fn short_circuiting_pipeline<Output: Send, Accum>(
+    fn short_circuiting_pipeline<Output: Send, Accum, Break>(
         self,
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize, Self::Item) -> (PipelineCircuit, Accum) + Sync,
-        finalize: impl Fn(Accum) -> Output + Sync,
+        process_item: impl Fn(Accum, usize, Self::Item) -> ControlFlow<Break, Accum> + Sync,
+        finalize: impl Fn(ControlFlow<Break, Accum>) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
     ) -> Output {
         let descriptor = self.descriptor();
@@ -254,7 +253,7 @@ impl<T: ParallelAdaptor> ParallelIterator for T {
             init,
             |accum, index, item| match (descriptor.transform_item)(item) {
                 Some(item) => process_item(accum, index, item),
-                None => (PipelineCircuit::Continue, accum),
+                None => ControlFlow::Continue(accum),
             },
             finalize,
             reduce,
@@ -331,12 +330,12 @@ pub trait ParallelIteratorExt: ParallelIterator {
         F: Fn(Self::Item) -> bool + Sync,
     {
         self.short_circuiting_pipeline(
-            || true,
+            || (),
             |_, _, item| match f(item) {
-                true => (PipelineCircuit::Continue, true),
-                false => (PipelineCircuit::Break, false),
+                true => ControlFlow::Continue(()),
+                false => ControlFlow::Break(()),
             },
-            |acc| acc,
+            |acc| acc.is_continue(),
             |x, y| x && y,
         )
     }
@@ -392,12 +391,12 @@ pub trait ParallelIteratorExt: ParallelIterator {
         F: Fn(Self::Item) -> bool + Sync,
     {
         self.short_circuiting_pipeline(
-            || false,
+            || (),
             |_, _, item| match f(item) {
-                true => (PipelineCircuit::Break, true),
-                false => (PipelineCircuit::Continue, false),
+                true => ControlFlow::Break(()),
+                false => ControlFlow::Continue(()),
             },
-            |acc| acc,
+            |acc| acc.is_break(),
             |x, y| x || y,
         )
     }
@@ -597,12 +596,15 @@ pub trait ParallelIteratorExt: ParallelIterator {
         Self::Item: Send,
     {
         self.short_circuiting_pipeline(
-            || None,
+            || (),
             |_, _, item| match f(&item) {
-                true => (PipelineCircuit::Break, Some(item)),
-                false => (PipelineCircuit::Continue, None),
+                true => ControlFlow::Break(item),
+                false => ControlFlow::Continue(()),
             },
-            |acc| acc,
+            |acc| match acc {
+                ControlFlow::Break(item) => Some(item),
+                ControlFlow::Continue(()) => None,
+            },
             |x, y| x.or(y),
         )
     }
@@ -1439,20 +1441,30 @@ where
         )
     }
 
-    fn short_circuiting_pipeline<Output: Send, Accum>(
+    fn short_circuiting_pipeline<Output: Send, Accum, Break>(
         self,
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize, Self::Item) -> (PipelineCircuit, Accum) + Sync,
-        finalize: impl Fn(Accum) -> Output + Sync,
+        process_item: impl Fn(Accum, usize, Self::Item) -> ControlFlow<Break, Accum> + Sync,
+        finalize: impl Fn(ControlFlow<Break, Accum>) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
     ) -> Output {
         self.inner.short_circuiting_pipeline(
             || ((self.init)(), init()),
             |(mut i, accum), index, item| {
-                let (circuit, accum) = process_item(accum, index, (self.f)(&mut i, item));
-                (circuit, (i, accum))
+                let accum = process_item(accum, index, (self.f)(&mut i, item));
+                // TODO(MSRV >= 1.83.0): Use ControlFlow::map_continue().
+                match accum {
+                    ControlFlow::Continue(accum) => ControlFlow::Continue((i, accum)),
+                    ControlFlow::Break(break_) => ControlFlow::Break(break_),
+                }
             },
-            |(_, accum)| finalize(accum),
+            |result| {
+                // TODO(MSRV >= 1.83.0): Use ControlFlow::map_continue().
+                finalize(match result {
+                    ControlFlow::Continue((_, accum)) => ControlFlow::Continue(accum),
+                    ControlFlow::Break(break_) => ControlFlow::Break(break_),
+                })
+            },
             reduce,
         )
     }
