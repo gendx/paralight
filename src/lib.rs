@@ -1375,22 +1375,24 @@ mod test {
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .all(|&x| x % 2 == 0);
+        assert!(!all_even);
+
         let all_small = input
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .all(|&x| x <= INPUT_LEN);
+        assert!(all_small);
+
         let all_large = input
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .all(|&x| x > INPUT_LEN);
+        assert!(!all_large);
+
         let all_empty = []
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .all(|_: &u64| false);
-
-        assert!(!all_even);
-        assert!(all_small);
-        assert!(!all_large);
         assert!(all_empty);
     }
 
@@ -1407,22 +1409,24 @@ mod test {
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .any(|&x| x % 2 == 0);
+        assert!(any_even);
+
         let any_small = input
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .any(|&x| x <= INPUT_LEN);
+        assert!(any_small);
+
         let any_large = input
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .any(|&x| x > INPUT_LEN);
+        assert!(!any_large);
+
         let any_empty = []
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .any(|_: &u64| true);
-
-        assert!(any_even);
-        assert!(any_small);
-        assert!(!any_large);
         assert!(!any_empty);
     }
 
