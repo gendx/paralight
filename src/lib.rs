@@ -18,7 +18,7 @@
     all(test, feature = "nightly_tests"),
     feature(negative_impls, coverage_attribute)
 )]
-#![cfg_attr(feature = "nightly", feature(step_trait))]
+#![cfg_attr(feature = "nightly", feature(step_trait, try_trait_v2))]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod core;
@@ -178,6 +178,12 @@ mod test {
                 test_adaptor_product,
                 test_adaptor_reduce,
                 test_adaptor_sum,
+                test_adaptor_try_for_each,
+                #[cfg(feature = "nightly")]
+                test_adaptor_try_for_each_option,
+                test_adaptor_try_for_each_init,
+                #[cfg(feature = "nightly")]
+                test_adaptor_try_for_each_init_option,
             );
         };
     }
@@ -2078,6 +2084,200 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .sum::<u64>();
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_adaptor_try_for_each(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+
+        let sum = AtomicU64::new(0);
+        let result = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .try_for_each(|&x| {
+                if x <= INPUT_LEN {
+                    sum.fetch_add(x, Ordering::Relaxed);
+                    Ok(())
+                } else {
+                    Err(x)
+                }
+            });
+        assert_eq!(result, Ok(()));
+        assert_eq!(sum.into_inner(), INPUT_LEN * (INPUT_LEN + 1) / 2);
+
+        let sum = AtomicU64::new(0);
+        let result = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .try_for_each(|&x| {
+                if x < INPUT_LEN {
+                    sum.fetch_add(x, Ordering::Relaxed);
+                    Ok(())
+                } else {
+                    Err(x)
+                }
+            });
+        assert_eq!(result, Err(INPUT_LEN));
+
+        let result = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .try_for_each(|&x| Err(x));
+        assert!(result.is_err());
+        assert!(result.unwrap_err() <= INPUT_LEN);
+    }
+
+    #[cfg(feature = "nightly")]
+    fn test_adaptor_try_for_each_option(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+
+        let sum = AtomicU64::new(0);
+        let result = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .try_for_each(|&x| {
+                if x <= INPUT_LEN {
+                    sum.fetch_add(x, Ordering::Relaxed);
+                    Some(())
+                } else {
+                    None
+                }
+            });
+        assert_eq!(result, Some(()));
+        assert_eq!(sum.into_inner(), INPUT_LEN * (INPUT_LEN + 1) / 2);
+
+        let sum = AtomicU64::new(0);
+        let result = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .try_for_each(|&x| {
+                if x < INPUT_LEN {
+                    sum.fetch_add(x, Ordering::Relaxed);
+                    Some(())
+                } else {
+                    None
+                }
+            });
+        assert_eq!(result, None);
+
+        let result = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .try_for_each(|_| None);
+        assert!(result.is_none());
+    }
+
+    fn test_adaptor_try_for_each_init(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+
+        let sum = AtomicU64::new(0);
+        let result = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .try_for_each_init(rand::thread_rng, |rng, &x| {
+                let y = rng.gen_range(0..=x);
+                sum.fetch_add(y, Ordering::Relaxed);
+                if y <= INPUT_LEN {
+                    Ok(())
+                } else {
+                    Err(y)
+                }
+            });
+        assert_eq!(result, Ok(()));
+        assert!(sum.into_inner() <= INPUT_LEN * (INPUT_LEN + 1) / 2);
+
+        let sum = AtomicU64::new(0);
+        let result = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .try_for_each_init(rand::thread_rng, |rng, &x| {
+                let y = rng.gen_range(0..=INPUT_LEN);
+                if y <= x {
+                    sum.fetch_add(y, Ordering::Relaxed);
+                    Ok(())
+                } else {
+                    Err(x)
+                }
+            });
+        // The probability for this to fail is negligible if INPUT_LEN is large enough.
+        assert!(result.is_err());
+
+        let result = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .try_for_each_init(rand::thread_rng, |rng, &x| Err(x * rng.gen_range(1..=10)));
+        assert!(result.is_err());
+        assert!(result.unwrap_err() <= 10 * INPUT_LEN);
+    }
+
+    #[cfg(feature = "nightly")]
+    fn test_adaptor_try_for_each_init_option(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+
+        let sum = AtomicU64::new(0);
+        let result = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .try_for_each_init(rand::thread_rng, |rng, &x| {
+                let y = rng.gen_range(0..=x);
+                sum.fetch_add(y, Ordering::Relaxed);
+                if y <= INPUT_LEN {
+                    Some(())
+                } else {
+                    None
+                }
+            });
+        assert_eq!(result, Some(()));
+        assert!(sum.into_inner() <= INPUT_LEN * (INPUT_LEN + 1) / 2);
+
+        let sum = AtomicU64::new(0);
+        let result = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .try_for_each_init(rand::thread_rng, |rng, &x| {
+                let y = rng.gen_range(0..=INPUT_LEN);
+                if y <= x {
+                    sum.fetch_add(y, Ordering::Relaxed);
+                    Some(())
+                } else {
+                    None
+                }
+            });
+        // The probability for this to fail is negligible if INPUT_LEN is large enough.
+        assert!(result.is_none());
+
+        let result = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .try_for_each_init(rand::thread_rng, |_, _| None);
+        assert!(result.is_none());
     }
 
     const fn expected_sum_lengths(max: u64) -> u64 {

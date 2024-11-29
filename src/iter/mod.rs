@@ -21,6 +21,8 @@ pub use source::{
 use std::cmp::Ordering;
 use std::iter::{Product, Sum};
 use std::ops::ControlFlow;
+#[cfg(feature = "nightly")]
+use std::ops::Try;
 
 /// An iterator to process items in parallel. The [`ParallelIteratorExt`] trait
 /// provides additional methods (iterator adaptors) as an extension of this
@@ -1592,6 +1594,322 @@ pub trait ParallelIteratorExt: ParallelIterator {
         T: Sum<Self::Item> + Sum<T> + Send,
     {
         self.iter_pipeline(SumAccumulator, SumAccumulator)
+    }
+
+    /// Runs the fallible function `f` on each item of this parallel iterator,
+    /// breaking early and returning the failure in case of failure.
+    ///
+    /// If multiple items cause a failure, an arbitrary one is returned.
+    ///
+    /// See also [`try_for_each_init()`](Self::try_for_each_init) if you need to
+    /// initialize a per-thread value and pass it together with each item.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use std::collections::HashSet;
+    /// # use std::sync::Mutex;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let set = Mutex::new(HashSet::new());
+    /// let result = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_for_each(|&x| {
+    ///         if set.lock().unwrap().insert(x) {
+    ///             Ok(())
+    ///         } else {
+    ///             Err(x)
+    ///         }
+    ///     });
+    /// assert_eq!(result, Ok(()));
+    /// assert_eq!(set.into_inner().unwrap(), (1..=10).collect());
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use std::collections::HashSet;
+    /// # use std::sync::Mutex;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 1, 1, 1, 1, 6, 7, 8, 9, 10];
+    /// let set = Mutex::new(HashSet::new());
+    /// let result = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_for_each(|&x| {
+    ///         if set.lock().unwrap().insert(x) {
+    ///             Ok(())
+    ///         } else {
+    ///             Err(x)
+    ///         }
+    ///     });
+    /// assert_eq!(result, Err(1));
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let result = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_for_each(|&x| Err(x));
+    /// assert!(result.is_err());
+    /// ```
+    #[cfg(not(feature = "nightly"))]
+    fn try_for_each<E, F>(self, f: F) -> Result<(), E>
+    where
+        F: Fn(Self::Item) -> Result<(), E> + Sync,
+        E: Send,
+    {
+        self.short_circuiting_pipeline(
+            || (),
+            |_, _, item| match f(item) {
+                Ok(()) => ControlFlow::Continue(()),
+                Err(e) => ControlFlow::Break(e),
+            },
+            |result| match result {
+                ControlFlow::Continue(()) => Ok(()),
+                ControlFlow::Break(e) => Err(e),
+            },
+            |x, y| x.and(y),
+        )
+    }
+
+    /// Runs the fallible function `f` on each item of this parallel iterator,
+    /// breaking early and returning the failure in case of failure.
+    ///
+    /// If multiple items cause a failure, an arbitrary one is returned.
+    ///
+    /// See also [`try_for_each_init()`](Self::try_for_each_init) if you need to
+    /// initialize a per-thread value and pass it together with each item.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use std::collections::HashSet;
+    /// # use std::sync::Mutex;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let set = Mutex::new(HashSet::new());
+    /// let result = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_for_each(|&x| {
+    ///         if set.lock().unwrap().insert(x) {
+    ///             Ok(())
+    ///         } else {
+    ///             Err(x)
+    ///         }
+    ///     });
+    /// assert_eq!(result, Ok(()));
+    /// assert_eq!(set.into_inner().unwrap(), (1..=10).collect());
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use std::collections::HashSet;
+    /// # use std::sync::Mutex;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 1, 1, 1, 1, 6, 7, 8, 9, 10];
+    /// let set = Mutex::new(HashSet::new());
+    /// let result = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_for_each(|&x| {
+    ///         if set.lock().unwrap().insert(x) {
+    ///             Ok(())
+    ///         } else {
+    ///             Err(x)
+    ///         }
+    ///     });
+    /// assert_eq!(result, Err(1));
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let result = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_for_each(|&x| Err(x));
+    /// assert!(result.is_err());
+    /// ```
+    #[cfg(feature = "nightly")]
+    fn try_for_each<R, F>(self, f: F) -> R
+    where
+        F: Fn(Self::Item) -> R + Sync,
+        R: Try<Output = ()> + Send,
+    {
+        self.short_circuiting_pipeline(
+            || (),
+            |_, _, item| f(item).branch(),
+            |result| match result {
+                ControlFlow::Continue(()) => R::from_output(()),
+                ControlFlow::Break(e) => R::from_residual(e),
+            },
+            |x, y| match (x.branch(), y.branch()) {
+                (ControlFlow::Continue(()), ControlFlow::Continue(())) => R::from_output(()),
+                (ControlFlow::Break(e), _) | (_, ControlFlow::Break(e)) => R::from_residual(e),
+            },
+        )
+    }
+
+    /// Runs the fallible function `f` on each item of this parallel iterator,
+    /// together with a per-thread mutable value returned by `init`,
+    /// breaking early and returning the failure in case of failure.
+    ///
+    /// If multiple items cause a failure, an arbitrary one is returned.
+    ///
+    /// The `init` function will be called only once per worker thread. The
+    /// companion value returned by `init` doesn't need to be [`Send`] nor
+    /// [`Sync`].
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelSource, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// use rand::Rng;
+    ///
+    /// # use std::collections::HashSet;
+    /// # use std::sync::Mutex;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let set = Mutex::new(HashSet::new());
+    /// let result = (0..257)
+    ///     .into_par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_for_each_init(rand::thread_rng, |rng, _| {
+    ///         let byte: u8 = rng.gen();
+    ///         if set.lock().unwrap().insert(byte) {
+    ///             Ok(())
+    ///         } else {
+    ///             Err(byte)
+    ///         }
+    ///     });
+    /// // Even a biased random number generator cannot yield more than 256 distinct bytes.
+    /// assert!(result.is_err());
+    /// ```
+    #[cfg(not(feature = "nightly"))]
+    fn try_for_each_init<T, Init, E, F>(self, init: Init, f: F) -> Result<(), E>
+    where
+        Init: Fn() -> T + Sync,
+        F: Fn(&mut T, Self::Item) -> Result<(), E> + Sync,
+        E: Send,
+    {
+        self.short_circuiting_pipeline(
+            init,
+            |mut t, _, item| match f(&mut t, item) {
+                Ok(()) => ControlFlow::Continue(t),
+                Err(e) => ControlFlow::Break(e),
+            },
+            |result| match result {
+                ControlFlow::Continue(_) => Ok(()),
+                ControlFlow::Break(e) => Err(e),
+            },
+            |x, y| x.and(y),
+        )
+    }
+
+    /// Runs the fallible function `f` on each item of this parallel iterator,
+    /// together with a per-thread mutable value returned by `init`,
+    /// breaking early and returning the failure in case of failure.
+    ///
+    /// If multiple items cause a failure, an arbitrary one is returned.
+    ///
+    /// The `init` function will be called only once per worker thread. The
+    /// companion value returned by `init` doesn't need to be [`Send`] nor
+    /// [`Sync`].
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelSource, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// use rand::Rng;
+    ///
+    /// # use std::collections::HashSet;
+    /// # use std::sync::Mutex;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let set = Mutex::new(HashSet::new());
+    /// let result = (0..257)
+    ///     .into_par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_for_each_init(rand::thread_rng, |rng, _| {
+    ///         let byte: u8 = rng.gen();
+    ///         if set.lock().unwrap().insert(byte) {
+    ///             Ok(())
+    ///         } else {
+    ///             Err(byte)
+    ///         }
+    ///     });
+    /// // Even a biased random number generator cannot yield more than 256 distinct bytes.
+    /// assert!(result.is_err());
+    /// ```
+    #[cfg(feature = "nightly")]
+    fn try_for_each_init<T, Init, R, F>(self, init: Init, f: F) -> R
+    where
+        Init: Fn() -> T + Sync,
+        F: Fn(&mut T, Self::Item) -> R + Sync,
+        R: Try<Output = ()> + Send,
+    {
+        self.short_circuiting_pipeline(
+            init,
+            // TODO(MSRV >= 1.83.0): Use ControlFlow::map_continue().
+            |mut t, _, item| match f(&mut t, item).branch() {
+                ControlFlow::Continue(()) => ControlFlow::Continue(t),
+                ControlFlow::Break(e) => ControlFlow::Break(e),
+            },
+            |result| match result {
+                ControlFlow::Continue(_) => R::from_output(()),
+                ControlFlow::Break(e) => R::from_residual(e),
+            },
+            |x, y| match (x.branch(), y.branch()) {
+                (ControlFlow::Continue(()), ControlFlow::Continue(())) => R::from_output(()),
+                (ControlFlow::Break(e), _) | (_, ControlFlow::Break(e)) => R::from_residual(e),
+            },
+        )
     }
 }
 
