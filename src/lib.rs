@@ -155,6 +155,9 @@ mod test {
                 test_adaptor_any,
                 test_adaptor_cloned,
                 test_adaptor_copied,
+                test_adaptor_eq,
+                test_adaptor_eq_by_key,
+                test_adaptor_eq_by_keys,
                 test_adaptor_filter,
                 test_adaptor_filter_map,
                 test_adaptor_find_any,
@@ -169,6 +172,9 @@ mod test {
                 test_adaptor_min,
                 test_adaptor_min_by,
                 test_adaptor_min_by_key,
+                test_adaptor_ne,
+                test_adaptor_ne_by_key,
+                test_adaptor_ne_by_keys,
                 test_adaptor_product,
                 test_adaptor_reduce,
                 test_adaptor_sum,
@@ -1460,6 +1466,77 @@ mod test {
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
+    fn test_adaptor_eq(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let equal = (input.par_iter(), input.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .eq();
+        assert!(equal);
+
+        let equal = (
+            input.par_iter().take(INPUT_LEN as usize),
+            input.par_iter().skip(1),
+        )
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .eq();
+        assert!(!equal);
+    }
+
+    fn test_adaptor_eq_by_key(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let left = (0..=INPUT_LEN).map(|i| (i, 0)).collect::<Vec<(u64, u64)>>();
+        let right = (0..=INPUT_LEN).map(|i| (i, 1)).collect::<Vec<(u64, u64)>>();
+        let equal = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .eq_by_key(|x| x.0);
+        assert!(equal);
+
+        let equal = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .eq_by_key(|x| x.1);
+        assert!(!equal);
+    }
+
+    fn test_adaptor_eq_by_keys(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let left = (0..=INPUT_LEN).map(|i| (i, 0)).collect::<Vec<(u64, u64)>>();
+        let right = (0..=INPUT_LEN).map(|i| (1, i)).collect::<Vec<(u64, u64)>>();
+        let equal = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .eq_by_keys(|x| x.0, |y| y.1);
+        assert!(equal);
+
+        let equal = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .eq_by_keys(|x| x.1, |y| y.0);
+        assert!(!equal);
+    }
+
     fn test_adaptor_filter(range_strategy: RangeStrategy) {
         let mut thread_pool = ThreadPoolBuilder {
             num_threads: ThreadCount::AvailableParallelism,
@@ -1877,6 +1954,77 @@ mod test {
             .copied()
             .min_by_key(|pair| pair.1);
         assert_eq!(min_empty, None);
+    }
+
+    fn test_adaptor_ne(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let not_equal = (input.par_iter(), input.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .ne();
+        assert!(!not_equal);
+
+        let not_equal = (
+            input.par_iter().take(INPUT_LEN as usize),
+            input.par_iter().skip(1),
+        )
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .ne();
+        assert!(not_equal);
+    }
+
+    fn test_adaptor_ne_by_key(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let left = (0..=INPUT_LEN).map(|i| (i, 0)).collect::<Vec<(u64, u64)>>();
+        let right = (0..=INPUT_LEN).map(|i| (i, 1)).collect::<Vec<(u64, u64)>>();
+        let not_equal = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .ne_by_key(|x| x.0);
+        assert!(!not_equal);
+
+        let not_equal = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .ne_by_key(|x| x.1);
+        assert!(not_equal);
+    }
+
+    fn test_adaptor_ne_by_keys(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let left = (0..=INPUT_LEN).map(|i| (i, 0)).collect::<Vec<(u64, u64)>>();
+        let right = (0..=INPUT_LEN).map(|i| (1, i)).collect::<Vec<(u64, u64)>>();
+        let not_equal = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .ne_by_keys(|x| x.0, |y| y.1);
+        assert!(!not_equal);
+
+        let not_equal = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .ne_by_keys(|x| x.1, |y| y.0);
+        assert!(not_equal);
     }
 
     fn test_adaptor_product(range_strategy: RangeStrategy) {

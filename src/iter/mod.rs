@@ -475,6 +475,218 @@ pub trait ParallelIteratorExt: ParallelIterator {
         Copied { inner: self }
     }
 
+    /// Returns [`true`] if all pairs of items produced by this iterator are
+    /// equal, and [`false`] otherwise.
+    ///
+    /// This returns the opposite of [`ne()`](Self::ne).
+    ///
+    /// See also [`eq_by_key()`](Self::eq_by_key) and
+    /// [`eq_by_keys()`](Self::eq_by_keys) to use custom comparison functions,
+    /// or the more general [`all()`](Self::all) and [`any()`](Self::any).
+    ///
+    /// ```
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+    /// # };
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let lhs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let rhs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let equal = (lhs.par_iter(), rhs.par_iter())
+    ///     .zip_eq()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .eq();
+    /// assert!(equal);
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+    /// # };
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let lhs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let rhs = [1, 2, 3, 42, 5, 6, 7, 8, 9, 10];
+    /// let equal = (lhs.par_iter(), rhs.par_iter())
+    ///     .zip_eq()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .eq();
+    /// assert!(!equal);
+    /// ```
+    ///
+    /// The underlying items only need to implement [`PartialEq`], full equality
+    /// with [`Eq`] isn't required.
+    ///
+    /// ```
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+    /// # };
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let lhs = [1.0, f64::NAN];
+    /// let rhs = [1.0, f64::NAN];
+    /// let equal = (lhs.par_iter(), rhs.par_iter())
+    ///     .zip_eq()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .eq();
+    /// assert!(!equal);
+    /// ```
+    ///
+    /// The underlying items don't need to be of the same type, as long as they
+    /// implement [`PartialEq`] with each other.
+    ///
+    /// ```
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+    /// # };
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let lhs: &[[i32; 2]] = &[[1, 2], [3, 4], [5, 6], [7, 8], [9, 10]];
+    /// let rhs: &[&[i32]] = &[&[1, 2], &[3, 4], &[5, 6], &[7, 8], &[9, 10]];
+    /// let equal = (lhs.par_iter(), rhs.par_iter())
+    ///     .zip_eq()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .eq();
+    /// assert!(equal);
+    /// ```
+    ///
+    /// This returns [`true`] if the iterator is empty.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let pairs: [(i32, i32); 0] = [];
+    /// let eq_empty = pairs
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .eq();
+    /// assert!(eq_empty);
+    /// ```
+    fn eq<T, U>(self) -> bool
+    where
+        Self: ParallelIterator<Item = (T, U)>,
+        T: PartialEq<U>,
+    {
+        self.all(|(t, u)| t == u)
+    }
+
+    /// Returns [`true`] if all pairs of items produced by this iterator yield
+    /// equal keys when mapped by `f`, and [`false`] otherwise.
+    ///
+    /// This returns the opposite of [`ne_by_key()`](Self::ne_by_key).
+    ///
+    /// ```
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+    /// # };
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let lhs = [(1, 1.0), (2, 2.0), (3, 3.0), (4, 4.0), (5, 5.0)];
+    /// let rhs = [(1, 6.0), (2, 7.0), (3, 8.0), (4, 9.0), (5, 10.0)];
+    /// let equal = (lhs.par_iter(), rhs.par_iter())
+    ///     .zip_eq()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .eq_by_key(|x| x.0);
+    /// assert!(equal);
+    /// ```
+    ///
+    /// See also:
+    /// - [`eq()`](Self::eq) for the simplest equality adaptor over
+    ///   [`PartialEq`] types,
+    /// - [`eq_by_keys()`](Self::eq_by_keys) if the left-hand and right-hand
+    ///   sides are of different types or have different key extraction
+    ///   functions,
+    /// - [`all()`](Self::all) and [`any()`](Self::any) for more general
+    ///   adaptors.
+    fn eq_by_key<T, A, F>(self, f: F) -> bool
+    where
+        Self: ParallelIterator<Item = (T, T)>,
+        F: Fn(T) -> A + Sync,
+        A: PartialEq,
+    {
+        self.all(|(t, u)| f(t) == f(u))
+    }
+
+    /// Returns [`true`] if all pairs of items produced by this iterator yield
+    /// equal keys when mapped by `f` and `g`, and [`false`] otherwise.
+    ///
+    /// This returns the opposite of [`ne_by_keys()`](Self::ne_by_keys).
+    ///
+    /// ```
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+    /// # };
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let lhs = [(1, 1.0), (2, 2.0), (3, 3.0), (4, 4.0), (5, 5.0)];
+    /// let rhs = [
+    ///     (1, "Lorem"),
+    ///     (2, "ipsum"),
+    ///     (3, "dolor"),
+    ///     (4, "sit"),
+    ///     (5, "amet"),
+    /// ];
+    /// let equal = (lhs.par_iter(), rhs.par_iter())
+    ///     .zip_eq()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .eq_by_keys(|x| x.0, |y| y.0);
+    /// assert!(equal);
+    /// ```
+    ///
+    /// See also:
+    /// - [`eq()`](Self::eq) for the simplest equality adaptor over
+    ///   [`PartialEq`] types,
+    /// - [`eq_by_key()`](Self::eq_by_key) if the left-hand and right-hand key
+    ///   extraction functions are the same and on the same types,
+    /// - [`all()`](Self::all) and [`any()`](Self::any) for more general
+    ///   adaptors.
+    fn eq_by_keys<T, U, A, B, F, G>(self, f: F, g: G) -> bool
+    where
+        Self: ParallelIterator<Item = (T, U)>,
+        F: Fn(T) -> A + Sync,
+        G: Fn(U) -> B + Sync,
+        A: PartialEq<B>,
+    {
+        self.all(|(t, u)| f(t) == g(u))
+    }
+
     /// Returns a parallel iterator that produces only the items for which the
     /// predicate `f` returns [`true`].
     ///
@@ -1060,6 +1272,218 @@ pub trait ParallelIteratorExt: ParallelIterator {
         self.map(|x| (f(&x), x))
             .min_by(|a, b| a.0.cmp(&b.0))
             .map(|(_, x)| x)
+    }
+
+    /// Returns [`true`] if any pair of items produced by this iterator consists
+    /// of unequal items, and [`false`] otherwise.
+    ///
+    /// This returns the opposite of [`eq()`](Self::eq).
+    ///
+    /// See also [`ne_by_key()`](Self::ne_by_key) and
+    /// [`ne_by_keys()`](Self::ne_by_keys) to use custom comparison functions,
+    /// or the more general [`all()`](Self::all) and [`any()`](Self::any).
+    ///
+    /// ```
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+    /// # };
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let lhs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let rhs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let not_equal = (lhs.par_iter(), rhs.par_iter())
+    ///     .zip_eq()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .ne();
+    /// assert!(!not_equal);
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+    /// # };
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let lhs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let rhs = [1, 2, 3, 42, 5, 6, 7, 8, 9, 10];
+    /// let not_equal = (lhs.par_iter(), rhs.par_iter())
+    ///     .zip_eq()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .ne();
+    /// assert!(not_equal);
+    /// ```
+    ///
+    /// The underlying items only need to implement [`PartialEq`], full equality
+    /// with [`Eq`] isn't required.
+    ///
+    /// ```
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+    /// # };
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let lhs = [1.0, f64::NAN];
+    /// let rhs = [1.0, f64::NAN];
+    /// let not_equal = (lhs.par_iter(), rhs.par_iter())
+    ///     .zip_eq()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .ne();
+    /// assert!(not_equal);
+    /// ```
+    ///
+    /// The underlying items don't need to be of the same type, as long as they
+    /// implement [`PartialEq`] with each other.
+    ///
+    /// ```
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+    /// # };
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let lhs: &[[i32; 2]] = &[[1, 2], [3, 4], [5, 6], [7, 8], [9, 10]];
+    /// let rhs: &[&[i32]] = &[&[1, 2], &[3, 4], &[5, 6], &[7, 8], &[9, 10]];
+    /// let not_equal = (lhs.par_iter(), rhs.par_iter())
+    ///     .zip_eq()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .ne();
+    /// assert!(!not_equal);
+    /// ```
+    ///
+    /// This returns [`false`] if the iterator is empty.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let pairs: [(i32, i32); 0] = [];
+    /// let ne_empty = pairs
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .ne();
+    /// assert!(!ne_empty);
+    /// ```
+    fn ne<T, U>(self) -> bool
+    where
+        Self: ParallelIterator<Item = (T, U)>,
+        T: PartialEq<U>,
+    {
+        !self.eq()
+    }
+
+    /// Returns [`true`] if any pair of items produced by this iterator yields
+    /// unequal keys when mapped by `f`, and [`false`] otherwise.
+    ///
+    /// This returns the opposite of [`eq_by_key()`](Self::eq_by_key).
+    ///
+    /// ```
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+    /// # };
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let lhs = [(1, 1.0), (2, 2.0), (3, 3.0), (4, 4.0), (5, 5.0)];
+    /// let rhs = [(1, 6.0), (2, 7.0), (3, 8.0), (4, 9.0), (5, 10.0)];
+    /// let not_equal = (lhs.par_iter(), rhs.par_iter())
+    ///     .zip_eq()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .ne_by_key(|x| x.0);
+    /// assert!(!not_equal);
+    /// ```
+    ///
+    /// See also:
+    /// - [`ne()`](Self::ne) for the simplest equality adaptor over
+    ///   [`PartialEq`] types,
+    /// - [`ne_by_keys()`](Self::ne_by_keys) if the left-hand and right-hand
+    ///   sides are of different types or have different key extraction
+    ///   functions,
+    /// - [`all()`](Self::all) and [`any()`](Self::any) for more general
+    ///   adaptors.
+    fn ne_by_key<T, A, F>(self, f: F) -> bool
+    where
+        Self: ParallelIterator<Item = (T, T)>,
+        F: Fn(T) -> A + Sync,
+        A: PartialEq,
+    {
+        !self.eq_by_key(f)
+    }
+
+    /// Returns [`true`] if any pair of items produced by this iterator yields
+    /// unequal keys when mapped by `f` and `g`, and [`false`] otherwise.
+    ///
+    /// This returns the opposite of [`eq_by_keys()`](Self::eq_by_keys).
+    ///
+    /// ```
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+    /// # };
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let lhs = [(1, 1.0), (2, 2.0), (3, 3.0), (4, 4.0), (5, 5.0)];
+    /// let rhs = [
+    ///     (1, "Lorem"),
+    ///     (2, "ipsum"),
+    ///     (3, "dolor"),
+    ///     (4, "sit"),
+    ///     (5, "amet"),
+    /// ];
+    /// let not_equal = (lhs.par_iter(), rhs.par_iter())
+    ///     .zip_eq()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .ne_by_keys(|x| x.0, |y| y.0);
+    /// assert!(!not_equal);
+    /// ```
+    ///
+    /// See also:
+    /// - [`ne()`](Self::ne) for the simplest equality adaptor over
+    ///   [`PartialEq`] types,
+    /// - [`ne_by_key()`](Self::ne_by_key) if the left-hand and right-hand key
+    ///   extraction functions are the same and on the same types,
+    /// - [`all()`](Self::all) and [`any()`](Self::any) for more general
+    ///   adaptors.
+    fn ne_by_keys<T, U, A, B, F, G>(self, f: F, g: G) -> bool
+    where
+        Self: ParallelIterator<Item = (T, U)>,
+        F: Fn(T) -> A + Sync,
+        G: Fn(U) -> B + Sync,
+        A: PartialEq<B>,
+    {
+        !self.eq_by_keys(f, g)
     }
 
     /// Returns the product of the items produced by this iterator.
