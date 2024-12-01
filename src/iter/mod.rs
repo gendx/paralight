@@ -123,6 +123,69 @@ pub trait ParallelIterator: Sized {
     ///
     /// # Parameters
     ///
+    /// - `init` function to create a new (per-thread) accumulator,
+    /// - `process_item` function to accumulate an item into the accumulator,
+    /// - `finalize` function to transform an accumulator into an output,
+    /// - `reduce` function to reduce a pair of outputs into one output.
+    ///
+    /// Contrary to [`pipeline()`](Self::pipeline), the `process_item` function
+    /// can return [`ControlFlow::Break`] to indicate that the pipeline should
+    /// skip processing items at larger indices.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIterator, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use std::ops::ControlFlow;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let first_even = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .upper_bounded_pipeline(
+    ///         || None,
+    ///         |acc, i, x| {
+    ///             match acc {
+    ///                 // Early return if we found something at a previous index.
+    ///                 Some((j, _)) if j < i => ControlFlow::Continue(acc),
+    ///                 _ => match x % 2 == 0 {
+    ///                     true => ControlFlow::Break(Some((i, x))),
+    ///                     false => ControlFlow::Continue(acc),
+    ///                 },
+    ///             }
+    ///         },
+    ///         |acc| acc,
+    ///         |x, y| match (x, y) {
+    ///             (None, None) => None,
+    ///             (Some(found), None) | (None, Some(found)) => Some(found),
+    ///             (Some((i, a)), Some((j, b))) => {
+    ///                 if i < j {
+    ///                     Some((i, a))
+    ///                 } else {
+    ///                     Some((j, b))
+    ///                 }
+    ///             }
+    ///         },
+    ///     )
+    ///     .map(|(_, x)| x);
+    /// assert_eq!(first_even, Some(&2));
+    /// ```
+    fn upper_bounded_pipeline<Output: Send, Accum>(
+        self,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(Accum, usize, Self::Item) -> ControlFlow<Accum, Accum> + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+    ) -> Output;
+
+    /// Runs the pipeline defined by the given functions on this iterator.
+    ///
+    /// # Parameters
+    ///
     /// - `accum` function to accumulate items into an output,
     /// - `reduce` function to reduce a sequence of outputs into the final
     ///   output.
@@ -252,6 +315,25 @@ impl<T: ParallelAdaptor> ParallelIterator for T {
     ) -> Output {
         let descriptor = self.descriptor();
         descriptor.inner.short_circuiting_pipeline(
+            init,
+            |accum, index, item| match (descriptor.transform_item)(item) {
+                Some(item) => process_item(accum, index, item),
+                None => ControlFlow::Continue(accum),
+            },
+            finalize,
+            reduce,
+        )
+    }
+
+    fn upper_bounded_pipeline<Output: Send, Accum>(
+        self,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(Accum, usize, Self::Item) -> ControlFlow<Accum, Accum> + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+    ) -> Output {
+        let descriptor = self.descriptor();
+        descriptor.inner.upper_bounded_pipeline(
             init,
             |accum, index, item| match (descriptor.transform_item)(item) {
                 Some(item) => process_item(accum, index, item),
@@ -821,6 +903,72 @@ pub trait ParallelIteratorExt: ParallelIterator {
             },
             |x, y| x.or(y),
         )
+    }
+
+    /// Returns the first item that satisfies the predicate `f`, or [`None`] if
+    /// no item satisfies it.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::try_from(2).unwrap(),
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    ///
+    /// let four = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .find_first(|&&x| x == 4);
+    /// assert_eq!(four, Some(&4));
+    ///
+    /// let twenty = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .find_first(|&&x| x == 20);
+    /// assert_eq!(twenty, None);
+    ///
+    /// let first_even = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .find_first(|&x| x % 2 == 0);
+    /// assert_eq!(first_even, Some(2));
+    /// ```
+    fn find_first<F>(self, f: F) -> Option<Self::Item>
+    where
+        F: Fn(&Self::Item) -> bool + Sync,
+        Self::Item: Send,
+    {
+        self.upper_bounded_pipeline(
+            || None,
+            |acc, i, item| {
+                match acc {
+                    // Early return if we found something at a previous index.
+                    Some((j, _)) if j < i => ControlFlow::Continue(acc),
+                    _ => match f(&item) {
+                        true => ControlFlow::Break(Some((i, item))),
+                        false => ControlFlow::Continue(acc),
+                    },
+                }
+            },
+            |acc| acc,
+            |x, y| match (x, y) {
+                (None, None) => None,
+                (Some(found), None) | (None, Some(found)) => Some(found),
+                (Some((i, a)), Some((j, b))) => {
+                    if i < j {
+                        Some((i, a))
+                    } else {
+                        Some((j, b))
+                    }
+                }
+            },
+        )
+        .map(|(_, item)| item)
     }
 
     /// Runs `f` on each item of this parallel iterator.
@@ -2207,6 +2355,27 @@ where
                     ControlFlow::Break(break_) => ControlFlow::Break(break_),
                 })
             },
+            reduce,
+        )
+    }
+
+    fn upper_bounded_pipeline<Output: Send, Accum>(
+        self,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(Accum, usize, Self::Item) -> ControlFlow<Accum, Accum> + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+    ) -> Output {
+        self.inner.upper_bounded_pipeline(
+            || ((self.init)(), init()),
+            |(mut i, accum), index, item| {
+                let accum = process_item(accum, index, (self.f)(&mut i, item));
+                match accum {
+                    ControlFlow::Continue(accum) => ControlFlow::Continue((i, accum)),
+                    ControlFlow::Break(accum) => ControlFlow::Break((i, accum)),
+                }
+            },
+            |(_, accum)| finalize(accum),
             reduce,
         )
     }

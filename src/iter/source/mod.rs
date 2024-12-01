@@ -822,6 +822,23 @@ impl<S: ParallelSource> ParallelIterator for BaseParallelIterator<'_, S> {
         )
     }
 
+    fn upper_bounded_pipeline<Output: Send, Accum>(
+        self,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(Accum, usize, Self::Item) -> ControlFlow<Accum, Accum> + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+    ) -> Output {
+        let source_descriptor = self.source.descriptor();
+        self.thread_pool.upper_bounded_pipeline(
+            source_descriptor.len,
+            init,
+            |acc, index| process_item(acc, index, (source_descriptor.fetch_item)(index)),
+            finalize,
+            reduce,
+        )
+    }
+
     fn iter_pipeline<Output: Send>(
         self,
         accum: impl Accumulator<Self::Item, Output> + Sync,

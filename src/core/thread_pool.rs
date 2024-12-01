@@ -33,7 +33,7 @@ use std::convert::TryFrom;
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::ops::ControlFlow;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
@@ -164,6 +164,24 @@ impl ThreadPool {
 
     /// Processes an input of the given length in parallel and returns the
     /// aggregated output.
+    ///
+    /// With this variant, the pipeline may skip processing items at larger
+    /// indices whenever a call to `process_item` returns
+    /// [`ControlFlow::Break`].
+    pub(crate) fn upper_bounded_pipeline<Output: Send, Accum>(
+        &mut self,
+        input_len: usize,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(Accum, usize) -> ControlFlow<Accum, Accum> + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+    ) -> Output {
+        self.inner
+            .upper_bounded_pipeline(input_len, init, process_item, finalize, reduce)
+    }
+
+    /// Processes an input of the given length in parallel and returns the
+    /// aggregated output.
     pub(crate) fn iter_pipeline<Output: Send>(
         &mut self,
         input_len: usize,
@@ -253,6 +271,30 @@ impl ThreadPoolEnum {
             }
             ThreadPoolEnum::WorkStealing(inner) => {
                 inner.short_circuiting_pipeline(input_len, init, process_item, finalize, reduce)
+            }
+        }
+    }
+
+    /// Processes an input of the given length in parallel and returns the
+    /// aggregated output.
+    ///
+    /// With this variant, the pipeline may skip processing items at larger
+    /// indices whenever a call to `process_item` returns
+    /// [`ControlFlow::Break`].
+    fn upper_bounded_pipeline<Output: Send, Accum>(
+        &mut self,
+        input_len: usize,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(Accum, usize) -> ControlFlow<Accum, Accum> + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+    ) -> Output {
+        match self {
+            ThreadPoolEnum::Fixed(inner) => {
+                inner.upper_bounded_pipeline(input_len, init, process_item, finalize, reduce)
+            }
+            ThreadPoolEnum::WorkStealing(inner) => {
+                inner.upper_bounded_pipeline(input_len, init, process_item, finalize, reduce)
             }
         }
     }
@@ -444,6 +486,43 @@ impl<F: RangeFactory> ThreadPoolImpl<F> {
 
     /// Processes an input of the given length in parallel and returns the
     /// aggregated output.
+    ///
+    /// With this variant, the pipeline may skip processing items at larger
+    /// indices whenever a call to `process_item` returns
+    /// [`ControlFlow::Break`].
+    fn upper_bounded_pipeline<Output: Send, Accum>(
+        &mut self,
+        input_len: usize,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(Accum, usize) -> ControlFlow<Accum, Accum> + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+    ) -> Output {
+        self.range_orchestrator.reset_ranges(input_len);
+
+        let num_threads = self.threads.len();
+        let outputs = (0..num_threads)
+            .map(|_| Mutex::new(None))
+            .collect::<Arc<[_]>>();
+        let bound = AtomicUsize::new(usize::MAX);
+
+        self.pipeline.lend(&UpperBoundedPipelineImpl {
+            bound: CachePadded::new(bound),
+            outputs: outputs.clone(),
+            init,
+            process_item,
+            finalize,
+        });
+
+        outputs
+            .iter()
+            .map(move |output| output.lock().unwrap().take().unwrap())
+            .reduce(reduce)
+            .unwrap()
+    }
+
+    /// Processes an input of the given length in parallel and returns the
+    /// aggregated output.
     fn iter_pipeline<Output: Send>(
         &mut self,
         input_len: usize,
@@ -584,6 +663,45 @@ where
         };
 
         let output = (self.finalize)(result);
+        *self.outputs[worker_id].lock().unwrap() = Some(output);
+    }
+}
+
+struct UpperBoundedPipelineImpl<
+    Output,
+    Accum,
+    Init: Fn() -> Accum,
+    ProcessItem: Fn(Accum, usize) -> ControlFlow<Accum, Accum>,
+    Finalize: Fn(Accum) -> Output,
+> {
+    bound: CachePadded<AtomicUsize>,
+    outputs: Arc<[Mutex<Option<Output>>]>,
+    init: Init,
+    process_item: ProcessItem,
+    finalize: Finalize,
+}
+
+impl<R, Output, Accum, Init, ProcessItem, Finalize> Pipeline<R>
+    for UpperBoundedPipelineImpl<Output, Accum, Init, ProcessItem, Finalize>
+where
+    R: Range,
+    Init: Fn() -> Accum,
+    ProcessItem: Fn(Accum, usize) -> ControlFlow<Accum, Accum>,
+    Finalize: Fn(Accum) -> Output,
+{
+    fn run(&self, worker_id: usize, range: &R) {
+        let mut accumulator = (self.init)();
+        for i in range.upper_bounded_iter(&self.bound) {
+            let acc = (self.process_item)(accumulator, i);
+            accumulator = match acc {
+                ControlFlow::Continue(acc) => acc,
+                ControlFlow::Break(acc) => {
+                    self.bound.fetch_min(i, Ordering::Relaxed);
+                    acc
+                }
+            };
+        }
+        let output = (self.finalize)(accumulator);
         *self.outputs[worker_id].lock().unwrap() = Some(output);
     }
 }

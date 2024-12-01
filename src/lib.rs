@@ -161,6 +161,7 @@ mod test {
                 test_adaptor_filter,
                 test_adaptor_filter_map,
                 test_adaptor_find_any,
+                test_adaptor_find_first,
                 test_adaptor_for_each,
                 test_adaptor_for_each_init,
                 test_adaptor_inspect,
@@ -1629,6 +1630,64 @@ mod test {
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .find_any(|_: &&u64| true);
+        assert_eq!(empty, None);
+    }
+
+    fn test_adaptor_find_first(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let first = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .find_first(|_| true);
+        assert_eq!(first, Some(0));
+
+        let last = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .find_first(|&x| x >= INPUT_LEN);
+        assert_eq!(last, Some(INPUT_LEN));
+
+        let end = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .find_first(|&x| x > INPUT_LEN);
+        assert_eq!(end, None);
+
+        let forty_two = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .find_first(|&x| x >= 42);
+        assert_eq!(forty_two, if INPUT_LEN >= 42 { Some(42) } else { None });
+
+        let even = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .find_first(|&x| x % 2 == 0);
+        assert_eq!(even, Some(0));
+
+        let odd = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .find_first(|&x| x % 2 == 1);
+        assert_eq!(odd, Some(1));
+
+        let empty = []
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .find_first(|_: &&u64| true);
         assert_eq!(empty, None);
     }
 

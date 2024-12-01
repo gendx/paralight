@@ -48,7 +48,14 @@ pub trait RangeOrchestrator {
 /// A range of items similar to [`std::ops::Range`], but that can steal from or
 /// be stolen by other threads.
 pub trait Range {
+    /// Type of iterator returned by [`iter()`](Self::iter).
     type Iter<'a>: Iterator<Item = usize>
+    where
+        Self: 'a;
+
+    /// Type of iterator returned by
+    /// [`upper_bounded_iter()`](Self::upper_bounded_iter).
+    type UpperBoundedIter<'a, 'bound>: Iterator<Item = usize>
     where
         Self: 'a;
 
@@ -56,6 +63,13 @@ pub trait Range {
     /// dynamically stolen from/by other threads, but the iterator provides
     /// a safe abstraction over that.
     fn iter(&self) -> Self::Iter<'_>;
+
+    /// Returns an iterator over the items in this range. Items larger than the
+    /// (dynamic) bound are skipped.
+    fn upper_bounded_iter<'a, 'bound>(
+        &'a self,
+        bound: &'bound AtomicUsize,
+    ) -> Self::UpperBoundedIter<'a, 'bound>;
 }
 
 /// A factory that hands out a fixed range to each thread, without any stealing.
@@ -114,14 +128,55 @@ pub struct FixedRange {
     num_elements: Arc<AtomicUsize>,
 }
 
-impl Range for FixedRange {
-    type Iter<'a> = std::ops::Range<usize>;
-
-    fn iter(&self) -> Self::Iter<'_> {
+impl FixedRange {
+    fn range(&self) -> std::ops::Range<usize> {
         let num_elements = self.num_elements.load(Ordering::Relaxed);
         let start = (self.id * num_elements) / self.num_threads;
         let end = ((self.id + 1) * num_elements) / self.num_threads;
         start..end
+    }
+}
+
+impl Range for FixedRange {
+    type Iter<'a> = std::ops::Range<usize>;
+    type UpperBoundedIter<'a, 'bound> = UpperBoundedRange<'bound>;
+
+    fn iter(&self) -> Self::Iter<'_> {
+        self.range()
+    }
+
+    fn upper_bounded_iter<'a, 'bound>(
+        &'a self,
+        bound: &'bound AtomicUsize,
+    ) -> Self::UpperBoundedIter<'a, 'bound> {
+        UpperBoundedRange {
+            range: self.range(),
+            bound,
+        }
+    }
+}
+
+/// An upper-bounded iterator for a [`FixedRange`].
+pub struct UpperBoundedRange<'bound> {
+    /// Underlying contiguous range.
+    range: std::ops::Range<usize>,
+    /// Dynamic upper bound.
+    bound: &'bound AtomicUsize,
+}
+
+impl Iterator for UpperBoundedRange<'_> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<usize> {
+        self.range.next().and_then(|x| {
+            if x <= self.bound.load(Ordering::Relaxed) {
+                Some(x)
+            } else {
+                // The upper bound can only decrease, so once it's reached the iterator is
+                // exhausted.
+                None
+            }
+        })
     }
 }
 
@@ -184,7 +239,7 @@ pub struct WorkStealingRangeOrchestrator {
 
 impl RangeOrchestrator for WorkStealingRangeOrchestrator {
     fn reset_ranges(&self, num_elements: usize) {
-        log_debug!("Resetting ranges.");
+        log_debug!("Resetting ranges");
         let num_threads = self.ranges.len() as u64;
         let num_elements = u32::try_from(num_elements).unwrap_or_else(|_| {
             panic!(
@@ -232,11 +287,27 @@ pub struct WorkStealingRange {
 
 impl Range for WorkStealingRange {
     type Iter<'a> = WorkStealingRangeIterator<'a>;
+    type UpperBoundedIter<'a, 'bound> = UpperBoundedWorkStealingRangeIterator<'a, 'bound>;
 
     fn iter(&self) -> Self::Iter<'_> {
         WorkStealingRangeIterator {
             id: self.id,
             ranges: &self.ranges,
+            #[cfg(feature = "log_parallelism")]
+            stats: WorkStealingStats::default(),
+            #[cfg(feature = "log_parallelism")]
+            global_stats: self.stats.clone(),
+        }
+    }
+
+    fn upper_bounded_iter<'a, 'bound>(
+        &'a self,
+        bound: &'bound AtomicUsize,
+    ) -> Self::UpperBoundedIter<'a, 'bound> {
+        UpperBoundedWorkStealingRangeIterator {
+            id: self.id,
+            ranges: &self.ranges,
+            bound,
             #[cfg(feature = "log_parallelism")]
             stats: WorkStealingStats::default(),
             #[cfg(feature = "log_parallelism")]
@@ -318,6 +389,20 @@ impl PackedRange {
         self.end() - self.start()
     }
 
+    /// Checks if the range is empty.
+    #[inline(always)]
+    fn is_empty(self) -> bool {
+        self.start() == self.end()
+    }
+
+    /// Upper bound this range by the given maximum.
+    #[inline(always)]
+    fn upper_bound(self, bound: usize) -> Self {
+        let start = (self.start() as usize).min(bound) as u32;
+        let end = (self.end() as usize).min(bound) as u32;
+        Self::new(start, end)
+    }
+
     /// Increments the start of the range.
     #[inline(always)]
     fn increment_start(self) -> (u32, Self) {
@@ -333,16 +418,7 @@ impl PackedRange {
         let end = self.end();
         // The result fits in u32 because the inputs fit in u32.
         let middle = ((start as u64 + end as u64) / 2) as u32;
-        (
-            PackedRange::new(start, middle),
-            PackedRange::new(middle, end),
-        )
-    }
-
-    /// Checks if the range is empty.
-    #[inline(always)]
-    fn is_empty(self) -> bool {
-        self.start() == self.end()
+        (Self::new(start, middle), Self::new(middle, end))
     }
 }
 
@@ -392,6 +468,13 @@ pub struct WorkStealingRangeIterator<'a> {
     global_stats: Arc<Mutex<WorkStealingStats>>,
 }
 
+#[cfg(feature = "log_parallelism")]
+impl Drop for WorkStealingRangeIterator<'_> {
+    fn drop(&mut self) {
+        *self.global_stats.lock().unwrap() += &self.stats;
+    }
+}
+
 impl Iterator for WorkStealingRangeIterator<'_> {
     type Item = usize;
 
@@ -410,7 +493,7 @@ impl Iterator for WorkStealingRangeIterator<'_> {
                     {
                         self.stats.increments += 1;
                         log_trace!(
-                            "[thread {}] Incremented range to {}..{}.",
+                            "[thread {}] Incremented range to {}..{}",
                             self.id,
                             my_new_range.start(),
                             my_new_range.end()
@@ -425,7 +508,7 @@ impl Iterator for WorkStealingRangeIterator<'_> {
                     {
                         self.stats.failed_increments += 1;
                         log_debug!(
-                            "[thread {}] Failed to increment range, new range is {}..{}.",
+                            "[thread {}] Failed to increment range, new range is {}..{}",
                             self.id,
                             range.start(),
                             range.end()
@@ -455,7 +538,7 @@ impl WorkStealingRangeIterator<'_> {
 
         #[cfg(feature = "log_parallelism")]
         log_debug!(
-            "[thread {}] Range {}..{} is empty, scanning other threads.",
+            "[thread {}] Range {}..{} is empty, scanning other threads",
             self.id,
             my_range.start(),
             my_range.end()
@@ -506,6 +589,14 @@ impl WorkStealingRangeIterator<'_> {
                     #[cfg(feature = "log_parallelism")]
                     {
                         self.stats.thefts += 1;
+                        log_trace!(
+                            "[thread {}] Stole range {}:{}..{} from thread {}",
+                            self.id,
+                            taken,
+                            my_new_range.start(),
+                            my_new_range.end(),
+                            max_index
+                        );
                     }
                     return Some(taken as usize);
                 }
@@ -534,10 +625,207 @@ impl WorkStealingRangeIterator<'_> {
 
         // Didn't manage to steal anything: exit the iterator.
         #[cfg(feature = "log_parallelism")]
+        log_debug!("[thread {}] Didn't find anything to steal", self.id);
+        None
+    }
+}
+
+/// A upper-bounded iterator for a [`WorkStealingRange`].
+pub struct UpperBoundedWorkStealingRangeIterator<'a, 'bound> {
+    /// Index of the thread that owns this range.
+    id: usize,
+    /// Handle to the ranges of all the threads.
+    ranges: &'a [AtomicRange],
+    /// Dynamic upper bound.
+    bound: &'bound AtomicUsize,
+    /// Local work-stealing statistics.
+    #[cfg(feature = "log_parallelism")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "log_parallelism")))]
+    stats: WorkStealingStats,
+    /// Handle to the global work-stealing statistics.
+    #[cfg(feature = "log_parallelism")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "log_parallelism")))]
+    global_stats: Arc<Mutex<WorkStealingStats>>,
+}
+
+#[cfg(feature = "log_parallelism")]
+impl Drop for UpperBoundedWorkStealingRangeIterator<'_, '_> {
+    fn drop(&mut self) {
+        *self.global_stats.lock().unwrap() += &self.stats;
+    }
+}
+
+impl Iterator for UpperBoundedWorkStealingRangeIterator<'_, '_> {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<usize> {
+        let bound = self.bound.load(Ordering::Relaxed);
+        let my_atomic_range: &AtomicRange = &self.ranges[self.id];
+        let mut my_loaded_range: PackedRange = my_atomic_range.load();
+        let mut my_bounded_range = my_loaded_range.upper_bound(bound);
+
+        #[cfg(feature = "log_parallelism")]
         {
-            log_debug!("[thread {}] Didn't find anything to steal", self.id);
-            *self.global_stats.lock().unwrap() += &self.stats;
+            log_trace!("[thread {}] Loaded upper bound = {}", self.id, bound);
         }
+
+        // First phase: try to increment this thread's own range. Retries are needed in
+        // case another thread stole part of the range.
+        while !my_bounded_range.is_empty() {
+            let (taken, my_new_range) = my_bounded_range.increment_start();
+            match my_atomic_range.compare_exchange(my_loaded_range, my_new_range) {
+                // Increment succeeded.
+                Ok(()) => {
+                    #[cfg(feature = "log_parallelism")]
+                    {
+                        self.stats.increments += 1;
+                        log_trace!(
+                            "[thread {}] Incremented range to {}..{}",
+                            self.id,
+                            my_new_range.start(),
+                            my_new_range.end()
+                        );
+                    }
+                    return Some(taken as usize);
+                }
+                // Increment failed: retry with an updated range.
+                Err(range) => {
+                    my_loaded_range = range;
+                    my_bounded_range = my_loaded_range.upper_bound(bound);
+                    #[cfg(feature = "log_parallelism")]
+                    {
+                        self.stats.failed_increments += 1;
+                        log_debug!(
+                            "[thread {}] Failed to increment range, new range is {}..{}",
+                            self.id,
+                            range.start(),
+                            range.end()
+                        );
+                    }
+                    continue;
+                }
+            }
+        }
+
+        // Second phase: the range is empty, try to steal a range from another thread.
+        self.steal(
+            bound,
+            #[cfg(feature = "log_parallelism")]
+            my_bounded_range,
+        )
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+struct OtherRange {
+    loaded: PackedRange,
+    bounded: PackedRange,
+}
+
+impl UpperBoundedWorkStealingRangeIterator<'_, '_> {
+    /// Helper function for the iterator implementation, to steal a range from
+    /// another thread when this thread's range is empty.
+    fn steal(
+        &mut self,
+        bound: usize,
+        #[cfg(feature = "log_parallelism")] my_bounded_range: PackedRange,
+    ) -> Option<usize> {
+        let my_atomic_range: &AtomicRange = &self.ranges[self.id];
+
+        #[cfg(feature = "log_parallelism")]
+        log_debug!(
+            "[thread {}] Range {}..{} is empty, scanning other threads",
+            self.id,
+            my_bounded_range.start(),
+            my_bounded_range.end()
+        );
+        let range_count = self.ranges.len();
+
+        // Read a snapshot of the other threads' ranges, to identify the best one to
+        // steal (the largest one). This is only used as a hint, and therefore it's fine
+        // that the underlying values may be concurrently modified by the other threads
+        // and that the snapshot becomes (slightly) out-of-date.
+        let mut other_ranges = vec![OtherRange::default(); range_count];
+        for (i, range) in other_ranges.iter_mut().enumerate() {
+            if i == self.id {
+                continue;
+            }
+            let loaded = self.ranges[i].load();
+            let bounded = loaded.upper_bound(bound);
+            *range = OtherRange { loaded, bounded };
+        }
+        #[cfg(feature = "log_parallelism")]
+        {
+            self.stats.other_loads += range_count as u64 - 1;
+        }
+
+        // Identify the thread with the largest range.
+        let mut max_index = 0;
+        let mut max_range = OtherRange::default();
+        for (i, range) in other_ranges.iter().enumerate() {
+            if i == self.id {
+                continue;
+            }
+            if range.bounded.len() > max_range.bounded.len() {
+                max_index = i;
+                max_range = *range;
+            }
+        }
+
+        // Try to steal another thread's range. Retries are needed in case the target
+        // thread incremented its range or if another thread stole part of the
+        // target thread's range.
+        while !max_range.bounded.is_empty() {
+            // Try to steal half of the range.
+            let (remaining, stolen) = max_range.bounded.split();
+            match self.ranges[max_index].compare_exchange(max_range.loaded, remaining) {
+                // Theft succeeded.
+                Ok(()) => {
+                    // Take the first item, and place the rest in this thread's own range.
+                    let (taken, my_new_range) = stolen.increment_start();
+                    my_atomic_range.store(my_new_range);
+                    #[cfg(feature = "log_parallelism")]
+                    {
+                        self.stats.thefts += 1;
+                        log_trace!(
+                            "[thread {}] Stole range {}:{}..{} from thread {}",
+                            self.id,
+                            taken,
+                            my_new_range.start(),
+                            my_new_range.end(),
+                            max_index
+                        );
+                    }
+                    return Some(taken as usize);
+                }
+                // Theft failed: update the range and retry.
+                Err(loaded) => {
+                    let bounded = loaded.upper_bound(bound);
+                    let range = OtherRange { loaded, bounded };
+                    other_ranges[max_index] = range;
+                    #[cfg(feature = "log_parallelism")]
+                    {
+                        self.stats.failed_thefts += 1;
+                    }
+
+                    // Re-compute the largest range.
+                    max_range = range;
+                    for (i, range) in other_ranges.iter().enumerate() {
+                        if i == self.id {
+                            continue;
+                        }
+                        if range.bounded.len() > max_range.bounded.len() {
+                            max_index = i;
+                            max_range = *range;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Didn't manage to steal anything: exit the iterator.
+        #[cfg(feature = "log_parallelism")]
+        log_debug!("[thread {}] Didn't find anything to steal", self.id);
         None
     }
 }
