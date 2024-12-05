@@ -115,7 +115,8 @@ impl ThreadPoolBuilder {
 
 /// A thread pool that can execute parallel pipelines.
 ///
-/// This type doesn't expose any public methods. You can interact with it via
+/// This type doesn't expose any public methods other than
+/// [`num_threads()`](Self::num_threads). You can interact with it via
 /// the [`ThreadPoolBuilder::build()`] function to create a thread pool, and the
 /// [`with_thread_pool()`](crate::iter::ParallelSourceExt::with_thread_pool)
 /// method to attach a thread pool to a parallel iterator.
@@ -129,6 +130,12 @@ impl ThreadPool {
         Self {
             inner: ThreadPoolEnum::new(builder),
         }
+    }
+
+    /// Returns the number of worker threads that have been spawned in this
+    /// thread pool.
+    pub fn num_threads(&self) -> NonZeroUsize {
+        self.inner.num_threads()
     }
 
     /// Processes an input of the given length in parallel and returns the
@@ -229,6 +236,15 @@ impl ThreadPoolEnum {
                 WorkStealingRangeFactory::new(num_threads),
                 builder.cpu_pinning,
             )),
+        }
+    }
+
+    /// Returns the number of worker threads that have been spawned in this
+    /// thread pool.
+    fn num_threads(&self) -> NonZeroUsize {
+        match self {
+            ThreadPoolEnum::Fixed(inner) => inner.num_threads(),
+            ThreadPoolEnum::WorkStealing(inner) => inner.num_threads(),
         }
     }
 
@@ -416,6 +432,12 @@ impl<F: RangeFactory> ThreadPoolImpl<F> {
             range_orchestrator: range_factory.orchestrator(),
             pipeline: lender,
         }
+    }
+
+    /// Returns the number of worker threads that have been spawned in this
+    /// thread pool.
+    fn num_threads(&self) -> NonZeroUsize {
+        self.threads.len().try_into().unwrap()
     }
 
     /// Processes an input of the given length in parallel and returns the
