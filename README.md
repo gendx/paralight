@@ -78,6 +78,26 @@ For convenience, [`ThreadCount`](ThreadCount) implements the
 [`TryFrom<usize>`](TryFrom) trait to create a [`Count(_)`](ThreadCount::Count)
 instance, validating that the given number of threads is not zero.
 
+**Recommendation:** It depends. While
+[`AvailableParallelism`](ThreadCount::AvailableParallelism) may be a good
+default, it usually returns twice the number of CPU cores (at least on Intel) to
+account for [hyper-threading](https://en.wikipedia.org/wiki/Hyper-threading).
+Whether this is optimal or not depends on your workload, for example whether
+it's compute bound or memory bound, whether a single thread can saturate the
+resources of one core or not, etc. Generally, the long list of caveats mentioned
+in the documentation of
+[`available_parallelism()`](std::thread::available_parallelism) applies.
+
+On some workloads, hyper-threading doesn't provide a performance boost over
+using only one thread per core, because two hyper-threads would compete on
+resources on the core they share (e.g. memory caches). In this case, using half
+of what [`available_parallelism()`](std::thread::available_parallelism) returns
+can reduce contention and perform better.
+
+If your program is not running alone on your machine but is competing with other
+programs, using too many threads can also be detrimental to the overall
+performance of your system.
+
 ### Work-stealing strategy
 
 Paralight offers two strategies in the [`RangeStrategy`](RangeStrategy) enum to
@@ -89,8 +109,8 @@ distribute computation among threads:
   distribution, but lets each worker thread steal items from others once it is
   done processing its items.
 
-Note: In work-stealing mode, each thread processes an arbitrary subset of items
-in arbitrary order, meaning that the reduction operation must be both
+**Note:** In work-stealing mode, each thread processes an arbitrary subset of
+items in arbitrary order, meaning that the reduction operation must be both
 [commutative](https://en.wikipedia.org/wiki/Commutative_property) and
 [associative](https://en.wikipedia.org/wiki/Associative_property) to yield a
 deterministic result (in contrast to the standard library's
@@ -98,8 +118,8 @@ deterministic result (in contrast to the standard library's
 Fortunately, a lot of common operations are commutative and associative, but be
 mindful of this.
 
-Recommendation: If your pipeline is performing roughly the same amont of work
-for each item, you should probably use the [`Fixed`](RangeStrategy::Fixed)
+**Recommendation:** If your pipeline is performing roughly the same amont of
+work for each item, you should probably use the [`Fixed`](RangeStrategy::Fixed)
 strategy, to avoid paying the synchronization cost of work-stealing. This is
 especially true if the amount of work per item is small (e.g. some simple
 arithmetic operations). If the amoung of work per item is highly variable and/or
@@ -126,8 +146,8 @@ enum:
   CPU, panicking if the platform isn't supported or if the pinning function
   returns an error.
 
-Whether CPU pinning is useful or detrimental depends on your workload. If you're
-processing the same data over and over again (e.g. calling
+**Recommendation:** Whether CPU pinning is useful or detrimental depends on your
+workload. If you're processing the same data over and over again (e.g. calling
 [`par_iter()`](iter::IntoParallelRefSource::par_iter) multiple times on the same
 data), CPU pinning can help ensure that each subset of the data is always
 processed on the same CPU core and stays fresh in the lower-level per-core
