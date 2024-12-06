@@ -109,15 +109,6 @@ distribute computation among threads:
   distribution, but lets each worker thread steal items from others once it is
   done processing its items.
 
-**Note:** In work-stealing mode, each thread processes an arbitrary subset of
-items in arbitrary order, meaning that the reduction operation must be both
-[commutative](https://en.wikipedia.org/wiki/Commutative_property) and
-[associative](https://en.wikipedia.org/wiki/Associative_property) to yield a
-deterministic result (in contrast to the standard library's
-[`Iterator`](std::iter::Iterator) trait that processes items in order).
-Fortunately, a lot of common operations are commutative and associative, but be
-mindful of this.
-
 **Recommendation:** If your pipeline is performing roughly the same amont of
 work for each item, you should probably use the [`Fixed`](RangeStrategy::Fixed)
 strategy, to avoid paying the synchronization cost of work-stealing. This is
@@ -125,6 +116,40 @@ especially true if the amount of work per item is small (e.g. some simple
 arithmetic operations). If the amoung of work per item is highly variable and/or
 large, you should probably use the [`WorkStealing`](RangeStrategy::WorkStealing)
 strategy (e.g. parsing strings, processing files).
+
+**Note:** In work-stealing mode, each thread processes an arbitrary subset of
+items in arbitrary order, meaning that a reduction operation must be both
+[commutative](https://en.wikipedia.org/wiki/Commutative_property) and
+[associative](https://en.wikipedia.org/wiki/Associative_property) to yield a
+deterministic result (in contrast to the standard library's
+[`Iterator`](std::iter::Iterator) trait that processes items in sequential
+order). Fortunately, a lot of common operations are commutative and associative,
+but be mindful of this.
+
+```rust,should_panic
+# use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
+# use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+# let mut thread_pool = ThreadPoolBuilder {
+#     num_threads: ThreadCount::AvailableParallelism,
+#     range_strategy: RangeStrategy::WorkStealing,
+#     cpu_pinning: CpuPinningPolicy::No,
+# }
+# .build();
+let s = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j']
+    .par_iter()
+    .with_thread_pool(&mut thread_pool)
+    .map(|c: &char| c.to_string())
+    .reduce(String::new, |mut a: String, b: String| {
+        a.push_str(&b);
+        a
+    });
+// ⚠️ There is no guarantee that this check passes. In practice, `s` contains any permutation
+// of the input, such as "fgdebachij".
+assert_eq!(s, "abcdefghij");
+
+// This makes sure the example panics anyway if the permutation is (by luck) the identity.
+panic!("Congratulations, you won the lottery and the assertion passed this time!");
+```
 
 ### CPU pinning
 
