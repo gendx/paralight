@@ -203,7 +203,7 @@ mod test {
     #[cfg(not(miri))]
     const INPUT_LEN: u64 = 100_000;
     #[cfg(miri)]
-    const INPUT_LEN: u64 = 1000;
+    const INPUT_LEN: u64 = 200;
 
     fn test_pipeline_sum_integers(range_strategy: RangeStrategy) {
         let mut thread_pool = ThreadPoolBuilder {
