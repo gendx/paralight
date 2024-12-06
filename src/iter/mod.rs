@@ -525,6 +525,256 @@ pub trait ParallelIteratorExt: ParallelIterator {
         Cloned { inner: self }
     }
 
+    /// Compare the pairs of items produced by this iterator using
+    /// [lexicographic](https://en.wikipedia.org/wiki/Lexicographic_order)
+    /// order.
+    ///
+    /// See also [`cmp_by()`](Self::cmp_by), [`cmp_by_key()`](Self::cmp_by_key)
+    /// and [`cmp_by_keys()`](Self::cmp_by_keys) to use custom comparison
+    /// functions, and [`partial_cmp()`](Self::partial_cmp) and its variants if
+    /// the items only implement [`PartialOrd`].
+    ///
+    /// If you only care about equality, [`eq()`](Self::eq), [`ne()`](Self::ne)
+    /// and their variants are more efficient.
+    ///
+    /// ```
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+    /// # };
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use std::cmp::Ordering;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let lhs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let rhs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let ordering = (lhs.par_iter(), rhs.par_iter())
+    ///     .zip_eq()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .cmp();
+    /// assert_eq!(ordering, Ordering::Equal);
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+    /// # };
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use std::cmp::Ordering;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let lhs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let rhs = [10, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    /// let ordering = (lhs.par_iter(), rhs.par_iter())
+    ///     .zip_eq()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .cmp();
+    /// assert_eq!(ordering, Ordering::Less);
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+    /// # };
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use std::cmp::Ordering;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let lhs = [10, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+    /// let rhs = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let ordering = (lhs.par_iter(), rhs.par_iter())
+    ///     .zip_eq()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .cmp();
+    /// assert_eq!(ordering, Ordering::Greater);
+    /// ```
+    ///
+    /// This returns [`Ordering::Equal`] if the iterator is empty.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use std::cmp::Ordering;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let pairs: [(i32, i32); 0] = [];
+    /// let ordering = pairs
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .cmp();
+    /// assert_eq!(ordering, Ordering::Equal);
+    /// ```
+    fn cmp<T>(self) -> Ordering
+    where
+        Self: ParallelIterator<Item = (T, T)>,
+        T: Ord,
+    {
+        self.cmp_by(|x, y| x.cmp(&y))
+    }
+
+    /// Compare the pairs of items produced by this iterator using
+    /// [lexicographic](https://en.wikipedia.org/wiki/Lexicographic_order)
+    /// order with the comparison function `f`.
+    ///
+    /// See also the other comparison adaptors such as [`cmp()`](Self::cmp) or
+    /// [`partial_cmp_by()`](Self::partial_cmp_by).
+    ///
+    /// ```
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+    /// # };
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use std::cmp::Ordering;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// /// Compare every other item of the given slices.
+    /// fn compare_even_indices(&lhs: &&[i32], &rhs: &&[i32]) -> Ordering {
+    ///     lhs.iter().step_by(2).cmp(rhs.iter().step_by(2))
+    /// }
+    ///
+    /// let lhs: [&[_]; 5] = [&[1, 1], &[2, 2], &[3, 3], &[4, 4], &[5, 5]];
+    /// let rhs: [&[_]; 5] = [&[1, 6], &[2, 7], &[3, 8], &[4, 9], &[5, 10]];
+    /// let ordering = (lhs.par_iter(), rhs.par_iter())
+    ///     .zip_eq()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .cmp_by(compare_even_indices);
+    /// // The comparison is [Equal, Equal, Equal, Equal, Equal] -> Equal
+    /// assert_eq!(ordering, Ordering::Equal);
+    ///
+    /// let lhs: [&[_]; 5] = [&[1, 1, 1], &[2, 2, 3], &[4, 3], &[4, 4, 5], &[5, 5, 6]];
+    /// let rhs: [&[_]; 5] = [&[1, 6, 2], &[2, 7], &[3, 8, 3], &[4, 9, 4], &[5, 10, 5]];
+    /// let ordering = (lhs.par_iter(), rhs.par_iter())
+    ///     .zip_eq()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .cmp_by(compare_even_indices);
+    /// // The comparison is [Less, Greater, Greater, Greater, Greater] -> Less
+    /// assert_eq!(ordering, Ordering::Less);
+    /// ```
+    fn cmp_by<T, U, F>(self, f: F) -> Ordering
+    where
+        Self: ParallelIterator<Item = (T, U)>,
+        F: Fn(T, U) -> Ordering + Sync,
+    {
+        self.map(|(t, u)| f(t, u))
+            .find_first(|&ordering| ordering != Ordering::Equal)
+            .unwrap_or(Ordering::Equal)
+    }
+
+    /// Compare the pairs of items produced by this iterator using
+    /// [lexicographic](https://en.wikipedia.org/wiki/Lexicographic_order)
+    /// order, after mapping them with `f`.
+    ///
+    /// See also the other comparison adaptors such as
+    /// [`cmp_by_keys()`](Self::cmp_by_keys),
+    /// [`partial_cmp_by_key()`](Self::partial_cmp_by_key) or
+    /// [`eq_by_key()`](Self::eq_by_key).
+    ///
+    /// ```
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+    /// # };
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use std::cmp::Ordering;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let lhs = [
+    ///     (1, "Lorem"),
+    ///     (2, "ipsum"),
+    ///     (3, "dolor"),
+    ///     (4, "sit"),
+    ///     (5, "amet"),
+    /// ];
+    /// let rhs = [
+    ///     (5, "Lorem"),
+    ///     (1, "ipsum"),
+    ///     (2, "dolor"),
+    ///     (3, "sit"),
+    ///     (4, "amet"),
+    /// ];
+    /// let ordering = (lhs.par_iter(), rhs.par_iter())
+    ///     .zip_eq()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .cmp_by_key(|x| x.0);
+    /// assert_eq!(ordering, Ordering::Less);
+    /// ```
+    fn cmp_by_key<T, A, F>(self, f: F) -> Ordering
+    where
+        Self: ParallelIterator<Item = (T, T)>,
+        F: Fn(T) -> A + Sync,
+        A: Ord,
+    {
+        self.cmp_by(|x, y| f(x).cmp(&f(y)))
+    }
+
+    /// Compare the pairs of items produced by this iterator using
+    /// [lexicographic](https://en.wikipedia.org/wiki/Lexicographic_order)
+    /// order, after mapping them with `f` and `g`.
+    ///
+    /// See also the other comparison adaptors such as
+    /// [`cmp_by_key()`](Self::cmp_by_key),
+    /// [`partial_cmp_by_keys()`](Self::partial_cmp_by_keys) or
+    /// [`eq_by_keys()`](Self::eq_by_keys).
+    ///
+    /// ```
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+    /// # };
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use std::cmp::Ordering;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let lhs = [(1, 1.0), (2, 2.0), (3, 3.0), (4, 4.0), (5, 5.0)];
+    /// let rhs = [
+    ///     (5, "Lorem"),
+    ///     (1, "ipsum"),
+    ///     (2, "dolor"),
+    ///     (3, "sit"),
+    ///     (4, "amet"),
+    /// ];
+    /// let ordering = (lhs.par_iter(), rhs.par_iter())
+    ///     .zip_eq()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .cmp_by_keys(|x| x.0, |y| y.0);
+    /// assert_eq!(ordering, Ordering::Less);
+    /// ```
+    fn cmp_by_keys<T, U, A, F, G>(self, f: F, g: G) -> Ordering
+    where
+        Self: ParallelIterator<Item = (T, U)>,
+        F: Fn(T) -> A + Sync,
+        G: Fn(U) -> A + Sync,
+        A: Ord,
+    {
+        self.cmp_by(|t, u| f(t).cmp(&g(u)))
+    }
+
     /// Returns a parallel iterator that produces items that are copied from the
     /// items of this iterator. This is useful if you have an iterator over
     /// [`&T`](reference) and want an iterator over `T`, when `T` is
@@ -1634,6 +1884,316 @@ pub trait ParallelIteratorExt: ParallelIterator {
         A: PartialEq<B>,
     {
         !self.eq_by_keys(f, g)
+    }
+
+    /// Compare the pairs of items produced by this iterator using
+    /// [lexicographic](https://en.wikipedia.org/wiki/Lexicographic_order)
+    /// order.
+    ///
+    /// See also [`partial_cmp_by()`](Self::partial_cmp_by),
+    /// [`partial_cmp_by_key()`](Self::partial_cmp_by_key) and
+    /// [`partial_cmp_by_keys()`](Self::partial_cmp_by_keys) to use custom
+    /// comparison functions, and [`cmp()`](Self::cmp) and its variants if the
+    /// items implement [`Ord`].
+    ///
+    /// If you only care about equality, [`eq()`](Self::eq), [`ne()`](Self::ne)
+    /// and their variants are more efficient.
+    ///
+    /// ```
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+    /// # };
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use std::cmp::Ordering;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let lhs = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+    /// let rhs = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+    /// let ordering = (lhs.par_iter(), rhs.par_iter())
+    ///     .zip_eq()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .partial_cmp();
+    /// assert_eq!(ordering, Some(Ordering::Equal));
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+    /// # };
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use std::cmp::Ordering;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let lhs = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+    /// let rhs = [10.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
+    /// let ordering = (lhs.par_iter(), rhs.par_iter())
+    ///     .zip_eq()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .partial_cmp();
+    /// assert_eq!(ordering, Some(Ordering::Less));
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+    /// # };
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use std::cmp::Ordering;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let lhs = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, f64::NAN];
+    /// let rhs = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, f64::NAN];
+    /// let ordering = (lhs.par_iter(), rhs.par_iter())
+    ///     .zip_eq()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .partial_cmp();
+    /// assert_eq!(ordering, None);
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+    /// # };
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use std::cmp::Ordering;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let lhs = [2.0, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN];
+    /// let rhs = [1.0, f64::NAN, f64::NAN, f64::NAN, f64::NAN, f64::NAN];
+    /// let ordering = (lhs.par_iter(), rhs.par_iter())
+    ///     .zip_eq()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .partial_cmp();
+    /// assert_eq!(ordering, Some(Ordering::Greater));
+    /// ```
+    ///
+    /// This returns [`Some(Ordering::Equal)`] if the iterator is empty.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use std::cmp::Ordering;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let pairs: [(f64, f64); 0] = [];
+    /// let ordering = pairs
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .partial_cmp();
+    /// assert_eq!(ordering, Some(Ordering::Equal));
+    /// ```
+    fn partial_cmp<T, U>(self) -> Option<Ordering>
+    where
+        Self: ParallelIterator<Item = (T, U)>,
+        T: PartialOrd<U>,
+    {
+        self.partial_cmp_by(|x, y| x.partial_cmp(&y))
+    }
+
+    /// Compare the pairs of items produced by this iterator using
+    /// [lexicographic](https://en.wikipedia.org/wiki/Lexicographic_order)
+    /// order with the comparison function `f`.
+    ///
+    /// See also the other comparison adaptors such as
+    /// [`partial_cmp()`](Self::partial_cmp) or [`cmp_by()`](Self::cmp_by).
+    ///
+    /// ```
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+    /// # };
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use std::cmp::Ordering;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// /// Compare if one set is a subset of the other. Inputs must be sorted.
+    /// fn compare_sets(&lhs: &&[i32], &rhs: &&[i32]) -> Option<Ordering> {
+    ///     match (is_subset(lhs, rhs), is_subset(rhs, lhs)) {
+    ///         (false, false) => None,
+    ///         (true, false) => Some(Ordering::Less),
+    ///         (false, true) => Some(Ordering::Greater),
+    ///         (true, true) => Some(Ordering::Equal),
+    ///     }
+    /// }
+    ///
+    /// /// Returns true if the first argument is a subset of the second. Inputs must be sorted.
+    /// fn is_subset(lhs: &[i32], rhs: &[i32]) -> bool {
+    ///     /* Implementation details omitted */
+    /// #    assert!(lhs.is_sorted());
+    /// #    assert!(rhs.is_sorted());
+    /// #    let mut lit = lhs.iter().peekable();
+    /// #    let mut rit = rhs.iter().peekable();
+    /// #    loop {
+    /// #        match (lit.peek(), rit.peek()) {
+    /// #            (None, _) => return true,
+    /// #            (Some(_), None) => return false,
+    /// #            (Some(a), Some(b)) => match a.cmp(&b) {
+    /// #                Ordering::Less => return false,
+    /// #                Ordering::Equal => {
+    /// #                    lit.next();
+    /// #                    rit.next();
+    /// #                }
+    /// #                Ordering::Greater => {
+    /// #                    rit.next();
+    /// #                }
+    /// #            },
+    /// #        }
+    /// #    }
+    /// }
+    ///
+    /// let lhs: [&[_]; 5] = [&[1], &[2], &[3], &[4], &[5]];
+    /// let rhs: [&[_]; 5] = [&[1], &[2], &[3], &[4], &[5]];
+    /// let ordering = (lhs.par_iter(), rhs.par_iter())
+    ///     .zip_eq()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .partial_cmp_by(compare_sets);
+    /// // The comparison is [Equal, Equal, Equal, Equal, Equal] -> Equal
+    /// assert_eq!(ordering, Some(Ordering::Equal));
+    ///
+    /// let lhs: [&[_]; 5] = [&[1], &[2, 7], &[3], &[4], &[5]];
+    /// let rhs: [&[_]; 5] = [&[1, 6], &[2], &[8], &[9], &[10]];
+    /// let ordering = (lhs.par_iter(), rhs.par_iter())
+    ///     .zip_eq()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .partial_cmp_by(compare_sets);
+    /// // The comparison is [Less, Greater, None, None, None] -> Less
+    /// assert_eq!(ordering, Some(Ordering::Less));
+    ///
+    /// let lhs: [&[_]; 5] = [&[1], &[2], &[3], &[4], &[5]];
+    /// let rhs: [&[_]; 5] = [&[6], &[2], &[3], &[4], &[5]];
+    /// let ordering = (lhs.par_iter(), rhs.par_iter())
+    ///     .zip_eq()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .partial_cmp_by(compare_sets);
+    /// // The comparison is [None, Equal, Equal, Equal, Equal] -> None
+    /// assert_eq!(ordering, None);
+    /// ```
+    fn partial_cmp_by<T, U, F>(self, f: F) -> Option<Ordering>
+    where
+        Self: ParallelIterator<Item = (T, U)>,
+        F: Fn(T, U) -> Option<Ordering> + Sync,
+    {
+        self.map(|(t, u)| f(t, u))
+            .find_first(|&ordering| ordering != Some(Ordering::Equal))
+            .unwrap_or(Some(Ordering::Equal))
+    }
+
+    /// Compare the pairs of items produced by this iterator using
+    /// [lexicographic](https://en.wikipedia.org/wiki/Lexicographic_order)
+    /// order, after mapping them with `f`.
+    ///
+    /// See also the other comparison adaptors such as
+    /// [`partial_cmp_by_keys()`](Self::partial_cmp_by_keys),
+    /// [`cmp_by_key()`](Self::cmp_by_key) or [`eq_by_key()`](Self::eq_by_key).
+    ///
+    /// ```
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+    /// # };
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use std::cmp::Ordering;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let lhs = [
+    ///     (1.0, "Lorem"),
+    ///     (2.0, "ipsum"),
+    ///     (f64::NAN, "dolor"),
+    ///     (4.0, "sit"),
+    ///     (5.0, "amet"),
+    /// ];
+    /// let rhs = [
+    ///     (5.0, "Lorem"),
+    ///     (1.0, "ipsum"),
+    ///     (2.0, "dolor"),
+    ///     (3.0, "sit"),
+    ///     (f64::NAN, "amet"),
+    /// ];
+    /// let ordering = (lhs.par_iter(), rhs.par_iter())
+    ///     .zip_eq()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .partial_cmp_by_key(|x| x.0);
+    /// assert_eq!(ordering, Some(Ordering::Less));
+    /// ```
+    fn partial_cmp_by_key<T, A, F>(self, f: F) -> Option<Ordering>
+    where
+        Self: ParallelIterator<Item = (T, T)>,
+        F: Fn(T) -> A + Sync,
+        A: PartialOrd,
+    {
+        self.partial_cmp_by(|x, y| f(x).partial_cmp(&f(y)))
+    }
+
+    /// Compare the pairs of items produced by this iterator using
+    /// [lexicographic](https://en.wikipedia.org/wiki/Lexicographic_order)
+    /// order, after mapping them with `f` and `g`.
+    ///
+    /// See also the other comparison adaptors such as
+    /// [`partial_cmp_by_key()`](Self::partial_cmp_by_key),
+    /// [`cmp_by_keys()`](Self::cmp_by_keys) or
+    /// [`eq_by_keys()`](Self::eq_by_keys).
+    ///
+    /// ```
+    /// # use paralight::iter::{
+    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+    /// # };
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use std::cmp::Ordering;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let lhs = [(1, 1.0), (2, 2.0), (3, 3.0), (4, f64::NAN), (5, 5.0)];
+    /// let rhs = [
+    ///     (5.0, "Lorem"),
+    ///     (1.0, "ipsum"),
+    ///     (f64::NAN, "dolor"),
+    ///     (3.0, "sit"),
+    ///     (4.0, "amet"),
+    /// ];
+    /// let ordering = (lhs.par_iter(), rhs.par_iter())
+    ///     .zip_eq()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .partial_cmp_by_keys(|x| x.1, |y| y.0);
+    /// assert_eq!(ordering, Some(Ordering::Less));
+    /// ```
+    fn partial_cmp_by_keys<T, U, A, B, F, G>(self, f: F, g: G) -> Option<Ordering>
+    where
+        Self: ParallelIterator<Item = (T, U)>,
+        F: Fn(T) -> A + Sync,
+        G: Fn(U) -> B + Sync,
+        A: PartialOrd<B>,
+    {
+        self.partial_cmp_by(|t, u| f(t).partial_cmp(&g(u)))
     }
 
     /// Returns the product of the items produced by this iterator.

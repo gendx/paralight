@@ -40,7 +40,7 @@ mod test {
     use std::cell::Cell;
     use std::collections::HashSet;
     use std::rc::Rc;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::atomic::AtomicU64;
     #[cfg(all(not(miri), feature = "log"))]
     use std::sync::LazyLock;
     use std::sync::Mutex;
@@ -154,6 +154,10 @@ mod test {
                 test_adaptor_all,
                 test_adaptor_any,
                 test_adaptor_cloned,
+                test_adaptor_cmp,
+                test_adaptor_cmp_by,
+                test_adaptor_cmp_by_key,
+                test_adaptor_cmp_by_keys,
                 test_adaptor_copied,
                 test_adaptor_eq,
                 test_adaptor_eq_by_key,
@@ -176,6 +180,10 @@ mod test {
                 test_adaptor_ne,
                 test_adaptor_ne_by_key,
                 test_adaptor_ne_by_keys,
+                test_adaptor_partial_cmp,
+                test_adaptor_partial_cmp_by,
+                test_adaptor_partial_cmp_by_key,
+                test_adaptor_partial_cmp_by_keys,
                 test_adaptor_product,
                 test_adaptor_reduce,
                 test_adaptor_sum,
@@ -1460,6 +1468,145 @@ mod test {
         assert_eq!(*sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
+    fn test_adaptor_cmp(range_strategy: RangeStrategy) {
+        use std::cmp::Ordering;
+
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let ordering = (input.par_iter(), input.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .cmp();
+        assert_eq!(ordering, Ordering::Equal);
+
+        let left = (0..INPUT_LEN).collect::<Vec<u64>>();
+        let right = (1..=INPUT_LEN).collect::<Vec<u64>>();
+        let ordering = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .cmp();
+        assert_eq!(ordering, Ordering::Less);
+
+        let left = std::iter::once(INPUT_LEN)
+            .chain(0..INPUT_LEN)
+            .collect::<Vec<u64>>();
+        let right = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let ordering = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .cmp();
+        assert_eq!(ordering, Ordering::Greater);
+    }
+
+    fn test_adaptor_cmp_by(range_strategy: RangeStrategy) {
+        use std::cmp::Ordering;
+
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let left = (0..=INPUT_LEN).map(|i| (i, 0)).collect::<Vec<(u64, u64)>>();
+        let right = (0..=INPUT_LEN).map(|i| (0, i)).collect::<Vec<(u64, u64)>>();
+        let ordering = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .cmp_by(|x, y| x.0.cmp(&y.1).then(x.1.cmp(&y.0)));
+        assert_eq!(ordering, Ordering::Equal);
+
+        let left = (0..=INPUT_LEN).map(|i| (i, 0)).collect::<Vec<(u64, u64)>>();
+        let right = (0..=INPUT_LEN).map(|i| (1, i)).collect::<Vec<(u64, u64)>>();
+        let ordering = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .cmp_by(|x, y| x.0.cmp(&y.1).then(x.1.cmp(&y.0)));
+        assert_eq!(ordering, Ordering::Less);
+    }
+
+    fn test_adaptor_cmp_by_key(range_strategy: RangeStrategy) {
+        use std::cmp::Ordering;
+
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let left = (0..=INPUT_LEN).map(|i| (i, 0)).collect::<Vec<(u64, u64)>>();
+        let right = (0..=INPUT_LEN).map(|i| (i, 1)).collect::<Vec<(u64, u64)>>();
+        let ordering = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .cmp_by_key(|x| x.0);
+        assert_eq!(ordering, Ordering::Equal);
+
+        let left = (0..INPUT_LEN).map(|i| (i, 0)).collect::<Vec<(u64, u64)>>();
+        let right = (1..=INPUT_LEN).map(|i| (i, 1)).collect::<Vec<(u64, u64)>>();
+        let ordering = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .cmp_by_key(|x| x.0);
+        assert_eq!(ordering, Ordering::Less);
+
+        let left = std::iter::once(INPUT_LEN)
+            .chain(0..INPUT_LEN)
+            .map(|i| (i, 0))
+            .collect::<Vec<(u64, u64)>>();
+        let right = (0..=INPUT_LEN).map(|i| (i, 1)).collect::<Vec<(u64, u64)>>();
+        let ordering = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .cmp_by_key(|x| x.0);
+        assert_eq!(ordering, Ordering::Greater);
+    }
+
+    fn test_adaptor_cmp_by_keys(range_strategy: RangeStrategy) {
+        use std::cmp::Ordering;
+
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let left = (0..=INPUT_LEN).map(|i| (i, 0)).collect::<Vec<(u64, u64)>>();
+        let right = (0..=INPUT_LEN).map(|i| (1, i)).collect::<Vec<(u64, u64)>>();
+        let ordering = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .cmp_by_keys(|x| x.0, |x| x.1);
+        assert_eq!(ordering, Ordering::Equal);
+
+        let left = (0..INPUT_LEN).map(|i| (i, 0)).collect::<Vec<(u64, u64)>>();
+        let right = (1..=INPUT_LEN).map(|i| (1, i)).collect::<Vec<(u64, u64)>>();
+        let ordering = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .cmp_by_keys(|x| x.0, |x| x.1);
+        assert_eq!(ordering, Ordering::Less);
+
+        let left = std::iter::once(INPUT_LEN)
+            .chain(0..INPUT_LEN)
+            .map(|i| (i, 0))
+            .collect::<Vec<(u64, u64)>>();
+        let right = (0..=INPUT_LEN).map(|i| (1, i)).collect::<Vec<(u64, u64)>>();
+        let ordering = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .cmp_by_keys(|x| x.0, |x| x.1);
+        assert_eq!(ordering, Ordering::Greater);
+    }
+
     fn test_adaptor_copied(range_strategy: RangeStrategy) {
         let mut thread_pool = ThreadPoolBuilder {
             num_threads: ThreadCount::AvailableParallelism,
@@ -1736,6 +1883,8 @@ mod test {
     }
 
     fn test_adaptor_inspect(range_strategy: RangeStrategy) {
+        use std::sync::atomic::Ordering;
+
         let mut thread_pool = ThreadPoolBuilder {
             num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
@@ -2096,6 +2245,267 @@ mod test {
         assert!(not_equal);
     }
 
+    fn test_adaptor_partial_cmp(range_strategy: RangeStrategy) {
+        use std::cmp::Ordering;
+
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..=INPUT_LEN).map(|x| x as f64).collect::<Vec<f64>>();
+        let ordering = (input.par_iter(), input.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .partial_cmp();
+        assert_eq!(ordering, Some(Ordering::Equal));
+
+        let ordering = (
+            input.par_iter().take(INPUT_LEN as usize),
+            input.par_iter().skip(1),
+        )
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .partial_cmp();
+        assert_eq!(ordering, Some(Ordering::Less));
+
+        let left = std::iter::once(INPUT_LEN)
+            .chain(0..INPUT_LEN)
+            .map(|x| x as f64)
+            .collect::<Vec<f64>>();
+        let right = (0..=INPUT_LEN).map(|x| x as f64).collect::<Vec<f64>>();
+        let ordering = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .partial_cmp();
+        assert_eq!(ordering, Some(Ordering::Greater));
+
+        let left = std::iter::once(f64::NAN)
+            .chain((1..=INPUT_LEN).map(|x| x as f64))
+            .collect::<Vec<f64>>();
+        let right = (0..=INPUT_LEN).map(|x| x as f64).collect::<Vec<f64>>();
+        let ordering = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .partial_cmp();
+        assert_eq!(ordering, None);
+
+        let left = std::iter::once(INPUT_LEN as f64)
+            .chain((0..INPUT_LEN).map(|_| f64::NAN))
+            .collect::<Vec<f64>>();
+        let right = (0..=INPUT_LEN).map(|x| x as f64).collect::<Vec<f64>>();
+        let ordering = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .partial_cmp();
+        assert_eq!(ordering, Some(Ordering::Greater));
+    }
+
+    fn test_adaptor_partial_cmp_by(range_strategy: RangeStrategy) {
+        use std::cmp::Ordering;
+
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let left = (0..=INPUT_LEN)
+            .map(|i| (i as f64, 0.0))
+            .collect::<Vec<(f64, f64)>>();
+        let right = (0..=INPUT_LEN)
+            .map(|i| (0.0, i as f64))
+            .collect::<Vec<(f64, f64)>>();
+        let ordering = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .partial_cmp_by(|x, y| (x.0, x.1).partial_cmp(&(y.1, y.0)));
+        assert_eq!(ordering, Some(Ordering::Equal));
+
+        let left = (0..=INPUT_LEN)
+            .map(|i| (i as f64, 0.0))
+            .collect::<Vec<(f64, f64)>>();
+        let right = (0..=INPUT_LEN)
+            .map(|i| (1.0, i as f64))
+            .collect::<Vec<(f64, f64)>>();
+        let ordering = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .partial_cmp_by(|x, y| (x.0, x.1).partial_cmp(&(y.1, y.0)));
+        assert_eq!(ordering, Some(Ordering::Less));
+
+        let left = (0..=INPUT_LEN)
+            .map(|i| (if i == INPUT_LEN { f64::NAN } else { i as f64 }, 0.0))
+            .collect::<Vec<(f64, f64)>>();
+        let right = (0..=INPUT_LEN)
+            .map(|i| (0.0, i as f64))
+            .collect::<Vec<(f64, f64)>>();
+        let ordering = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .partial_cmp_by(|x, y| (x.0, x.1).partial_cmp(&(y.1, y.0)));
+        assert_eq!(ordering, None);
+
+        let left = (0..=INPUT_LEN)
+            .map(|i| (if i == 0 { i as f64 } else { f64::NAN }, 0.0))
+            .collect::<Vec<(f64, f64)>>();
+        let right = (0..=INPUT_LEN)
+            .map(|i| (1.0, i as f64))
+            .collect::<Vec<(f64, f64)>>();
+        let ordering = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .partial_cmp_by(|x, y| (x.0, x.1).partial_cmp(&(y.1, y.0)));
+        assert_eq!(ordering, Some(Ordering::Less));
+    }
+
+    fn test_adaptor_partial_cmp_by_key(range_strategy: RangeStrategy) {
+        use std::cmp::Ordering;
+
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let left = (0..=INPUT_LEN)
+            .map(|i| (i as f64, 0.0))
+            .collect::<Vec<(f64, f64)>>();
+        let right = (0..=INPUT_LEN)
+            .map(|i| (i as f64, 1.0))
+            .collect::<Vec<(f64, f64)>>();
+        let ordering = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .partial_cmp_by_key(|x| x.0);
+        assert_eq!(ordering, Some(Ordering::Equal));
+
+        let left = (0..INPUT_LEN)
+            .map(|i| (i as f64, 0.0))
+            .collect::<Vec<(f64, f64)>>();
+        let right = (1..=INPUT_LEN)
+            .map(|i| (i as f64, 1.0))
+            .collect::<Vec<(f64, f64)>>();
+        let ordering = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .partial_cmp_by_key(|x| x.0);
+        assert_eq!(ordering, Some(Ordering::Less));
+
+        let left = std::iter::once(INPUT_LEN)
+            .chain(0..INPUT_LEN)
+            .map(|i| (i as f64, 0.0))
+            .collect::<Vec<(f64, f64)>>();
+        let right = (0..=INPUT_LEN)
+            .map(|i| (i as f64, 1.0))
+            .collect::<Vec<(f64, f64)>>();
+        let ordering = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .partial_cmp_by_key(|x| x.0);
+        assert_eq!(ordering, Some(Ordering::Greater));
+
+        let left = (0..=INPUT_LEN)
+            .map(|i| (if i == INPUT_LEN { f64::NAN } else { i as f64 }, 0.0))
+            .collect::<Vec<(f64, f64)>>();
+        let right = (0..=INPUT_LEN)
+            .map(|i| (i as f64, 1.0))
+            .collect::<Vec<(f64, f64)>>();
+        let ordering = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .partial_cmp_by_key(|x| x.0);
+        assert_eq!(ordering, None);
+
+        let left = (0..INPUT_LEN)
+            .map(|i| (if i == 0 { i as f64 } else { f64::NAN }, 0.0))
+            .collect::<Vec<(f64, f64)>>();
+        let right = (1..=INPUT_LEN)
+            .map(|i| (i as f64, 1.0))
+            .collect::<Vec<(f64, f64)>>();
+        let ordering = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .partial_cmp_by_key(|x| x.0);
+        assert_eq!(ordering, Some(Ordering::Less));
+    }
+
+    fn test_adaptor_partial_cmp_by_keys(range_strategy: RangeStrategy) {
+        use std::cmp::Ordering;
+
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let left = (0..=INPUT_LEN)
+            .map(|i| (i as f64, 0.0))
+            .collect::<Vec<(f64, f64)>>();
+        let right = (0..=INPUT_LEN)
+            .map(|i| (1.0, i as f64))
+            .collect::<Vec<(f64, f64)>>();
+        let ordering = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .partial_cmp_by_keys(|x| x.0, |x| x.1);
+        assert_eq!(ordering, Some(Ordering::Equal));
+
+        let left = (0..INPUT_LEN)
+            .map(|i| (i as f64, 0.0))
+            .collect::<Vec<(f64, f64)>>();
+        let right = (1..=INPUT_LEN)
+            .map(|i| (1.0, i as f64))
+            .collect::<Vec<(f64, f64)>>();
+        let ordering = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .partial_cmp_by_keys(|x| x.0, |x| x.1);
+        assert_eq!(ordering, Some(Ordering::Less));
+
+        let left = std::iter::once(INPUT_LEN)
+            .chain(0..INPUT_LEN)
+            .map(|i| (i as f64, 0.0))
+            .collect::<Vec<(f64, f64)>>();
+        let right = (0..=INPUT_LEN)
+            .map(|i| (1.0, i as f64))
+            .collect::<Vec<(f64, f64)>>();
+        let ordering = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .partial_cmp_by_keys(|x| x.0, |x| x.1);
+        assert_eq!(ordering, Some(Ordering::Greater));
+
+        let left = (0..=INPUT_LEN)
+            .map(|i| (if i == INPUT_LEN { f64::NAN } else { i as f64 }, 0.0))
+            .collect::<Vec<(f64, f64)>>();
+        let right = (0..=INPUT_LEN)
+            .map(|i| (1.0, i as f64))
+            .collect::<Vec<(f64, f64)>>();
+        let ordering = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .partial_cmp_by_keys(|x| x.0, |x| x.1);
+        assert_eq!(ordering, None);
+
+        let left = (0..INPUT_LEN)
+            .map(|i| (if i == 0 { i as f64 } else { f64::NAN }, 0.0))
+            .collect::<Vec<(f64, f64)>>();
+        let right = (1..=INPUT_LEN)
+            .map(|i| (1.0, i as f64))
+            .collect::<Vec<(f64, f64)>>();
+        let ordering = (left.par_iter(), right.par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .partial_cmp_by_keys(|x| x.0, |x| x.1);
+        assert_eq!(ordering, Some(Ordering::Less));
+    }
+
     fn test_adaptor_product(range_strategy: RangeStrategy) {
         let mut thread_pool = ThreadPoolBuilder {
             num_threads: ThreadCount::AvailableParallelism,
@@ -2146,6 +2556,8 @@ mod test {
     }
 
     fn test_adaptor_try_for_each(range_strategy: RangeStrategy) {
+        use std::sync::atomic::Ordering;
+
         let mut thread_pool = ThreadPoolBuilder {
             num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
@@ -2194,6 +2606,8 @@ mod test {
 
     #[cfg(feature = "nightly")]
     fn test_adaptor_try_for_each_option(range_strategy: RangeStrategy) {
+        use std::sync::atomic::Ordering;
+
         let mut thread_pool = ThreadPoolBuilder {
             num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
@@ -2240,6 +2654,8 @@ mod test {
     }
 
     fn test_adaptor_try_for_each_init(range_strategy: RangeStrategy) {
+        use std::sync::atomic::Ordering;
+
         let mut thread_pool = ThreadPoolBuilder {
             num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
@@ -2291,6 +2707,8 @@ mod test {
 
     #[cfg(feature = "nightly")]
     fn test_adaptor_try_for_each_init_option(range_strategy: RangeStrategy) {
+        use std::sync::atomic::Ordering;
+
         let mut thread_pool = ThreadPoolBuilder {
             num_threads: ThreadCount::AvailableParallelism,
             range_strategy,
