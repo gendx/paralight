@@ -11,6 +11,7 @@
 mod source;
 
 use crate::Accumulator;
+use crossbeam_utils::CachePadded;
 pub use source::range::{RangeInclusiveParallelSource, RangeParallelSource};
 pub use source::slice::{MutSliceParallelSource, SliceParallelSource};
 pub use source::zip::{ZipEq, ZipMax, ZipMin, ZipableSource};
@@ -23,6 +24,7 @@ use std::iter::{Product, Sum};
 use std::ops::ControlFlow;
 #[cfg(feature = "nightly")]
 use std::ops::Try;
+use std::sync::atomic::AtomicBool;
 
 /// An iterator to process items in parallel. The [`ParallelIteratorExt`] trait
 /// provides additional methods (iterator adaptors) as an extension of this
@@ -59,16 +61,25 @@ pub trait ParallelIterator: Sized {
     /// let sum = input
     ///     .par_iter()
     ///     .with_thread_pool(&mut thread_pool)
-    ///     .pipeline(|| 0, |acc, _, x| acc + x, |acc| acc, |x, y| x + y);
+    ///     .pipeline(|| 0, |acc, x| acc + x, |acc| acc, |x, y| x + y);
     /// assert_eq!(sum, 5 * 11);
     /// ```
     fn pipeline<Output: Send, Accum>(
         self,
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize, Self::Item) -> Accum + Sync,
+        process_item: impl Fn(Accum, Self::Item) -> Accum + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
-    ) -> Output;
+    ) -> Output {
+        self.iter_pipeline(
+            IterAccumulator {
+                init,
+                process_item,
+                finalize,
+            },
+            IterReducer { reduce },
+        )
+    }
 
     /// Runs the pipeline defined by the given functions on this iterator.
     ///
@@ -99,7 +110,7 @@ pub trait ParallelIterator: Sized {
     ///     .with_thread_pool(&mut thread_pool)
     ///     .short_circuiting_pipeline(
     ///         || (),
-    ///         |_, _, x| {
+    ///         |_, x| {
     ///             if x % 2 == 0 {
     ///                 ControlFlow::Break(())
     ///             } else {
@@ -114,10 +125,20 @@ pub trait ParallelIterator: Sized {
     fn short_circuiting_pipeline<Output: Send, Accum, Break>(
         self,
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize, Self::Item) -> ControlFlow<Break, Accum> + Sync,
+        process_item: impl Fn(Accum, Self::Item) -> ControlFlow<Break, Accum> + Sync,
         finalize: impl Fn(ControlFlow<Break, Accum>) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
-    ) -> Output;
+    ) -> Output {
+        self.iter_pipeline(
+            ShortCircuitingAccumulator {
+                fuse: Fuse::new(),
+                init,
+                process_item,
+                finalize,
+            },
+            IterReducer { reduce },
+        )
+    }
 
     /// Runs the pipeline defined by the given functions on this iterator.
     ///
@@ -229,6 +250,117 @@ pub trait ParallelIterator: Sized {
     ) -> Output;
 }
 
+struct IterReducer<Reduce> {
+    reduce: Reduce,
+}
+
+impl<Output, Reduce> Accumulator<Output, Output> for IterReducer<Reduce>
+where
+    Reduce: Fn(Output, Output) -> Output,
+{
+    fn accumulate(&self, iter: impl Iterator<Item = Output>) -> Output {
+        iter.reduce(&self.reduce).unwrap()
+    }
+}
+
+struct IterAccumulator<Init, ProcessItem, Finalize> {
+    init: Init,
+    process_item: ProcessItem,
+    finalize: Finalize,
+}
+
+impl<Item, Accum, Output, Init, ProcessItem, Finalize> Accumulator<Item, Output>
+    for IterAccumulator<Init, ProcessItem, Finalize>
+where
+    Init: Fn() -> Accum,
+    ProcessItem: Fn(Accum, Item) -> Accum,
+    Finalize: Fn(Accum) -> Output,
+{
+    fn accumulate(&self, iter: impl Iterator<Item = Item>) -> Output {
+        let mut accumulator = (self.init)();
+        for item in iter {
+            accumulator = (self.process_item)(accumulator, item);
+        }
+        (self.finalize)(accumulator)
+    }
+}
+
+struct ShortCircuitingAccumulator<Init, ProcessItem, Finalize> {
+    fuse: Fuse,
+    init: Init,
+    process_item: ProcessItem,
+    finalize: Finalize,
+}
+
+impl<Item, Accum, Break, Output, Init, ProcessItem, Finalize> Accumulator<Item, Output>
+    for ShortCircuitingAccumulator<Init, ProcessItem, Finalize>
+where
+    Init: Fn() -> Accum,
+    ProcessItem: Fn(Accum, Item) -> ControlFlow<Break, Accum>,
+    Finalize: Fn(ControlFlow<Break, Accum>) -> Output,
+{
+    fn accumulate(&self, mut iter: impl Iterator<Item = Item>) -> Output {
+        let mut accumulator = (self.init)();
+        let result = 'outer: {
+            while let FuseState::Unset = self.fuse.load() {
+                let Some(item) = iter.next() else {
+                    break;
+                };
+
+                match (self.process_item)(accumulator, item) {
+                    ControlFlow::Continue(acc) => {
+                        accumulator = acc;
+                        continue;
+                    }
+                    control_flow @ ControlFlow::Break(_) => {
+                        self.fuse.set();
+                        break 'outer control_flow;
+                    }
+                }
+            }
+            ControlFlow::Continue(accumulator)
+        };
+        (self.finalize)(result)
+    }
+}
+
+/// A fuse is an atomic object that starts unset and can transition once to the
+/// set state.
+///
+/// Under the hood, this contains an atomic boolean aligned to a cache line to
+/// avoid any risk of false sharing performance overhead.
+struct Fuse(CachePadded<AtomicBool>);
+
+/// State of a [`Fuse`].
+enum FuseState {
+    Unset,
+    Set,
+}
+
+impl Fuse {
+    /// Creates a new fuse in the [`Unset`](FuseState::Unset) state.
+    fn new() -> Self {
+        Fuse(CachePadded::new(AtomicBool::new(false)))
+    }
+
+    /// Reads the current state of this fuse.
+    fn load(&self) -> FuseState {
+        use std::sync::atomic::Ordering;
+
+        match self.0.load(Ordering::Relaxed) {
+            false => FuseState::Unset,
+            true => FuseState::Set,
+        }
+    }
+
+    /// Sets this fuse to the [`Set`](FuseState::Set) state.
+    fn set(&self) {
+        use std::sync::atomic::Ordering;
+
+        self.0.store(true, Ordering::Relaxed)
+    }
+}
+
 /// An internal object describing how to transform items in a
 /// [`ParallelAdaptor`].
 pub struct ParallelAdaptorDescriptor<
@@ -286,44 +418,6 @@ where
 
 impl<T: ParallelAdaptor> ParallelIterator for T {
     type Item = T::Item;
-
-    fn pipeline<Output: Send, Accum>(
-        self,
-        init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize, Self::Item) -> Accum + Sync,
-        finalize: impl Fn(Accum) -> Output + Sync,
-        reduce: impl Fn(Output, Output) -> Output,
-    ) -> Output {
-        let descriptor = self.descriptor();
-        descriptor.inner.pipeline(
-            init,
-            |accum, index, item| match (descriptor.transform_item)(item) {
-                Some(item) => process_item(accum, index, item),
-                None => accum,
-            },
-            finalize,
-            reduce,
-        )
-    }
-
-    fn short_circuiting_pipeline<Output: Send, Accum, Break>(
-        self,
-        init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize, Self::Item) -> ControlFlow<Break, Accum> + Sync,
-        finalize: impl Fn(ControlFlow<Break, Accum>) -> Output + Sync,
-        reduce: impl Fn(Output, Output) -> Output,
-    ) -> Output {
-        let descriptor = self.descriptor();
-        descriptor.inner.short_circuiting_pipeline(
-            init,
-            |accum, index, item| match (descriptor.transform_item)(item) {
-                Some(item) => process_item(accum, index, item),
-                None => ControlFlow::Continue(accum),
-            },
-            finalize,
-            reduce,
-        )
-    }
 
     fn upper_bounded_pipeline<Output: Send, Accum>(
         self,
@@ -415,7 +509,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     {
         self.short_circuiting_pipeline(
             || (),
-            |_, _, item| match f(item) {
+            |_, item| match f(item) {
                 true => ControlFlow::Continue(()),
                 false => ControlFlow::Break(()),
             },
@@ -476,7 +570,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     {
         self.short_circuiting_pipeline(
             || (),
-            |_, _, item| match f(item) {
+            |_, item| match f(item) {
                 true => ControlFlow::Break(()),
                 false => ControlFlow::Continue(()),
             },
@@ -1091,7 +1185,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///     .par_iter()
     ///     .with_thread_pool(&mut thread_pool)
     ///     .filter_map(|&x| if x % 2 == 0 { Some(Rc::new(x)) } else { None })
-    ///     .pipeline(|| 0, |acc, _, x| acc + *x, |acc| acc, |a, b| a + b);
+    ///     .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
     /// assert_eq!(sum_even, 5 * 6);
     /// ```
     fn filter_map<T, F>(self, f: F) -> FilterMap<Self, F>
@@ -1143,7 +1237,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     {
         self.short_circuiting_pipeline(
             || (),
-            |_, _, item| match f(&item) {
+            |_, item| match f(&item) {
                 true => ControlFlow::Break(item),
                 false => ControlFlow::Continue(()),
             },
@@ -1253,7 +1347,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     {
         self.pipeline(
             /* init */ || (),
-            /* process_item */ |(), _index, item| f(item),
+            /* process_item */ |(), item| f(item),
             /* finalize */ |()| (),
             /* reduce */ |(), ()| (),
         )
@@ -1297,7 +1391,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     {
         self.pipeline(
             init,
-            |mut t, _index, item| {
+            |mut t, item| {
                 f(&mut t, item);
                 t
             },
@@ -1388,7 +1482,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///     .par_iter()
     ///     .with_thread_pool(&mut thread_pool)
     ///     .map(|&x| Rc::new(x))
-    ///     .pipeline(|| 0, |acc, _, x| acc + *x, |acc| acc, |a, b| a + b);
+    ///     .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
     /// assert_eq!(sum, 5 * 11);
     /// ```
     fn map<T, F>(self, f: F) -> Map<Self, F>
@@ -1464,7 +1558,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     {
         self.pipeline(
             || None,
-            |max, _, x| match max {
+            |max, x| match max {
                 None => Some(x),
                 Some(max) => Some(max.max(x)),
             },
@@ -1504,7 +1598,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     {
         self.pipeline(
             || None,
-            |max, _, x| match max {
+            |max, x| match max {
                 None => Some(x),
                 Some(max) => match f(&max, &x) {
                     Ordering::Greater | Ordering::Equal => Some(max),
@@ -1580,7 +1674,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     {
         self.pipeline(
             || None,
-            |min, _, x| match min {
+            |min, x| match min {
                 None => Some(x),
                 Some(min) => Some(min.min(x)),
             },
@@ -1620,7 +1714,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     {
         self.pipeline(
             || None,
-            |min, _, x| match min {
+            |min, x| match min {
                 None => Some(x),
                 Some(min) => match f(&min, &x) {
                     Ordering::Less | Ordering::Equal => Some(min),
@@ -2276,7 +2370,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
         F: Fn(Self::Item, Self::Item) -> Self::Item + Sync,
         Self::Item: Send,
     {
-        self.pipeline(init, |acc, _index, item| f(acc, item), |acc| acc, &f)
+        self.pipeline(init, &f, |acc| acc, &f)
     }
 
     /// Returns the sum of the items produced by this iterator.
@@ -2389,7 +2483,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     {
         self.short_circuiting_pipeline(
             || (),
-            |_, _, item| match f(item) {
+            |_, item| match f(item) {
                 Ok(()) => ControlFlow::Continue(()),
                 Err(e) => ControlFlow::Break(e),
             },
@@ -2486,7 +2580,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     {
         self.short_circuiting_pipeline(
             || (),
-            |_, _, item| f(item).branch(),
+            |_, item| f(item).branch(),
             |result| match result {
                 ControlFlow::Continue(()) => R::from_output(()),
                 ControlFlow::Break(e) => R::from_residual(e),
@@ -2545,7 +2639,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     {
         self.short_circuiting_pipeline(
             init,
-            |mut t, _, item| match f(&mut t, item) {
+            |mut t, item| match f(&mut t, item) {
                 Ok(()) => ControlFlow::Continue(t),
                 Err(e) => ControlFlow::Break(e),
             },
@@ -2605,7 +2699,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
         self.short_circuiting_pipeline(
             init,
             // TODO(MSRV >= 1.83.0): Use ControlFlow::map_continue().
-            |mut t, _, item| match f(&mut t, item).branch() {
+            |mut t, item| match f(&mut t, item).branch() {
                 ControlFlow::Continue(()) => ControlFlow::Continue(t),
                 ControlFlow::Break(e) => ControlFlow::Break(e),
             },
@@ -2872,52 +2966,6 @@ where
     F: Fn(&mut I, Inner::Item) -> T + Sync,
 {
     type Item = T;
-
-    fn pipeline<Output: Send, Accum>(
-        self,
-        init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize, Self::Item) -> Accum + Sync,
-        finalize: impl Fn(Accum) -> Output + Sync,
-        reduce: impl Fn(Output, Output) -> Output,
-    ) -> Output {
-        self.inner.pipeline(
-            || ((self.init)(), init()),
-            |(mut i, accum), index, item| {
-                let accum = process_item(accum, index, (self.f)(&mut i, item));
-                (i, accum)
-            },
-            |(_, accum)| finalize(accum),
-            reduce,
-        )
-    }
-
-    fn short_circuiting_pipeline<Output: Send, Accum, Break>(
-        self,
-        init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize, Self::Item) -> ControlFlow<Break, Accum> + Sync,
-        finalize: impl Fn(ControlFlow<Break, Accum>) -> Output + Sync,
-        reduce: impl Fn(Output, Output) -> Output,
-    ) -> Output {
-        self.inner.short_circuiting_pipeline(
-            || ((self.init)(), init()),
-            |(mut i, accum), index, item| {
-                let accum = process_item(accum, index, (self.f)(&mut i, item));
-                // TODO(MSRV >= 1.83.0): Use ControlFlow::map_continue().
-                match accum {
-                    ControlFlow::Continue(accum) => ControlFlow::Continue((i, accum)),
-                    ControlFlow::Break(break_) => ControlFlow::Break(break_),
-                }
-            },
-            |result| {
-                // TODO(MSRV >= 1.83.0): Use ControlFlow::map_continue().
-                finalize(match result {
-                    ControlFlow::Continue((_, accum)) => ControlFlow::Continue(accum),
-                    ControlFlow::Break(break_) => ControlFlow::Break(break_),
-                })
-            },
-            reduce,
-        )
-    }
 
     fn upper_bounded_pipeline<Output: Send, Accum>(
         self,

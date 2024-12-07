@@ -788,40 +788,6 @@ pub struct BaseParallelIterator<'pool, S: ParallelSource> {
 impl<S: ParallelSource> ParallelIterator for BaseParallelIterator<'_, S> {
     type Item = S::Item;
 
-    fn pipeline<Output: Send, Accum>(
-        self,
-        init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize, Self::Item) -> Accum + Sync,
-        finalize: impl Fn(Accum) -> Output + Sync,
-        reduce: impl Fn(Output, Output) -> Output,
-    ) -> Output {
-        let source_descriptor = self.source.descriptor();
-        self.thread_pool.pipeline(
-            source_descriptor.len,
-            init,
-            |acc, index| process_item(acc, index, (source_descriptor.fetch_item)(index)),
-            finalize,
-            reduce,
-        )
-    }
-
-    fn short_circuiting_pipeline<Output: Send, Accum, Break>(
-        self,
-        init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize, Self::Item) -> ControlFlow<Break, Accum> + Sync,
-        finalize: impl Fn(ControlFlow<Break, Accum>) -> Output + Sync,
-        reduce: impl Fn(Output, Output) -> Output,
-    ) -> Output {
-        let source_descriptor = self.source.descriptor();
-        self.thread_pool.short_circuiting_pipeline(
-            source_descriptor.len,
-            init,
-            |acc, index| process_item(acc, index, (source_descriptor.fetch_item)(index)),
-            finalize,
-            reduce,
-        )
-    }
-
     fn upper_bounded_pipeline<Output: Send, Accum>(
         self,
         init: impl Fn() -> Accum + Sync,

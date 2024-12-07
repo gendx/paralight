@@ -33,7 +33,7 @@ use std::convert::TryFrom;
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::ops::ControlFlow;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
@@ -140,37 +140,6 @@ impl ThreadPool {
 
     /// Processes an input of the given length in parallel and returns the
     /// aggregated output.
-    pub(crate) fn pipeline<Output: Send, Accum>(
-        &mut self,
-        input_len: usize,
-        init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize) -> Accum + Sync,
-        finalize: impl Fn(Accum) -> Output + Sync,
-        reduce: impl Fn(Output, Output) -> Output,
-    ) -> Output {
-        self.inner
-            .pipeline(input_len, init, process_item, finalize, reduce)
-    }
-
-    /// Processes an input of the given length in parallel and returns the
-    /// aggregated output.
-    ///
-    /// With this variant, the pipeline may terminate early after any call to
-    /// `process_item` that returns [`ControlFlow::Break`].
-    pub(crate) fn short_circuiting_pipeline<Output: Send, Accum, Break>(
-        &mut self,
-        input_len: usize,
-        init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize) -> ControlFlow<Break, Accum> + Sync,
-        finalize: impl Fn(ControlFlow<Break, Accum>) -> Output + Sync,
-        reduce: impl Fn(Output, Output) -> Output,
-    ) -> Output {
-        self.inner
-            .short_circuiting_pipeline(input_len, init, process_item, finalize, reduce)
-    }
-
-    /// Processes an input of the given length in parallel and returns the
-    /// aggregated output.
     ///
     /// With this variant, the pipeline may skip processing items at larger
     /// indices whenever a call to `process_item` returns
@@ -245,49 +214,6 @@ impl ThreadPoolEnum {
         match self {
             ThreadPoolEnum::Fixed(inner) => inner.num_threads(),
             ThreadPoolEnum::WorkStealing(inner) => inner.num_threads(),
-        }
-    }
-
-    /// Processes an input of the given length in parallel and returns the
-    /// aggregated output.
-    fn pipeline<Output: Send, Accum>(
-        &mut self,
-        input_len: usize,
-        init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize) -> Accum + Sync,
-        finalize: impl Fn(Accum) -> Output + Sync,
-        reduce: impl Fn(Output, Output) -> Output,
-    ) -> Output {
-        match self {
-            ThreadPoolEnum::Fixed(inner) => {
-                inner.pipeline(input_len, init, process_item, finalize, reduce)
-            }
-            ThreadPoolEnum::WorkStealing(inner) => {
-                inner.pipeline(input_len, init, process_item, finalize, reduce)
-            }
-        }
-    }
-
-    /// Processes an input of the given length in parallel and returns the
-    /// aggregated output.
-    ///
-    /// With this variant, the pipeline may terminate early after any call to
-    /// `process_item` that returns [`ControlFlow::Break`].
-    fn short_circuiting_pipeline<Output: Send, Accum, Break>(
-        &mut self,
-        input_len: usize,
-        init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize) -> ControlFlow<Break, Accum> + Sync,
-        finalize: impl Fn(ControlFlow<Break, Accum>) -> Output + Sync,
-        reduce: impl Fn(Output, Output) -> Output,
-    ) -> Output {
-        match self {
-            ThreadPoolEnum::Fixed(inner) => {
-                inner.short_circuiting_pipeline(input_len, init, process_item, finalize, reduce)
-            }
-            ThreadPoolEnum::WorkStealing(inner) => {
-                inner.short_circuiting_pipeline(input_len, init, process_item, finalize, reduce)
-            }
         }
     }
 
@@ -442,72 +368,6 @@ impl<F: RangeFactory> ThreadPoolImpl<F> {
 
     /// Processes an input of the given length in parallel and returns the
     /// aggregated output.
-    fn pipeline<Output: Send, Accum>(
-        &mut self,
-        input_len: usize,
-        init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize) -> Accum + Sync,
-        finalize: impl Fn(Accum) -> Output + Sync,
-        reduce: impl Fn(Output, Output) -> Output,
-    ) -> Output {
-        self.range_orchestrator.reset_ranges(input_len);
-
-        let num_threads = self.threads.len();
-        let outputs = (0..num_threads)
-            .map(|_| Mutex::new(None))
-            .collect::<Arc<[_]>>();
-
-        self.pipeline.lend(&PipelineImpl {
-            outputs: outputs.clone(),
-            init,
-            process_item,
-            finalize,
-        });
-
-        outputs
-            .iter()
-            .map(move |output| output.lock().unwrap().take().unwrap())
-            .reduce(reduce)
-            .unwrap()
-    }
-
-    /// Processes an input of the given length in parallel and returns the
-    /// aggregated output.
-    ///
-    /// With this variant, the pipeline may terminate early after any call to
-    /// `process_item` that returns [`ControlFlow::Break`].
-    fn short_circuiting_pipeline<Output: Send, Accum, Break>(
-        &mut self,
-        input_len: usize,
-        init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize) -> ControlFlow<Break, Accum> + Sync,
-        finalize: impl Fn(ControlFlow<Break, Accum>) -> Output + Sync,
-        reduce: impl Fn(Output, Output) -> Output,
-    ) -> Output {
-        self.range_orchestrator.reset_ranges(input_len);
-
-        let num_threads = self.threads.len();
-        let outputs = (0..num_threads)
-            .map(|_| Mutex::new(None))
-            .collect::<Arc<[_]>>();
-
-        self.pipeline.lend(&ShortCircuitingPipelineImpl {
-            fuse: Fuse::new(),
-            outputs: outputs.clone(),
-            init,
-            process_item,
-            finalize,
-        });
-
-        outputs
-            .iter()
-            .map(move |output| output.lock().unwrap().take().unwrap())
-            .reduce(reduce)
-            .unwrap()
-    }
-
-    /// Processes an input of the given length in parallel and returns the
-    /// aggregated output.
     ///
     /// With this variant, the pipeline may skip processing items at larger
     /// indices whenever a call to `process_item` returns
@@ -606,89 +466,6 @@ impl<R: Range> LifetimeParameterized for DynLifetimeSyncPipeline<R> {
     type T<'a> = dyn Pipeline<R> + Sync + 'a;
 }
 
-struct PipelineImpl<
-    Output,
-    Accum,
-    Init: Fn() -> Accum,
-    ProcessItem: Fn(Accum, usize) -> Accum,
-    Finalize: Fn(Accum) -> Output,
-> {
-    outputs: Arc<[Mutex<Option<Output>>]>,
-    init: Init,
-    process_item: ProcessItem,
-    finalize: Finalize,
-}
-
-impl<R, Output, Accum, Init, ProcessItem, Finalize> Pipeline<R>
-    for PipelineImpl<Output, Accum, Init, ProcessItem, Finalize>
-where
-    R: Range,
-    Init: Fn() -> Accum,
-    ProcessItem: Fn(Accum, usize) -> Accum,
-    Finalize: Fn(Accum) -> Output,
-{
-    fn run(&self, worker_id: usize, range: &R) {
-        let mut accumulator = (self.init)();
-        for i in range.iter() {
-            accumulator = (self.process_item)(accumulator, i);
-        }
-        let output = (self.finalize)(accumulator);
-        *self.outputs[worker_id].lock().unwrap() = Some(output);
-    }
-}
-
-struct ShortCircuitingPipelineImpl<
-    Output,
-    Accum,
-    Break,
-    Init: Fn() -> Accum,
-    ProcessItem: Fn(Accum, usize) -> ControlFlow<Break, Accum>,
-    Finalize: Fn(ControlFlow<Break, Accum>) -> Output,
-> {
-    fuse: Fuse,
-    outputs: Arc<[Mutex<Option<Output>>]>,
-    init: Init,
-    process_item: ProcessItem,
-    finalize: Finalize,
-}
-
-impl<R, Output, Accum, Break, Init, ProcessItem, Finalize> Pipeline<R>
-    for ShortCircuitingPipelineImpl<Output, Accum, Break, Init, ProcessItem, Finalize>
-where
-    R: Range,
-    Init: Fn() -> Accum,
-    ProcessItem: Fn(Accum, usize) -> ControlFlow<Break, Accum>,
-    Finalize: Fn(ControlFlow<Break, Accum>) -> Output,
-{
-    fn run(&self, worker_id: usize, range: &R) {
-        let mut accumulator = (self.init)();
-        let mut it = range.iter();
-
-        let result = 'outer: {
-            while let FuseState::Unset = self.fuse.load() {
-                let Some(i) = it.next() else {
-                    break;
-                };
-
-                match (self.process_item)(accumulator, i) {
-                    ControlFlow::Continue(acc) => {
-                        accumulator = acc;
-                        continue;
-                    }
-                    control_flow @ ControlFlow::Break(_) => {
-                        self.fuse.set();
-                        break 'outer control_flow;
-                    }
-                }
-            }
-            ControlFlow::Continue(accumulator)
-        };
-
-        let output = (self.finalize)(result);
-        *self.outputs[worker_id].lock().unwrap() = Some(output);
-    }
-}
-
 struct UpperBoundedPipelineImpl<
     Output,
     Accum,
@@ -741,39 +518,6 @@ where
     fn run(&self, worker_id: usize, range: &R) {
         let output = self.accum.accumulate(range.iter());
         *self.outputs[worker_id].lock().unwrap() = Some(output);
-    }
-}
-
-/// A fuse is an atomic object that starts unset and can transition once to the
-/// set state.
-///
-/// Under the hood, this contains an atomic boolean aligned to a cache line to
-/// avoid any risk of false sharing performance overhead.
-struct Fuse(CachePadded<AtomicBool>);
-
-/// State of a [`Fuse`].
-enum FuseState {
-    Unset,
-    Set,
-}
-
-impl Fuse {
-    /// Creates a new fuse in the [`Unset`](FuseState::Unset) state.
-    fn new() -> Self {
-        Fuse(CachePadded::new(AtomicBool::new(false)))
-    }
-
-    /// Reads the current state of this fuse.
-    fn load(&self) -> FuseState {
-        match self.0.load(Ordering::Relaxed) {
-            false => FuseState::Unset,
-            true => FuseState::Set,
-        }
-    }
-
-    /// Sets this fuse to the [`Set`](FuseState::Set) state.
-    fn set(&self) {
-        self.0.store(true, Ordering::Relaxed)
     }
 }
 

@@ -91,10 +91,10 @@ mod test {
                 $mod,
                 $range_strategy,
                 test_pipeline_sum_integers,
+                test_pipeline_empty_input,
                 test_pipeline_one_panic => fail("worker thread(s) panicked!"),
                 test_pipeline_some_panics => fail("worker thread(s) panicked!"),
                 test_pipeline_many_panics => fail("worker thread(s) panicked!"),
-                test_pipeline_empty_input,
                 test_pipelines_sum_twice,
                 test_pipelines_several_inputs,
                 test_pipelines_several_functions,
@@ -214,13 +214,10 @@ mod test {
         .build();
 
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-        let sum = thread_pool.pipeline(
-            input.len(),
-            || 0,
-            |acc, index| acc + input[index],
-            |acc| acc,
-            |a, b| a + b,
-        );
+        let sum = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(|| 0, |acc, item| acc + *item, |acc| acc, |a, b| a + b);
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -233,13 +230,11 @@ mod test {
         .build();
 
         // The input can be empty.
-        let sum = thread_pool.pipeline(
-            /* input_len = */ 0,
-            || 0,
-            |acc, _index| acc,
-            |acc| acc,
-            |a, b| a + b,
-        );
+        let input: [u64; 0] = [];
+        let sum = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(|| 0, |acc, item| acc + *item, |acc| acc, |a, b| a + b);
         assert_eq!(sum, 0);
     }
 
@@ -252,20 +247,22 @@ mod test {
         .build();
 
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-        thread_pool.pipeline(
-            input.len(),
-            || 0,
-            |acc, index| {
-                let x = input[index];
-                if x == 0 {
-                    panic!("arithmetic panic");
-                } else {
-                    acc + x
-                }
-            },
-            |acc| acc,
-            |a, b| a + b,
-        );
+        input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(
+                || 0,
+                |acc, item| {
+                    let x = *item;
+                    if x == 0 {
+                        panic!("arithmetic panic");
+                    } else {
+                        acc + x
+                    }
+                },
+                |acc| acc,
+                |a, b| a + b,
+            );
     }
 
     fn test_pipeline_some_panics(range_strategy: RangeStrategy) {
@@ -277,20 +274,22 @@ mod test {
         .build();
 
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-        thread_pool.pipeline(
-            input.len(),
-            || 0,
-            |acc, index| {
-                let x = input[index];
-                if x % 123 == 0 {
-                    panic!("arithmetic panic");
-                } else {
-                    acc + x
-                }
-            },
-            |acc| acc,
-            |a, b| a + b,
-        );
+        input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(
+                || 0,
+                |acc, item| {
+                    let x = *item;
+                    if x % 123 == 0 {
+                        panic!("arithmetic panic");
+                    } else {
+                        acc + x
+                    }
+                },
+                |acc| acc,
+                |a, b| a + b,
+            );
     }
 
     fn test_pipeline_many_panics(range_strategy: RangeStrategy) {
@@ -302,20 +301,22 @@ mod test {
         .build();
 
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-        thread_pool.pipeline(
-            input.len(),
-            || 0,
-            |acc, index| {
-                let x = input[index];
-                if x % 2 == 1 {
-                    panic!("arithmetic panic");
-                } else {
-                    acc + x
-                }
-            },
-            |acc| acc,
-            |a, b| a + b,
-        );
+        input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(
+                || 0,
+                |acc, item| {
+                    let x = *item;
+                    if x % 2 == 1 {
+                        panic!("arithmetic panic");
+                    } else {
+                        acc + x
+                    }
+                },
+                |acc| acc,
+                |a, b| a + b,
+            );
     }
 
     fn test_pipelines_sum_twice(range_strategy: RangeStrategy) {
@@ -328,22 +329,16 @@ mod test {
 
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         // The same input can be processed multiple times on the thread pool.
-        let sum1 = thread_pool.pipeline(
-            input.len(),
-            || 0,
-            |acc, index| acc + input[index],
-            |acc| acc,
-            |a, b| a + b,
-        );
+        let sum1 = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(|| 0, |acc, item| acc + *item, |acc| acc, |a, b| a + b);
         assert_eq!(sum1, INPUT_LEN * (INPUT_LEN + 1) / 2);
 
-        let sum2 = thread_pool.pipeline(
-            input.len(),
-            || 0,
-            |acc, index| acc + input[index],
-            |acc| acc,
-            |a, b| a + b,
-        );
+        let sum2 = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(|| 0, |acc, item| acc + *item, |acc| acc, |a, b| a + b);
         assert_eq!(sum2, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -357,24 +352,18 @@ mod test {
 
         // Several inputs can be used successively.
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-        let sum1 = thread_pool.pipeline(
-            input.len(),
-            || 0,
-            |acc, index| acc + input[index],
-            |acc| acc,
-            |a, b| a + b,
-        );
+        let sum1 = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(|| 0, |acc, item| acc + *item, |acc| acc, |a, b| a + b);
         // n(n+1)/2
         assert_eq!(sum1, INPUT_LEN * (INPUT_LEN + 1) / 2);
 
         let input = (0..=2 * INPUT_LEN).collect::<Vec<u64>>();
-        let sum2 = thread_pool.pipeline(
-            input.len(),
-            || 0,
-            |acc, index| acc + input[index],
-            |acc| acc,
-            |a, b| a + b,
-        );
+        let sum2 = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(|| 0, |acc, item| acc + *item, |acc| acc, |a, b| a + b);
         // 2n(2n+1)/2
         assert_eq!(sum2, INPUT_LEN * (2 * INPUT_LEN + 1));
     }
@@ -389,26 +378,25 @@ mod test {
 
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         // Several functions can be computed successively.
-        let sum = thread_pool.pipeline(
-            input.len(),
-            || 0,
-            |acc, index| acc + input[index],
-            |acc| acc,
-            |a, b| a + b,
-        );
+        let sum = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(|| 0, |acc, item| acc + *item, |acc| acc, |a, b| a + b);
         // n(n+1)/2
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
 
-        let sum_squares = thread_pool.pipeline(
-            input.len(),
-            || 0,
-            |acc, index| {
-                let x = input[index];
-                acc + x * x
-            },
-            |acc| acc,
-            |a, b| a + b,
-        );
+        let sum_squares = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(
+                || 0,
+                |acc, item| {
+                    let x = *item;
+                    acc + x * x
+                },
+                |acc| acc,
+                |a, b| a + b,
+            );
         // n(n+1)(2n+1) / 6
         assert_eq!(
             sum_squares,
@@ -426,22 +414,21 @@ mod test {
 
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         // Several accumulator types can be used successively.
-        let sum1 = thread_pool.pipeline(
-            input.len(),
-            || 0u32,
-            |acc, index| acc + input[index] as u32,
-            |acc| acc as u64,
-            |a, b| (a + b) & 0xffff_ffff,
-        );
+        let sum1 = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(
+                || 0u32,
+                |acc, item| acc + *item as u32,
+                |acc| acc as u64,
+                |a, b| (a + b) & 0xffff_ffff,
+            );
         assert_eq!(sum1, (INPUT_LEN * (INPUT_LEN + 1) / 2) & 0xffff_ffff);
 
-        let sum2 = thread_pool.pipeline(
-            input.len(),
-            || 0u64,
-            |acc, index| acc + input[index],
-            |acc| acc,
-            |a, b| a + b,
-        );
+        let sum2 = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(|| 0u64, |acc, item| acc + *item, |acc| acc, |a, b| a + b);
         assert_eq!(sum2, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -455,25 +442,24 @@ mod test {
 
         // Several input types can be used successively.
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-        let sum = thread_pool.pipeline(
-            input.len(),
-            || 0u64,
-            |acc, index| acc + input[index],
-            |acc| acc,
-            |a, b| a + b,
-        );
+        let sum = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(|| 0u64, |acc, item| acc + *item, |acc| acc, |a, b| a + b);
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
 
         let input = (0..=INPUT_LEN)
             .map(|x| format!("{x}"))
             .collect::<Vec<String>>();
-        let sum_lengths = thread_pool.pipeline(
-            input.len(),
-            || 0usize,
-            |acc, index| acc + input[index].len(),
-            |acc| acc as u64,
-            |a, b| a + b,
-        );
+        let sum_lengths = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(
+                || 0usize,
+                |acc, item| acc + item.len(),
+                |acc| acc as u64,
+                |a, b| a + b,
+            );
         assert_eq!(sum_lengths, expected_sum_lengths(INPUT_LEN));
     }
 
@@ -487,28 +473,27 @@ mod test {
 
         // Pipelines with different types can be used successively.
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-        let sum = thread_pool.pipeline(
-            input.len(),
-            || 0,
-            |acc, index| acc + input[index],
-            |acc| acc,
-            |a, b| a + b,
-        );
+        let sum = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(|| 0, |acc, item| acc + *item, |acc| acc, |a, b| a + b);
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
 
         let input = (0..=INPUT_LEN)
             .map(|i| (2 * i, 2 * i + 1))
             .collect::<Vec<(u64, u64)>>();
-        let sum_pairs = thread_pool.pipeline(
-            input.len(),
-            || (0, 0),
-            |(a, b), index| {
-                let (x, y) = input[index];
-                (a + x, b + y)
-            },
-            |acc| acc,
-            |(a, b), (x, y)| (a + x, b + y),
-        );
+        let sum_pairs = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(
+                || (0, 0),
+                |(a, b), item| {
+                    let (x, y) = *item;
+                    (a + x, b + y)
+                },
+                |acc| acc,
+                |(a, b), (x, y)| (a + x, b + y),
+            );
         assert_eq!(
             sum_pairs,
             (
@@ -541,46 +526,51 @@ mod test {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         // Non-Send functions can be used in the pipeline.
         let init = NotSend(0);
-        let sum1 = thread_pool.pipeline(
-            input.len(),
-            move || init.get(),
-            |acc, index| acc + input[index],
-            |acc| acc,
-            |a, b| a + b,
-        );
+        let sum1 = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(
+                move || init.get(),
+                |acc, item| acc + *item,
+                |acc| acc,
+                |a, b| a + b,
+            );
         assert_eq!(sum1, INPUT_LEN * (INPUT_LEN + 1) / 2);
 
         let one = NotSend(1);
-        let sum2 = thread_pool.pipeline(
-            input.len(),
-            || 0,
-            {
-                let input = &input;
-                move |acc, index| acc + input[index] * one.get()
-            },
-            |acc| acc,
-            |a, b| a + b,
-        );
+        let sum2 = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(
+                || 0,
+                move |acc, item| acc + *item * one.get(),
+                |acc| acc,
+                |a, b| a + b,
+            );
         assert_eq!(sum2, INPUT_LEN * (INPUT_LEN + 1) / 2);
 
         let one = NotSend(1);
-        let sum3 = thread_pool.pipeline(
-            input.len(),
-            || 0,
-            |acc, index| acc + input[index],
-            move |acc| acc * one.get(),
-            |a, b| a + b,
-        );
+        let sum3 = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(
+                || 0,
+                |acc, item| acc + *item,
+                move |acc| acc * one.get(),
+                |a, b| a + b,
+            );
         assert_eq!(sum3, INPUT_LEN * (INPUT_LEN + 1) / 2);
 
         let zero = NotSend(0);
-        let sum4 = thread_pool.pipeline(
-            input.len(),
-            || 0,
-            |acc, index| acc + input[index],
-            |acc| acc,
-            move |a, b| a + b + zero.get(),
-        );
+        let sum4 = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(
+                || 0,
+                |acc, item| acc + *item,
+                |acc| acc,
+                move |a, b| a + b + zero.get(),
+            );
         assert_eq!(sum4, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -595,13 +585,10 @@ mod test {
 
         // A non-Send input can be used in the pipeline.
         let input = (0..=INPUT_LEN).map(NotSend).collect::<Vec<NotSend>>();
-        let sum = thread_pool.pipeline(
-            input.len(),
-            || 0,
-            |acc, index| acc + input[index].get(),
-            |acc| acc,
-            |a, b| a + b,
-        );
+        let sum = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(|| 0, |acc, item| acc + item.get(), |acc| acc, |a, b| a + b);
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -615,11 +602,12 @@ mod test {
 
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         // A non-Sync output can be used in the pipeline.
-        let sum = thread_pool
+        let sum = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
             .pipeline(
-                input.len(),
                 || 0,
-                |acc, index| acc + input[index],
+                |acc, item| acc + *item,
                 Cell::new,
                 |a, b| Cell::new(a.get() + b.get()),
             )
@@ -638,13 +626,15 @@ mod test {
 
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         // A non-Send accumulator can be used in the pipeline.
-        let sum = thread_pool.pipeline(
-            input.len(),
-            || NotSend(0),
-            |acc, index| NotSend(acc.0 + input[index]),
-            |acc| acc.0,
-            |a, b| a + b,
-        );
+        let sum = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(
+                || NotSend(0),
+                |acc, item| NotSend(acc.0 + *item),
+                |acc| acc.0,
+                |a, b| a + b,
+            );
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -658,16 +648,18 @@ mod test {
 
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         // A non-Sync accumulator can be used in the pipeline.
-        let sum = thread_pool.pipeline(
-            input.len(),
-            || Cell::new(0),
-            |mut acc, index| {
-                *acc.get_mut() += input[index];
-                acc
-            },
-            |acc| acc.get(),
-            |a, b| a + b,
-        );
+        let sum = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(
+                || Cell::new(0),
+                |mut acc, item| {
+                    *acc.get_mut() += *item;
+                    acc
+                },
+                |acc| acc.get(),
+                |a, b| a + b,
+            );
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -681,16 +673,18 @@ mod test {
 
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         // A neither Send nor Sync accumulator can be used in the pipeline.
-        let sum = thread_pool.pipeline(
-            input.len(),
-            || Rc::new(0),
-            |mut acc, index| {
-                *Rc::get_mut(&mut acc).unwrap() += input[index];
-                acc
-            },
-            |acc| *acc,
-            |a, b| a + b,
-        );
+        let sum = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(
+                || Rc::new(0),
+                |mut acc, item| {
+                    *Rc::get_mut(&mut acc).unwrap() += *item;
+                    acc
+                },
+                |acc| *acc,
+                |a, b| a + b,
+            );
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -710,40 +704,48 @@ mod test {
         let one_ref = &one;
 
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-        let sum1 = thread_pool.pipeline(
-            input.len(),
-            || *zero_ref,
-            |acc, index| acc + input[index],
-            |acc| acc,
-            |a, b| a + b,
-        );
+        let sum1 = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(
+                || *zero_ref,
+                |acc, item| acc + *item,
+                |acc| acc,
+                |a, b| a + b,
+            );
         assert_eq!(sum1, INPUT_LEN * (INPUT_LEN + 1) / 2);
 
-        let sum2 = thread_pool.pipeline(
-            input.len(),
-            || 0,
-            |acc, index| acc + input[index] * *one_ref,
-            |acc| acc,
-            |a, b| a + b,
-        );
+        let sum2 = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(
+                || 0,
+                |acc, item| acc + *item * *one_ref,
+                |acc| acc,
+                |a, b| a + b,
+            );
         assert_eq!(sum2, INPUT_LEN * (INPUT_LEN + 1) / 2);
 
-        let sum3 = thread_pool.pipeline(
-            input.len(),
-            || 0,
-            |acc, index| acc + input[index],
-            |acc| acc * *one_ref,
-            |a, b| a + b,
-        );
+        let sum3 = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(
+                || 0,
+                |acc, item| acc + *item,
+                |acc| acc * *one_ref,
+                |a, b| a + b,
+            );
         assert_eq!(sum3, INPUT_LEN * (INPUT_LEN + 1) / 2);
 
-        let sum4 = thread_pool.pipeline(
-            input.len(),
-            || 0,
-            |acc, index| acc + input[index],
-            |acc| acc,
-            |a, b| a + b + *zero_ref,
-        );
+        let sum4 = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(
+                || 0,
+                |acc, item| acc + *item,
+                |acc| acc,
+                |a, b| a + b + *zero_ref,
+            );
         assert_eq!(sum4, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -763,13 +765,10 @@ mod test {
         let input = (0..=INPUT_LEN)
             .map(|x| (x, token_ref))
             .collect::<Vec<(u64, _)>>();
-        let sum = thread_pool.pipeline(
-            input.len(),
-            || 0,
-            |acc, index| acc + input[index].0,
-            |acc| acc,
-            |a, b| a + b,
-        );
+        let sum = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(|| 0, |acc, item| acc + item.0, |acc| acc, |a, b| a + b);
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -787,11 +786,12 @@ mod test {
         let token_ref = &token;
 
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-        let sum = thread_pool
+        let sum = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
             .pipeline(
-                input.len(),
                 || 0,
-                |acc, index| acc + input[index],
+                |acc, item| acc + *item,
                 |acc| (acc, token_ref),
                 |a, b| (a.0 + b.0, a.1),
             )
@@ -813,13 +813,15 @@ mod test {
         let token_ref = &token;
 
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-        let sum = thread_pool.pipeline(
-            input.len(),
-            || (0, token_ref),
-            |acc, index| (acc.0 + input[index], acc.1),
-            |acc| acc.0,
-            |a, b| a + b,
-        );
+        let sum = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(
+                || (0, token_ref),
+                |acc, item| (acc.0 + *item, acc.1),
+                |acc| acc.0,
+                |a, b| a + b,
+            );
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -835,7 +837,7 @@ mod test {
         let sum = input
             .par_iter()
             .with_thread_pool(&mut thread_pool)
-            .pipeline(|| 0, |acc, _, x| acc + x, |acc| acc, |a, b| a + b);
+            .pipeline(|| 0, |acc, x| acc + x, |acc| acc, |a, b| a + b);
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -852,7 +854,7 @@ mod test {
         let sum = input
             .par_iter()
             .with_thread_pool(&mut thread_pool)
-            .pipeline(|| 0, |acc, _, x| acc + x.get(), |acc| acc, |a, b| a + b);
+            .pipeline(|| 0, |acc, x| acc + x.get(), |acc| acc, |a, b| a + b);
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -1708,7 +1710,7 @@ mod test {
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .filter(|&&x| x % 2 == 0)
-            .pipeline(|| 0, |acc, _, x| acc + *x, |acc| acc, |a, b| a + b);
+            .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN / 2 + 1) / 2);
     }
 
@@ -1725,7 +1727,7 @@ mod test {
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .filter_map(|&x| if x % 2 == 0 { Some(x * 3) } else { None })
-            .pipeline(|| 0, |acc, _, x| acc + x, |acc| acc, |a, b| a + b);
+            .pipeline(|| 0, |acc, x| acc + x, |acc| acc, |a, b| a + b);
         assert_eq!(sum, 3 * INPUT_LEN * (INPUT_LEN / 2 + 1) / 2);
     }
 
@@ -1921,7 +1923,7 @@ mod test {
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .map(|&x| x * 42)
-            .pipeline(|| 0, |acc, _, x| acc + x, |acc| acc, |a, b| a + b);
+            .pipeline(|| 0, |acc, x| acc + x, |acc| acc, |a, b| a + b);
         assert_eq!(sum1, 42 * INPUT_LEN * (INPUT_LEN + 1) / 2);
 
         let sum2 = input
@@ -1929,7 +1931,7 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .map(|&x| x * 6)
             .map(|x| x * 7)
-            .pipeline(|| 0, |acc, _, x| acc + x, |acc| acc, |a, b| a + b);
+            .pipeline(|| 0, |acc, x| acc + x, |acc| acc, |a, b| a + b);
         assert_eq!(sum2, 42 * INPUT_LEN * (INPUT_LEN + 1) / 2);
 
         let sum3 = input
@@ -1938,7 +1940,7 @@ mod test {
             // Mapping to a non-Send non-Sync type is fine, as the item stays on the same thread
             // and isn't shared with other threads.
             .map(|&x| Rc::new(x))
-            .pipeline(|| 0, |acc, _, x| acc + *x, |acc| acc, |a, b| a + b);
+            .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
         assert_eq!(sum3, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
