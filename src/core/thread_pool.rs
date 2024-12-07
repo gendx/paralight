@@ -659,4 +659,29 @@ mod test {
         }
         .build();
     }
+
+    #[test]
+    fn test_num_threads() {
+        let thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy: RangeStrategy::Fixed,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+        assert_eq!(
+            thread_pool.num_threads(),
+            std::thread::available_parallelism().unwrap()
+        );
+
+        let thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::try_from(4).unwrap(),
+            range_strategy: RangeStrategy::Fixed,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+        assert_eq!(
+            thread_pool.num_threads(),
+            NonZeroUsize::try_from(4).unwrap()
+        );
+    }
 }
