@@ -1198,7 +1198,9 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// Returns any item that satisfies the predicate `f`, or [`None`] if no
     /// item satisfies it.
     ///
-    /// If multiple items satisfy `f`, which one is returned is arbitrary.
+    /// If multiple items satisfy `f`, an arbitrary one is returned.
+    ///
+    /// See also [`find_map_any()`](Self::find_map_any).
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
@@ -1252,11 +1254,13 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// Returns the first item that satisfies the predicate `f`, or [`None`] if
     /// no item satisfies it.
     ///
+    /// See also [`find_map_first()`](Self::find_map_first).
+    ///
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
     /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
     /// # let mut thread_pool = ThreadPoolBuilder {
-    /// #     num_threads: ThreadCount::try_from(2).unwrap(),
+    /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
     /// #     cpu_pinning: CpuPinningPolicy::No,
     /// # }
@@ -1313,6 +1317,139 @@ pub trait ParallelIteratorExt: ParallelIterator {
             },
         )
         .map(|(_, item)| item)
+    }
+
+    /// Applies the function `f` to items of this iterator, returning any
+    /// non-[`None`] result.
+    ///
+    /// If multiple items map to [`Some(_)`](Option::Some) result, an arbitrary
+    /// one is returned.
+    ///
+    /// Contrary to [`find_any()`](Self::find_any), the
+    /// [`Item`](ParallelIterator::Item) type doesn't need to be [`Send`], only
+    /// the result type.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [
+    ///     "Lorem",
+    ///     "ipsum",
+    ///     "dolor",
+    ///     "sit",
+    ///     "amet",
+    ///     "consectetur",
+    ///     "adipiscing",
+    ///     "elit",
+    ///     "sed",
+    ///     "do",
+    /// ];
+    ///
+    /// let four_bytes_word = input
+    ///     .par_iter()
+    ///     .enumerate()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .find_map_any(|(i, x)| if x.len() == 4 { Some(i) } else { None });
+    ///
+    /// assert!(four_bytes_word.is_some());
+    /// let four_bytes_word = four_bytes_word.unwrap();
+    /// assert!(four_bytes_word == 4 || four_bytes_word == 7);
+    /// assert_eq!(input[four_bytes_word].len(), 4);
+    /// ```
+    fn find_map_any<T, F>(self, f: F) -> Option<T>
+    where
+        F: Fn(Self::Item) -> Option<T> + Sync,
+        T: Send,
+    {
+        self.short_circuiting_pipeline(
+            || (),
+            |_, item| match f(item) {
+                Some(t) => ControlFlow::Break(t),
+                None => ControlFlow::Continue(()),
+            },
+            |acc| match acc {
+                ControlFlow::Break(t) => Some(t),
+                ControlFlow::Continue(()) => None,
+            },
+            |x, y| x.or(y),
+        )
+    }
+
+    /// Applies the function `f` to items of this iterator, returning the first
+    /// non-[`None`] result.
+    ///
+    /// Contrary to [`find_first()`](Self::find_first), the
+    /// [`Item`](ParallelIterator::Item) type doesn't need to be [`Send`], only
+    /// the result type.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [
+    ///     "Lorem",
+    ///     "ipsum",
+    ///     "dolor",
+    ///     "sit",
+    ///     "amet",
+    ///     "consectetur",
+    ///     "adipiscing",
+    ///     "elit",
+    ///     "sed",
+    ///     "do",
+    /// ];
+    ///
+    /// let four_bytes_word = input
+    ///     .par_iter()
+    ///     .enumerate()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .find_map_first(|(i, x)| if x.len() == 4 { Some(i) } else { None });
+    ///
+    /// // Position of "amet" in the input array.
+    /// assert_eq!(four_bytes_word, Some(4));
+    /// ```
+    fn find_map_first<T, F>(self, f: F) -> Option<T>
+    where
+        F: Fn(Self::Item) -> Option<T> + Sync,
+        T: Send,
+    {
+        self.upper_bounded_pipeline(
+            || None,
+            |acc, i, item| {
+                match acc {
+                    // Early return if we found something at a previous index.
+                    Some((j, _)) if j < i => ControlFlow::Continue(acc),
+                    _ => match f(item) {
+                        Some(t) => ControlFlow::Break(Some((i, t))),
+                        None => ControlFlow::Continue(acc),
+                    },
+                }
+            },
+            |acc| acc,
+            |x, y| match (x, y) {
+                (None, None) => None,
+                (Some(found), None) | (None, Some(found)) => Some(found),
+                (Some((i, a)), Some((j, b))) => {
+                    if i < j {
+                        Some((i, a))
+                    } else {
+                        Some((j, b))
+                    }
+                }
+            },
+        )
+        .map(|(_, t)| t)
     }
 
     /// Runs `f` on each item of this parallel iterator.

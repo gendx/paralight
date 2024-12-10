@@ -166,6 +166,8 @@ mod test {
                 test_adaptor_filter_map,
                 test_adaptor_find_any,
                 test_adaptor_find_first,
+                test_adaptor_find_map_any,
+                test_adaptor_find_map_first,
                 test_adaptor_for_each,
                 test_adaptor_for_each_init,
                 test_adaptor_inspect,
@@ -1837,6 +1839,121 @@ mod test {
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .find_first(|_: &&u64| true);
+        assert_eq!(empty, None);
+    }
+
+    fn test_adaptor_find_map_any(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let first = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .find_map_any(|x| if x == 0 { Some(2 * x) } else { None });
+        assert_eq!(first, Some(0));
+
+        let last = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .find_map_any(|x| if x == INPUT_LEN { Some(2 * x) } else { None });
+        assert_eq!(last, Some(2 * INPUT_LEN));
+
+        let end = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .find_map_any(|x| {
+                if x == INPUT_LEN + 1 {
+                    Some(2 * x)
+                } else {
+                    None
+                }
+            });
+        assert_eq!(end, None);
+
+        let forty_two = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .find_map_any(|x| if x == 42 { Some(2 * x) } else { None });
+        assert_eq!(forty_two, if INPUT_LEN >= 42 { Some(84) } else { None });
+
+        let even = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .find_map_any(|x| if x % 2 == 0 { Some(2 * x) } else { None });
+        assert!(even.unwrap() % 4 == 0);
+
+        let empty = []
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .find_map_any(|_: &u64| Some(42));
+        assert_eq!(empty, None);
+    }
+
+    fn test_adaptor_find_map_first(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let first = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .find_map_first(|x| Some(2 * x));
+        assert_eq!(first, Some(0));
+
+        let last = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .find_map_first(|x| if x >= INPUT_LEN { Some(2 * x) } else { None });
+        assert_eq!(last, Some(2 * INPUT_LEN));
+
+        let end = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .find_map_first(|x| if x > INPUT_LEN { Some(2 * x) } else { None });
+        assert_eq!(end, None);
+
+        let forty_two = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .find_map_first(|x| if x >= 42 { Some(2 * x) } else { None });
+        assert_eq!(forty_two, if INPUT_LEN >= 42 { Some(84) } else { None });
+
+        let even = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .find_map_first(|x| if x % 2 == 0 { Some(2 * x) } else { None });
+        assert_eq!(even, Some(0));
+
+        let odd = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .find_map_first(|x| if x % 2 == 1 { Some(2 * x) } else { None });
+        assert_eq!(odd, Some(2));
+
+        let empty = []
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .find_map_first(|_: &u64| Some(42));
         assert_eq!(empty, None);
     }
 
