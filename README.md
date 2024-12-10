@@ -10,10 +10,10 @@
 [![Build Status](https://github.com/gendx/paralight/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/gendx/paralight/actions/workflows/build.yml)
 [![Test Status](https://github.com/gendx/paralight/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/gendx/paralight/actions/workflows/tests.yml)
 
-This library allows you to distribute computation over slices (and other
-*indexed* sources) among multiple threads. Each thread processes a subset of the
-items, and a final step reduces the outputs from all threads into a single
-result.
+This library allows you to distribute computation over [slices](slice) (and
+other *indexed* sources) among multiple threads. Each thread processes a subset
+of the items, and a final step reduces the outputs from all threads into a
+single result.
 
 ```rust
 use paralight::iter::{
@@ -51,9 +51,10 @@ let right = [11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
 assert_eq!(output, [12, 14, 16, 18, 20, 22, 24, 26, 28, 30]);
 ```
 
-Paralight currently supports inputs that are a combination of slices and ranges,
-but can be extended to support other sources as long as they are *indexed*. This
-is done via the [`ParallelSource`](iter::ParallelSource) and
+Paralight currently supports inputs that are a combination of [slices](slice)
+and [ranges](std::ops::Range), but can be extended to support other sources as
+long as they are *indexed*. This is done via the
+[`ParallelSource`](iter::ParallelSource) and
 [`IntoParallelSource`](iter::IntoParallelSource) traits.
 
 ## Thread pool configuration
