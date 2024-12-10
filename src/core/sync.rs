@@ -322,12 +322,12 @@ impl<T: LifetimeParameterized> Drop for Notifier<'_, T> {
                     "[thread {}, round {round:?}] Notified the main thread.",
                     self.id
                 ),
-                Err(_e) => {
+                Err(e) => {
                     log_error!(
-                        "[thread {}] Failed to notify the main thread, the mutex was poisoned: {_e:?}",
+                        "[thread {}] Failed to notify the main thread, the mutex was poisoned: {e:?}",
                         self.id
                     );
-                    panic!("Failed to notify the main thread, the mutex was poisoned: {_e:?}");
+                    panic!("Failed to notify the main thread, the mutex was poisoned: {e:?}");
                 }
             }
         } else {
