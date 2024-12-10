@@ -13,6 +13,7 @@ use super::range::{
 };
 use super::sync::{make_lending_group, Borrower, Lender, WorkerState};
 use super::util::LifetimeParameterized;
+use crate::iter::Accumulator;
 use crate::macros::{log_debug, log_error, log_warn};
 use crossbeam_utils::CachePadded;
 // Platforms that support `libc::sched_setaffinity()`.
@@ -166,16 +167,6 @@ impl ThreadPool {
     ) -> Output {
         self.inner.iter_pipeline(input_len, accum, reduce)
     }
-}
-
-/// Interface for an operation that accumulates items from an iterator into an
-/// output.
-///
-/// You can think of it as a variant of `Fn(impl Iterator) -> Output` made
-/// generic over the item and output types.
-pub trait Accumulator<Item, Output> {
-    /// Accumulates the items from the given iterator into an output.
-    fn accumulate(&self, iter: impl Iterator<Item = Item>) -> Output;
 }
 
 /// Underlying [`ThreadPool`] implementation, dispatching over the

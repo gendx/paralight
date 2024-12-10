@@ -25,9 +25,7 @@ mod core;
 pub mod iter;
 mod macros;
 
-pub use core::{
-    Accumulator, CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPool, ThreadPoolBuilder,
-};
+pub use core::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPool, ThreadPoolBuilder};
 
 #[cfg(test)]
 mod test {

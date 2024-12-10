@@ -10,7 +10,6 @@
 
 mod source;
 
-use crate::Accumulator;
 use crossbeam_utils::CachePadded;
 pub use source::range::{RangeInclusiveParallelSource, RangeParallelSource};
 pub use source::slice::{MutSliceParallelSource, SliceParallelSource};
@@ -25,6 +24,16 @@ use std::ops::ControlFlow;
 #[cfg(feature = "nightly")]
 use std::ops::Try;
 use std::sync::atomic::AtomicBool;
+
+/// Interface for an operation that accumulates items from an iterator into an
+/// output.
+///
+/// You can think of it as a variant of `Fn(impl Iterator) -> Output` made
+/// generic over the item and output types.
+pub trait Accumulator<Item, Output> {
+    /// Accumulates the items from the given iterator into an output.
+    fn accumulate(&self, iter: impl Iterator<Item = Item>) -> Output;
+}
 
 /// An iterator to process items in parallel. The [`ParallelIteratorExt`] trait
 /// provides additional methods (iterator adaptors) as an extension of this
@@ -212,10 +221,10 @@ pub trait ParallelIterator: Sized {
     ///   output.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIterator, ParallelSourceExt};
-    /// # use paralight::{
-    /// #     Accumulator, CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder,
+    /// # use paralight::iter::{
+    /// #     Accumulator, IntoParallelRefSource, ParallelIterator, ParallelSourceExt,
     /// # };
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
     /// use std::iter::Sum;
     ///
     /// # let mut thread_pool = ThreadPoolBuilder {

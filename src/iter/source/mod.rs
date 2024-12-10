@@ -12,8 +12,8 @@ pub mod range;
 pub mod slice;
 pub mod zip;
 
-use super::ParallelIterator;
-use crate::{Accumulator, ThreadPool};
+use super::{Accumulator, ParallelIterator};
+use crate::ThreadPool;
 use std::ops::ControlFlow;
 
 /// An object describing how to fetch items from a [`ParallelSource`].
