@@ -6,6 +6,47 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.0.5 - 2024-12-11
+
+### Added
+
+- 12 find-any-like adaptors on `ParallelIteratorExt`, that short-circuit once a
+  match is found: `all()`, `any()`, `eq()`, `eq_by_key()`, `eq_by_keys()`,
+  `find_any()`, `find_map_any()`, `ne()`, `ne_by_key()`, `ne_by_keys()`,
+  `try_for_each()` and `try_for_each_init()`. A nightly API is available for
+  `try_for_each()` and `try_for_each_init()` for all types implementing the
+  `std::ops::Try` trait.
+- 10 find-first-like adaptors on `ParallelIteratorExt`, that restrict the search
+  to previous items once a match is found: `cmp()`, `cmp_by()`, `cmp_by_key()`,
+  `cmp_by_keys()`, `find_first()`, `find_map_first()`, `partial_cmp()`,
+  `partial_cmp_by()`, `partial_cmp_by_key()` and `partial_cmp_by_keys()`.
+- 4 additional adaptors on `ParallelIteratorExt`: `for_each_init()`,
+  `map_init()`, `product()` and `sum()`.
+- To support these, the `Accumulator` trait and 3 methods on `ParallelIterator`:
+  `iter_pipeline()`, `short_circuiting_pipeline()` and
+  `upper_bounded_pipeline()`.
+- The `step_by()` adaptor on `ParallelSourceExt`.
+- The `num_threads()` getter on `ThreadPool`, to query the number of worker
+  threads that have been spawned.
+- A new `ParallelAdaptor` trait, that `Cloned`, `Copied`, `Filter`, `FilterMap`,
+  `Inspect` and `Map` implement as an intermediate step before
+  `ParallelIterator`.
+- More recommendations for the thread pool configuration in the README.
+- Tests with the thread sanitizer (TSAN).
+
+### Changed
+
+- The nightly APIs for `ParallelIterator` on ranges have been migrated to the
+  latest version of the `std::iter::Step` trait.
+- Slightly changed the format of logging statements.
+- Internal synchronization primitives are now aligned to a cache line via the
+  `CachePadded` wrapper provided by the `crossbeam-utils` crate.
+- Micro-optimized the layout of the shared context with worker threads, using a
+  single `Arc` instead of one `Arc` per field.
+- Code coverage now also tracks coverage of the nightly APIs, and logging
+  statements up to the debug level.
+- Reduced the number of iterations in tests to make them complete faster.
+
 ## 0.0.4 - 2024-11-12
 
 ### Added
