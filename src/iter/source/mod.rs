@@ -8,6 +8,7 @@
 
 //! Parallel sources from which parallel iterators are derived.
 
+pub mod owned_slice;
 pub mod range;
 pub mod slice;
 pub mod zip;
@@ -17,11 +18,55 @@ use crate::ThreadPool;
 use std::ops::ControlFlow;
 
 /// An object describing how to fetch items from a [`ParallelSource`].
-pub struct SourceDescriptor<Item: Send, FetchItem: Fn(usize) -> Item + Sync> {
+pub struct SourceDescriptor<
+    Item: Send,
+    FetchItem: Fn(usize) -> Item + Sync,
+    Cleanup: SourceCleanup + Sync,
+> {
     /// Number of items that the source produces.
     pub len: usize,
     /// A function to fetch the item at the given index.
     pub fetch_item: FetchItem,
+    /// An API to cleanup a range of items that won't be fetched.
+    pub cleanup: Cleanup,
+}
+
+/// An interface to cleanup a range of items that aren't fetched from a source.
+///
+/// There are two reasons why manual cleanup of items is sometimes needed.
+/// - If a short-circuiting combinator such as
+///   [`find_any()`](super::ParallelIteratorExt::find_any) is used, the pipeline
+///   will skip remaining items once a match is found.
+/// - If a function in an iterator pipeline panics, the remaining items are
+///   skipped but should nevertheless be dropped as part of unwinding.
+///
+/// A non-trivial cleanup is needed for parallel sources that drain items, such
+/// as calling [`into_par_iter()`](IntoParallelSource::into_par_iter) on a
+/// [`Vec`], and must correspond to [`drop()`]-ing items.
+pub trait SourceCleanup {
+    /// Set to [`false`] if the cleanup function is guaranteed to be a noop.
+    ///
+    /// Typically, cleanup is a noop for sources over [references](reference).
+    /// For draining sources, this should follow the
+    /// [`std::mem::needs_drop()`] hint.
+    const NEEDS_CLEANUP: bool;
+
+    /// Clean up the given range of items from the source.
+    ///
+    /// As with [`Drop`], this should not panic.
+    fn cleanup_item_range(&self, range: std::ops::Range<usize>);
+}
+
+/// A [`SourceCleanup`] that does nothing.
+///
+/// This is useful for [`ParallelSource`]s whose underlying destructor is a
+/// noop, e.g. a parallel source over a slice that yields references.
+pub struct NoopSourceCleanup;
+
+impl SourceCleanup for NoopSourceCleanup {
+    const NEEDS_CLEANUP: bool = false;
+
+    fn cleanup_item_range(&self, _range: std::ops::Range<usize>) {}
 }
 
 /// A source to produce items in parallel. The [`ParallelSourceExt`] trait
@@ -41,7 +86,9 @@ pub trait ParallelSource: Sized {
     type Item: Send;
 
     /// Returns an object that describes how to fetch items from this source.
-    fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync>;
+    fn descriptor(
+        self,
+    ) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync, impl SourceCleanup + Sync>;
 }
 
 /// Trait for converting into a [`ParallelSource`].
@@ -301,7 +348,7 @@ pub trait ParallelSourceExt: ParallelSource {
     fn skip(self, n: usize) -> Skip<Self> {
         Skip {
             inner: self,
-            len: n,
+            count: n,
         }
     }
 
@@ -349,7 +396,7 @@ pub trait ParallelSourceExt: ParallelSource {
     fn skip_exact(self, n: usize) -> SkipExact<Self> {
         SkipExact {
             inner: self,
-            len: n,
+            count: n,
         }
     }
 
@@ -470,7 +517,7 @@ pub trait ParallelSourceExt: ParallelSource {
     fn take(self, n: usize) -> Take<Self> {
         Take {
             inner: self,
-            len: n,
+            count: n,
         }
     }
 
@@ -517,7 +564,7 @@ pub trait ParallelSourceExt: ParallelSource {
     fn take_exact(self, n: usize) -> TakeExact<Self> {
         TakeExact {
             inner: self,
-            len: n,
+            count: n,
         }
     }
 
@@ -568,7 +615,10 @@ impl<T: Send, First: ParallelSource<Item = T>, Second: ParallelSource<Item = T>>
 {
     type Item = T;
 
-    fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
+    fn descriptor(
+        self,
+    ) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync, impl SourceCleanup + Sync>
+    {
         let descriptor1 = self.first.descriptor();
         let descriptor2 = self.second.descriptor();
         let len = descriptor1
@@ -586,6 +636,39 @@ impl<T: Send, First: ParallelSource<Item = T>, Second: ParallelSource<Item = T>>
                     (descriptor2.fetch_item)(index - descriptor1.len)
                 }
             },
+            cleanup: ChainSourceCleanup {
+                len1: descriptor1.len,
+                cleanup1: descriptor1.cleanup,
+                cleanup2: descriptor2.cleanup,
+            },
+        }
+    }
+}
+
+struct ChainSourceCleanup<First: SourceCleanup, Second: SourceCleanup> {
+    len1: usize,
+    cleanup1: First,
+    cleanup2: Second,
+}
+
+impl<First, Second> SourceCleanup for ChainSourceCleanup<First, Second>
+where
+    First: SourceCleanup,
+    Second: SourceCleanup,
+{
+    const NEEDS_CLEANUP: bool = First::NEEDS_CLEANUP || Second::NEEDS_CLEANUP;
+
+    fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
+        if Self::NEEDS_CLEANUP {
+            if range.end <= self.len1 {
+                self.cleanup1.cleanup_item_range(range);
+            } else if range.start >= self.len1 {
+                self.cleanup2
+                    .cleanup_item_range(range.start - self.len1..range.end - self.len1);
+            } else {
+                self.cleanup1.cleanup_item_range(range.start..self.len1);
+                self.cleanup2.cleanup_item_range(0..range.end - self.len1);
+            }
         }
     }
 }
@@ -604,11 +687,15 @@ pub struct Enumerate<Inner> {
 impl<Inner: ParallelSource> ParallelSource for Enumerate<Inner> {
     type Item = (usize, Inner::Item);
 
-    fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
+    fn descriptor(
+        self,
+    ) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync, impl SourceCleanup + Sync>
+    {
         let descriptor = self.inner.descriptor();
         SourceDescriptor {
             len: descriptor.len,
             fetch_item: move |index| (index, (descriptor.fetch_item)(index)),
+            cleanup: descriptor.cleanup,
         }
     }
 }
@@ -627,11 +714,34 @@ pub struct Rev<Inner> {
 impl<Inner: ParallelSource> ParallelSource for Rev<Inner> {
     type Item = Inner::Item;
 
-    fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
+    fn descriptor(
+        self,
+    ) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync, impl SourceCleanup + Sync>
+    {
         let descriptor = self.inner.descriptor();
         SourceDescriptor {
             len: descriptor.len,
             fetch_item: move |index| (descriptor.fetch_item)(descriptor.len - index - 1),
+            cleanup: RevSourceCleanup {
+                inner: descriptor.cleanup,
+                len: descriptor.len,
+            },
+        }
+    }
+}
+
+struct RevSourceCleanup<Inner: SourceCleanup> {
+    inner: Inner,
+    len: usize,
+}
+
+impl<Inner: SourceCleanup> SourceCleanup for RevSourceCleanup<Inner> {
+    const NEEDS_CLEANUP: bool = Inner::NEEDS_CLEANUP;
+
+    fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
+        if Self::NEEDS_CLEANUP {
+            self.inner
+                .cleanup_item_range(self.len - range.end..self.len - range.start)
         }
     }
 }
@@ -645,17 +755,49 @@ impl<Inner: ParallelSource> ParallelSource for Rev<Inner> {
 #[must_use = "iterator adaptors are lazy"]
 pub struct Skip<Inner> {
     inner: Inner,
-    len: usize,
+    count: usize,
 }
 
 impl<Inner: ParallelSource> ParallelSource for Skip<Inner> {
     type Item = Inner::Item;
 
-    fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
+    fn descriptor(
+        self,
+    ) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync, impl SourceCleanup + Sync>
+    {
         let descriptor = self.inner.descriptor();
+        let count = std::cmp::min(self.count, descriptor.len);
         SourceDescriptor {
-            len: descriptor.len - std::cmp::min(self.len, descriptor.len),
-            fetch_item: move |index| (descriptor.fetch_item)(self.len + index),
+            len: descriptor.len - count,
+            fetch_item: move |index| (descriptor.fetch_item)(self.count + index),
+            cleanup: SkipSourceCleanup {
+                inner: descriptor.cleanup,
+                count,
+            },
+        }
+    }
+}
+
+struct SkipSourceCleanup<Inner: SourceCleanup> {
+    inner: Inner,
+    count: usize,
+}
+
+impl<Inner: SourceCleanup> SourceCleanup for SkipSourceCleanup<Inner> {
+    const NEEDS_CLEANUP: bool = Inner::NEEDS_CLEANUP;
+
+    fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
+        if Self::NEEDS_CLEANUP {
+            self.inner
+                .cleanup_item_range(self.count + range.start..self.count + range.end)
+        }
+    }
+}
+
+impl<Inner: SourceCleanup> Drop for SkipSourceCleanup<Inner> {
+    fn drop(&mut self) {
+        if Self::NEEDS_CLEANUP && self.count != 0 {
+            self.inner.cleanup_item_range(0..self.count)
         }
     }
 }
@@ -670,21 +812,28 @@ impl<Inner: ParallelSource> ParallelSource for Skip<Inner> {
 #[must_use = "iterator adaptors are lazy"]
 pub struct SkipExact<Inner> {
     inner: Inner,
-    len: usize,
+    count: usize,
 }
 
 impl<Inner: ParallelSource> ParallelSource for SkipExact<Inner> {
     type Item = Inner::Item;
 
-    fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
+    fn descriptor(
+        self,
+    ) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync, impl SourceCleanup + Sync>
+    {
         let descriptor = self.inner.descriptor();
         assert!(
-            self.len <= descriptor.len,
+            self.count <= descriptor.len,
             "called skip_exact() with more items than this source produces"
         );
         SourceDescriptor {
-            len: descriptor.len - self.len,
-            fetch_item: move |index| (descriptor.fetch_item)(self.len + index),
+            len: descriptor.len - self.count,
+            fetch_item: move |index| (descriptor.fetch_item)(self.count + index),
+            cleanup: SkipSourceCleanup {
+                inner: descriptor.cleanup,
+                count: self.count,
+            },
         }
     }
 }
@@ -704,7 +853,10 @@ pub struct StepBy<Inner> {
 impl<Inner: ParallelSource> ParallelSource for StepBy<Inner> {
     type Item = Inner::Item;
 
-    fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
+    fn descriptor(
+        self,
+    ) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync, impl SourceCleanup + Sync>
+    {
         let descriptor = self.inner.descriptor();
         assert!(self.step != 0, "called step_by() with a step of zero");
         let len = if descriptor.len == 0 {
@@ -715,6 +867,46 @@ impl<Inner: ParallelSource> ParallelSource for StepBy<Inner> {
         SourceDescriptor {
             len,
             fetch_item: move |index| (descriptor.fetch_item)(self.step * index),
+            cleanup: StepByCleanup {
+                inner: descriptor.cleanup,
+                step: self.step,
+                inner_len: descriptor.len,
+            },
+        }
+    }
+}
+
+struct StepByCleanup<Inner: SourceCleanup> {
+    inner: Inner,
+    step: usize,
+    inner_len: usize,
+}
+
+impl<Inner: SourceCleanup> SourceCleanup for StepByCleanup<Inner> {
+    const NEEDS_CLEANUP: bool = Inner::NEEDS_CLEANUP;
+
+    fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
+        if Self::NEEDS_CLEANUP {
+            for i in range {
+                self.inner
+                    .cleanup_item_range(self.step * i..self.step * i + 1);
+            }
+        }
+    }
+}
+
+impl<Inner: SourceCleanup> Drop for StepByCleanup<Inner> {
+    fn drop(&mut self) {
+        if Self::NEEDS_CLEANUP && self.step != 1 {
+            let full_blocks = self.inner_len / self.step;
+            for i in 0..full_blocks {
+                self.inner
+                    .cleanup_item_range(self.step * i + 1..self.step * (i + 1));
+            }
+            let last_block = self.step * full_blocks + 1;
+            if last_block < self.inner_len {
+                self.inner.cleanup_item_range(last_block..self.inner_len);
+            }
         }
     }
 }
@@ -728,17 +920,50 @@ impl<Inner: ParallelSource> ParallelSource for StepBy<Inner> {
 #[must_use = "iterator adaptors are lazy"]
 pub struct Take<Inner> {
     inner: Inner,
-    len: usize,
+    count: usize,
 }
 
 impl<Inner: ParallelSource> ParallelSource for Take<Inner> {
     type Item = Inner::Item;
 
-    fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
+    fn descriptor(
+        self,
+    ) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync, impl SourceCleanup + Sync>
+    {
         let descriptor = self.inner.descriptor();
+        let count = std::cmp::min(self.count, descriptor.len);
         SourceDescriptor {
-            len: std::cmp::min(self.len, descriptor.len),
+            len: count,
             fetch_item: descriptor.fetch_item,
+            cleanup: TakeSourceCleanup {
+                inner: descriptor.cleanup,
+                count,
+                inner_len: descriptor.len,
+            },
+        }
+    }
+}
+
+struct TakeSourceCleanup<Inner: SourceCleanup> {
+    inner: Inner,
+    count: usize,
+    inner_len: usize,
+}
+
+impl<Inner: SourceCleanup> SourceCleanup for TakeSourceCleanup<Inner> {
+    const NEEDS_CLEANUP: bool = Inner::NEEDS_CLEANUP;
+
+    fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
+        if Self::NEEDS_CLEANUP {
+            self.inner.cleanup_item_range(range)
+        }
+    }
+}
+
+impl<Inner: SourceCleanup> Drop for TakeSourceCleanup<Inner> {
+    fn drop(&mut self) {
+        if Self::NEEDS_CLEANUP && self.count != self.inner_len {
+            self.inner.cleanup_item_range(self.count..self.inner_len)
         }
     }
 }
@@ -753,21 +978,29 @@ impl<Inner: ParallelSource> ParallelSource for Take<Inner> {
 #[must_use = "iterator adaptors are lazy"]
 pub struct TakeExact<Inner> {
     inner: Inner,
-    len: usize,
+    count: usize,
 }
 
 impl<Inner: ParallelSource> ParallelSource for TakeExact<Inner> {
     type Item = Inner::Item;
 
-    fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
+    fn descriptor(
+        self,
+    ) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync, impl SourceCleanup + Sync>
+    {
         let descriptor = self.inner.descriptor();
         assert!(
-            self.len <= descriptor.len,
+            self.count <= descriptor.len,
             "called take_exact() with more items than this source produces"
         );
         SourceDescriptor {
-            len: self.len,
+            len: self.count,
             fetch_item: descriptor.fetch_item,
+            cleanup: TakeSourceCleanup {
+                inner: descriptor.cleanup,
+                count: self.count,
+                inner_len: descriptor.len,
+            },
         }
     }
 }
@@ -802,6 +1035,7 @@ impl<S: ParallelSource> ParallelIterator for BaseParallelIterator<'_, S> {
             |acc, index| process_item(acc, index, (source_descriptor.fetch_item)(index)),
             finalize,
             reduce,
+            source_descriptor.cleanup,
         )
     }
 
@@ -815,8 +1049,12 @@ impl<S: ParallelSource> ParallelIterator for BaseParallelIterator<'_, S> {
             inner: accum,
             fetch_item: source_descriptor.fetch_item,
         };
-        self.thread_pool
-            .iter_pipeline(source_descriptor.len, accumulator, reduce)
+        self.thread_pool.iter_pipeline(
+            source_descriptor.len,
+            accumulator,
+            reduce,
+            source_descriptor.cleanup,
+        )
     }
 }
 
@@ -832,7 +1070,6 @@ where
     FetchItem: Fn(usize) -> Item,
 {
     fn accumulate(&self, iter: impl Iterator<Item = usize>) -> Output {
-        self.inner
-            .accumulate(iter.map(|index| (self.fetch_item)(index)))
+        self.inner.accumulate(iter.map(&self.fetch_item))
     }
 }

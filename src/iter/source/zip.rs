@@ -6,7 +6,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use super::{ParallelSource, SourceDescriptor};
+use super::{ParallelSource, SourceCleanup, SourceDescriptor};
 
 /// A helper trait for zipping together multiple [`ParallelSource`]s into a
 /// single [`ParallelSource`] that produces items grouped from the original
@@ -184,6 +184,12 @@ macro_rules! min_lens {
     }
 }
 
+macro_rules! or_bools {
+    ( $tuple:expr, $zero:tt, $($i:tt),* ) => {
+        $tuple.0 $( || $tuple.$i )*
+    }
+}
+
 macro_rules! zipable_tuple {
     ( $($tuple:ident $i:tt),+ ) => {
         impl<$($tuple),+> ZipableSource for ($($tuple),+)
@@ -193,7 +199,10 @@ macro_rules! zipable_tuple {
         where $($tuple: ParallelSource),+ {
             type Item = ( $($tuple::Item),+ );
 
-            fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
+            fn descriptor(
+                self,
+            ) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync, impl SourceCleanup + Sync>
+            {
                 let tuple = self.0;
                 let descriptors = ( $(tuple.$i.descriptor()),+ );
                 assert_eq_lens!(descriptors, $($i),+);
@@ -202,6 +211,7 @@ macro_rules! zipable_tuple {
                     fetch_item: move |index| {
                         ( $( (descriptors.$i.fetch_item)(index) ),+ )
                     },
+                    cleanup: ( $(descriptors.$i.cleanup),+ ),
                 }
             }
         }
@@ -210,7 +220,10 @@ macro_rules! zipable_tuple {
         where $($tuple: ParallelSource),+ {
             type Item = ( $(Option<$tuple::Item>),+ );
 
-            fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
+            fn descriptor(
+                self,
+            ) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync, impl SourceCleanup + Sync>
+            {
                 let tuple = self.0;
                 let descriptors = ( $(tuple.$i.descriptor()),+ );
                 let mut len = 0;
@@ -226,6 +239,7 @@ macro_rules! zipable_tuple {
                             }
                         ),+ )
                     },
+                    cleanup: ( $(descriptors.$i.cleanup),+ ),
                 }
             }
         }
@@ -234,7 +248,10 @@ macro_rules! zipable_tuple {
         where $($tuple: ParallelSource),+ {
             type Item = ( $($tuple::Item),+ );
 
-            fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
+            fn descriptor(
+                self,
+            ) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync, impl SourceCleanup + Sync>
+            {
                 let tuple = self.0;
                 let descriptors = ( $(tuple.$i.descriptor()),+ );
                 let len = min_lens!(descriptors, $($i),+);
@@ -243,6 +260,21 @@ macro_rules! zipable_tuple {
                     fetch_item: move |index| {
                         ( $( (descriptors.$i.fetch_item)(index) ),+ )
                     },
+                    cleanup: ( $(descriptors.$i.cleanup),+ ),
+                }
+            }
+        }
+
+        impl<$($tuple),+> SourceCleanup for ($($tuple),+)
+        where $($tuple: SourceCleanup),+ {
+            const NEEDS_CLEANUP: bool = {
+                let need_cleanups = ( $($tuple::NEEDS_CLEANUP),+ );
+                or_bools!(need_cleanups, $($i),+)
+            };
+
+            fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
+                if Self::NEEDS_CLEANUP {
+                    $( self.$i.cleanup_item_range(range.clone()); )+
                 }
             }
         }

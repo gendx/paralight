@@ -6,7 +6,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use super::{IntoParallelSource, ParallelSource, SourceDescriptor};
+use super::{
+    IntoParallelSource, NoopSourceCleanup, ParallelSource, SourceCleanup, SourceDescriptor,
+};
 
 /// A parallel source over a [slice](slice). This struct is created by the
 /// [`par_iter()`](super::IntoParallelRefSource::par_iter) method on
@@ -33,10 +35,14 @@ impl<'data, T: Sync> IntoParallelSource for &'data [T] {
 impl<'data, T: Sync> ParallelSource for SliceParallelSource<'data, T> {
     type Item = &'data T;
 
-    fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
+    fn descriptor(
+        self,
+    ) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync, impl SourceCleanup + Sync>
+    {
         SourceDescriptor {
             len: self.slice.len(),
             fetch_item: |index| &self.slice[index],
+            cleanup: NoopSourceCleanup,
         }
     }
 }
@@ -67,7 +73,10 @@ impl<'data, T: Send> IntoParallelSource for &'data mut [T] {
 impl<'data, T: Send> ParallelSource for MutSliceParallelSource<'data, T> {
     type Item = &'data mut T;
 
-    fn descriptor(self) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync> {
+    fn descriptor(
+        self,
+    ) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync, impl SourceCleanup + Sync>
+    {
         let len = self.slice.len();
         let ptr = MutPtrWrapper(self.slice.as_mut_ptr());
         SourceDescriptor {
@@ -112,6 +121,7 @@ impl<'data, T: Send> ParallelSource for MutSliceParallelSource<'data, T> {
                 let item: &mut T = unsafe { &mut *item_ptr };
                 item
             },
+            cleanup: NoopSourceCleanup,
         }
     }
 }
