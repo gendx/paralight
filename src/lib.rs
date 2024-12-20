@@ -14,10 +14,7 @@
     clippy::multiple_unsafe_ops_per_block
 )]
 #![cfg_attr(not(test), forbid(clippy::undocumented_unsafe_blocks))]
-#![cfg_attr(
-    all(test, feature = "nightly_tests"),
-    feature(negative_impls, coverage_attribute)
-)]
+#![cfg_attr(all(test, feature = "nightly_tests"), feature(negative_impls))]
 #![cfg_attr(feature = "nightly", feature(step_trait, try_trait_v2))]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
