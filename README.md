@@ -1,14 +1,14 @@
 # Paralight: a lightweight parallelism library for indexed structures
 
 [![Crate](https://img.shields.io/crates/v/paralight.svg?logo=rust)](https://crates.io/crates/paralight)
-[![Documentation](https://img.shields.io/docsrs/paralight/0.0.5?logo=rust)](https://docs.rs/paralight/0.0.5/)
-[![Minimum Rust 1.75.0](https://img.shields.io/crates/msrv/paralight/0.0.5.svg?logo=rust&color=orange)](https://releases.rs/docs/1.75.0/)
-[![Lines of Code](https://www.aschey.tech/tokei/github/gendx/paralight?category=code&branch=0.0.5)](https://github.com/gendx/paralight/tree/0.0.5)
-[![Dependencies](https://deps.rs/crate/paralight/0.0.5/status.svg)](https://deps.rs/crate/paralight/0.0.5)
-[![License](https://img.shields.io/crates/l/paralight/0.0.5.svg)](https://github.com/gendx/paralight/blob/0.0.5/LICENSE)
-[![Codecov](https://codecov.io/gh/gendx/paralight/branch/0.0.5/graph/badge.svg)](https://codecov.io/gh/gendx/paralight/tree/0.0.5)
-[![Build Status](https://github.com/gendx/paralight/actions/workflows/build.yml/badge.svg?branch=0.0.5)](https://github.com/gendx/paralight/actions/workflows/build.yml)
-[![Test Status](https://github.com/gendx/paralight/actions/workflows/tests.yml/badge.svg?branch=0.0.5)](https://github.com/gendx/paralight/actions/workflows/tests.yml)
+[![Documentation](https://img.shields.io/docsrs/paralight?logo=rust)](https://docs.rs/paralight)
+[![Minimum Rust 1.75.0](https://img.shields.io/badge/rust-1.75.0%2B-orange.svg?logo=rust)](https://releases.rs/docs/1.75.0/)
+[![Lines of Code](https://www.aschey.tech/tokei/github/gendx/paralight?category=code&branch=main)](https://github.com/gendx/paralight)
+[![Dependencies](https://deps.rs/repo/github/gendx/paralight/status.svg)](https://deps.rs/repo/github/gendx/paralight)
+[![License](https://img.shields.io/crates/l/paralight.svg)](https://github.com/gendx/paralight/blob/main/LICENSE)
+[![Codecov](https://codecov.io/gh/gendx/paralight/branch/main/graph/badge.svg)](https://app.codecov.io/gh/gendx/paralight/tree/main)
+[![Build Status](https://github.com/gendx/paralight/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/gendx/paralight/actions/workflows/build.yml)
+[![Test Status](https://github.com/gendx/paralight/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/gendx/paralight/actions/workflows/tests.yml)
 
 This library allows you to distribute computation over [slices](slice) (and
 other *indexed* sources) among multiple threads. Each thread processes a subset

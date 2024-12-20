@@ -1710,8 +1710,8 @@ mod test {
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .filter(|&&x| x % 2 == 0)
-            .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
-        assert_eq!(sum, INPUT_LEN * (INPUT_LEN / 2 + 1) / 2);
+            .sum::<u64>();
+        assert_eq!(sum, (INPUT_LEN / 2) * (INPUT_LEN / 2 + 1));
     }
 
     fn test_adaptor_filter_map(range_strategy: RangeStrategy) {
@@ -1727,8 +1727,8 @@ mod test {
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .filter_map(|&x| if x % 2 == 0 { Some(x * 3) } else { None })
-            .pipeline(|| 0, |acc, x| acc + x, |acc| acc, |a, b| a + b);
-        assert_eq!(sum, 3 * INPUT_LEN * (INPUT_LEN / 2 + 1) / 2);
+            .sum::<u64>();
+        assert_eq!(sum, 3 * (INPUT_LEN / 2) * (INPUT_LEN / 2 + 1));
     }
 
     fn test_adaptor_find_any(range_strategy: RangeStrategy) {
@@ -2038,7 +2038,7 @@ mod test {
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .map(|&x| x * 42)
-            .pipeline(|| 0, |acc, x| acc + x, |acc| acc, |a, b| a + b);
+            .sum::<u64>();
         assert_eq!(sum1, 42 * INPUT_LEN * (INPUT_LEN + 1) / 2);
 
         let sum2 = input
@@ -2046,7 +2046,7 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .map(|&x| x * 6)
             .map(|x| x * 7)
-            .pipeline(|| 0, |acc, x| acc + x, |acc| acc, |a, b| a + b);
+            .sum::<u64>();
         assert_eq!(sum2, 42 * INPUT_LEN * (INPUT_LEN + 1) / 2);
 
         let sum3 = input
