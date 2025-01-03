@@ -11,7 +11,7 @@
 mod source;
 
 use crossbeam_utils::CachePadded;
-pub use source::owned_slice::{ArrayParallelSource, VecParallelSource};
+pub use source::owned_slice::VecParallelSource;
 pub use source::range::{RangeInclusiveParallelSource, RangeParallelSource};
 pub use source::slice::{MutSliceParallelSource, SliceParallelSource};
 pub use source::zip::{ZipEq, ZipMax, ZipMin, ZipableSource};

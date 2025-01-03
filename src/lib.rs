@@ -112,6 +112,7 @@ mod test {
                 test_pipeline_local_lifetime_input,
                 test_pipeline_local_lifetime_output,
                 test_pipeline_local_lifetime_accumulator,
+                test_source_boxed_slice,
                 test_source_slice,
                 #[cfg(feature = "nightly_tests")]
                 test_source_slice_not_send,
@@ -834,6 +835,38 @@ mod test {
                 |a, b| a + b,
             );
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_source_boxed_slice(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..=INPUT_LEN).map(Box::new).collect::<Box<[Box<u64>]>>();
+        let sum = input
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .map(|x| *x)
+            .sum::<u64>();
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+
+        let input = (0..=INPUT_LEN).map(Box::new).collect::<Box<[Box<u64>]>>();
+        let needle = input
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .find_any(|x| **x % 10 == 9);
+        assert!(needle.is_some());
+        assert_eq!(*needle.unwrap() % 10, 9);
+
+        let input = (0..=INPUT_LEN).map(Box::new).collect::<Box<[Box<u64>]>>();
+        let needle = input
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .find_first(|x| **x % 10 == 9);
+        assert_eq!(needle, Some(Box::new(9)));
     }
 
     fn test_source_slice(range_strategy: RangeStrategy) {
