@@ -190,8 +190,20 @@ macro_rules! or_bools {
     }
 }
 
+/// Helper that associates a source length and its cleanup function.
+struct LengthCleanup<T> {
+    len: usize,
+    cleanup: T,
+}
+
+/// Helper to cleanup a [`ZipEq`] source.
+struct ZipEqCleanup<T>(T);
+
+/// Helper to cleanup a [`ZipMax`] source.
+struct ZipMaxCleanup<T>(T);
+
 macro_rules! zipable_tuple {
-    ( $($tuple:ident $i:tt),+ ) => {
+    ( $detail:ident, $($tuple:ident $i:tt),+ ) => {
         impl<$($tuple),+> ZipableSource for ($($tuple),+)
         where $($tuple: ParallelSource),+ {}
 
@@ -211,7 +223,7 @@ macro_rules! zipable_tuple {
                     fetch_item: move |index| {
                         ( $( (descriptors.$i.fetch_item)(index) ),+ )
                     },
-                    cleanup: ( $(descriptors.$i.cleanup),+ ),
+                    cleanup: ZipEqCleanup(( $(descriptors.$i.cleanup),+ )),
                 }
             }
         }
@@ -239,7 +251,10 @@ macro_rules! zipable_tuple {
                             }
                         ),+ )
                     },
-                    cleanup: ( $(descriptors.$i.cleanup),+ ),
+                    cleanup: ZipMaxCleanup(( $( LengthCleanup {
+                        len: descriptors.$i.len,
+                        cleanup: descriptors.$i.cleanup,
+                    } ),+ )),
                 }
             }
         }
@@ -260,12 +275,18 @@ macro_rules! zipable_tuple {
                     fetch_item: move |index| {
                         ( $( (descriptors.$i.fetch_item)(index) ),+ )
                     },
-                    cleanup: ( $(descriptors.$i.cleanup),+ ),
+                    cleanup: $detail::ZipMinCleanup {
+                        len,
+                        tuple: ( $( LengthCleanup {
+                            len: descriptors.$i.len,
+                            cleanup: descriptors.$i.cleanup,
+                        } ),+ ),
+                    },
                 }
             }
         }
 
-        impl<$($tuple),+> SourceCleanup for ($($tuple),+)
+        impl<$($tuple),+> SourceCleanup for ZipEqCleanup<($($tuple),+)>
         where $($tuple: SourceCleanup),+ {
             const NEEDS_CLEANUP: bool = {
                 let need_cleanups = ( $($tuple::NEEDS_CLEANUP),+ );
@@ -274,24 +295,83 @@ macro_rules! zipable_tuple {
 
             fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
                 if Self::NEEDS_CLEANUP {
-                    $( self.$i.cleanup_item_range(range.clone()); )+
+                    $( self.0.$i.cleanup_item_range(range.clone()); )+
+                }
+            }
+        }
+
+        impl<$($tuple),+> SourceCleanup for ZipMaxCleanup<($( LengthCleanup<$tuple> ),+)>
+        where $($tuple: SourceCleanup),+ {
+            const NEEDS_CLEANUP: bool = {
+                let need_cleanups = ( $($tuple::NEEDS_CLEANUP),+ );
+                or_bools!(need_cleanups, $($i),+)
+            };
+
+            fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
+                if Self::NEEDS_CLEANUP {
+                    let tuple = &self.0;
+                    $( {
+                        let this_len = tuple.$i.len;
+                        let this_range = range.start.min(this_len)..range.end.min(this_len);
+                        tuple.$i.cleanup.cleanup_item_range(this_range);
+                    } )+
+                }
+            }
+        }
+
+        // As long as Rust lacks variadic generics (or drop specialization), we need to define a
+        // separate `ZipMinCleanup` struct for each tuple length, because the `Drop` implementation
+        // only applies to tuples. Defining a more general `ZipMinCleanup<T>` like for
+        // `ZipEqCleanup` and `ZipMaxCleanup` would prevent defining the `Drop` implementation only
+        // when `T` is a tuple, as `Drop` must be implemented for the same constraints as the
+        // struct.
+        mod $detail {
+            use super::*;
+
+            /// Helper to cleanup a [`ZipMin`] source.
+            pub struct ZipMinCleanup<$($tuple),+>
+            where $($tuple: SourceCleanup),+ {
+                pub len: usize,
+                pub tuple: ( $( LengthCleanup<$tuple> ),+ ),
+            }
+
+            impl<$($tuple),+> SourceCleanup for ZipMinCleanup<$($tuple),+>
+            where $($tuple: SourceCleanup),+ {
+                const NEEDS_CLEANUP: bool = {
+                    let need_cleanups = ( $($tuple::NEEDS_CLEANUP),+ );
+                    or_bools!(need_cleanups, $($i),+)
+                };
+
+                fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
+                    if Self::NEEDS_CLEANUP {
+                        $( self.tuple.$i.cleanup.cleanup_item_range(range.clone()); )+
+                    }
+                }
+            }
+
+            impl<$($tuple),+> Drop for ZipMinCleanup<$($tuple),+>
+            where $($tuple: SourceCleanup),+ {
+                fn drop(&mut self) {
+                    if Self::NEEDS_CLEANUP {
+                        $( self.tuple.$i.cleanup.cleanup_item_range(self.len..self.tuple.$i.len); )+
+                    }
                 }
             }
         }
     }
 }
 
-zipable_tuple!(A 0, B 1);
-zipable_tuple!(A 0, B 1, C 2);
-zipable_tuple!(A 0, B 1, C 2, D 3);
-zipable_tuple!(A 0, B 1, C 2, D 3, E 4);
-zipable_tuple!(A 0, B 1, C 2, D 3, E 4, F 5);
-zipable_tuple!(A 0, B 1, C 2, D 3, E 4, F 5, G 6);
-zipable_tuple!(A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7);
-zipable_tuple!(A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8);
-zipable_tuple!(A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9);
-zipable_tuple!(A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9, K 10);
-zipable_tuple!(A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9, K 10, L 11);
+zipable_tuple!(zip2, A 0, B 1);
+zipable_tuple!(zip3, A 0, B 1, C 2);
+zipable_tuple!(zip4, A 0, B 1, C 2, D 3);
+zipable_tuple!(zip5, A 0, B 1, C 2, D 3, E 4);
+zipable_tuple!(zip6, A 0, B 1, C 2, D 3, E 4, F 5);
+zipable_tuple!(zip7, A 0, B 1, C 2, D 3, E 4, F 5, G 6);
+zipable_tuple!(zip8, A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7);
+zipable_tuple!(zip9, A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8);
+zipable_tuple!(zip10, A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9);
+zipable_tuple!(zip11, A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9, K 10);
+zipable_tuple!(zip12, A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9, K 10, L 11);
 
 #[cfg(test)]
 mod test {

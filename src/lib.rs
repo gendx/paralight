@@ -158,10 +158,13 @@ mod test {
                 test_source_adaptor_take_cleanup,
                 test_source_adaptor_take_exact,
                 test_source_adaptor_take_exact_too_much => fail("called take_exact() with more items than this source produces"),
+                test_source_adaptor_zip_eq_cleanup,
                 test_source_adaptor_zip_eq,
                 test_source_adaptor_zip_eq_unequal => fail("called zip_eq() with sources of different lengths"),
                 test_source_adaptor_zip_max,
+                test_source_adaptor_zip_max_cleanup,
                 test_source_adaptor_zip_min,
+                test_source_adaptor_zip_min_cleanup,
                 test_adaptor_all,
                 test_adaptor_any,
                 test_adaptor_cloned,
@@ -1702,6 +1705,42 @@ mod test {
         assert_eq!(sum_right, 3 * INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
+    fn test_source_adaptor_zip_eq_cleanup(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let left = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
+        let right = (INPUT_LEN..=2 * INPUT_LEN)
+            .map(Box::new)
+            .collect::<Vec<Box<u64>>>();
+
+        let (sum_left, sum_right) = (left.clone().into_par_iter(), right.clone().into_par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .map(|(a, b)| (*a, *b))
+            .reduce(|| (0, 0), |(a, b), (c, d)| (a + c, b + d));
+        assert_eq!(sum_left, INPUT_LEN * (INPUT_LEN + 1) / 2);
+        assert_eq!(sum_right, 3 * INPUT_LEN * (INPUT_LEN + 1) / 2);
+
+        let needle = (left.clone().into_par_iter(), right.clone().into_par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .find_any(|(x, _)| **x % 10 == 9);
+        let needle = needle.unwrap();
+        assert_eq!(*needle.0 % 10, 9);
+        assert_eq!(*needle.1, *needle.0 + INPUT_LEN);
+
+        let needle = (left.into_par_iter(), right.into_par_iter())
+            .zip_eq()
+            .with_thread_pool(&mut thread_pool)
+            .find_first(|(x, _)| **x % 10 == 9);
+        assert_eq!(needle, Some((Box::new(9), Box::new(INPUT_LEN + 9))));
+    }
+
     fn test_source_adaptor_zip_eq_unequal(range_strategy: RangeStrategy) {
         let mut thread_pool = ThreadPoolBuilder {
             num_threads: ThreadCount::AvailableParallelism,
@@ -1739,6 +1778,44 @@ mod test {
         assert_eq!(sum_right, 3 * INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
+    fn test_source_adaptor_zip_max_cleanup(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let left = (0..=2 * INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
+        let right = (INPUT_LEN..=2 * INPUT_LEN)
+            .map(Box::new)
+            .collect::<Vec<Box<u64>>>();
+
+        let (sum_left, sum_right) = (left.clone().into_par_iter(), right.clone().into_par_iter())
+            .zip_max()
+            .with_thread_pool(&mut thread_pool)
+            .map(|(a, b)| (a.map(|x| *x).unwrap(), b.map(|x| *x).unwrap_or(0)))
+            .reduce(|| (0, 0), |(a, b), (c, d)| (a + c, b + d));
+        assert_eq!(sum_left, INPUT_LEN * (2 * INPUT_LEN + 1));
+        assert_eq!(sum_right, 3 * INPUT_LEN * (INPUT_LEN + 1) / 2);
+
+        let needle = (left.clone().into_par_iter(), right.clone().into_par_iter())
+            .zip_max()
+            .with_thread_pool(&mut thread_pool)
+            .find_any(|(x, _)| **x.as_ref().unwrap() % 10 == 9);
+        let needle: (Option<Box<u64>>, Option<Box<u64>>) = needle.unwrap();
+        assert_eq!(*needle.0.unwrap() % 10, 9);
+
+        let needle = (left.into_par_iter(), right.into_par_iter())
+            .zip_max()
+            .with_thread_pool(&mut thread_pool)
+            .find_first(|(x, _)| **x.as_ref().unwrap() % 10 == 9);
+        assert_eq!(
+            needle,
+            Some((Some(Box::new(9)), Some(Box::new(INPUT_LEN + 9))))
+        );
+    }
+
     fn test_source_adaptor_zip_min(range_strategy: RangeStrategy) {
         let mut thread_pool = ThreadPoolBuilder {
             num_threads: ThreadCount::AvailableParallelism,
@@ -1757,6 +1834,42 @@ mod test {
 
         assert_eq!(sum_left, INPUT_LEN * (INPUT_LEN + 1) / 2);
         assert_eq!(sum_right, 3 * INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_source_adaptor_zip_min_cleanup(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let left = (0..=2 * INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
+        let right = (INPUT_LEN..=2 * INPUT_LEN)
+            .map(Box::new)
+            .collect::<Vec<Box<u64>>>();
+
+        let (sum_left, sum_right) = (left.clone().into_par_iter(), right.clone().into_par_iter())
+            .zip_min()
+            .with_thread_pool(&mut thread_pool)
+            .map(|(a, b)| (*a, *b))
+            .reduce(|| (0, 0), |(a, b), (c, d)| (a + c, b + d));
+        assert_eq!(sum_left, INPUT_LEN * (INPUT_LEN + 1) / 2);
+        assert_eq!(sum_right, 3 * INPUT_LEN * (INPUT_LEN + 1) / 2);
+
+        let needle = (left.clone().into_par_iter(), right.clone().into_par_iter())
+            .zip_min()
+            .with_thread_pool(&mut thread_pool)
+            .find_any(|(x, _)| **x % 10 == 9);
+        let needle = needle.unwrap();
+        assert_eq!(*needle.0 % 10, 9);
+        assert_eq!(*needle.1, *needle.0 + INPUT_LEN);
+
+        let needle = (left.into_par_iter(), right.into_par_iter())
+            .zip_min()
+            .with_thread_pool(&mut thread_pool)
+            .find_first(|(x, _)| **x % 10 == 9);
+        assert_eq!(needle, Some((Box::new(9), Box::new(INPUT_LEN + 9))));
     }
 
     fn test_adaptor_all(range_strategy: RangeStrategy) {
