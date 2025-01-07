@@ -754,7 +754,7 @@ impl<Inner: SourceCleanup> SourceCleanup for RevSourceDescriptor<Inner> {
     fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
             self.inner
-                .cleanup_item_range(self.len - range.end..self.len - range.start)
+                .cleanup_item_range(self.len - range.end..self.len - range.start);
         }
     }
 }
@@ -810,7 +810,7 @@ impl<Inner: SourceDescriptor> SourceCleanup for SkipSourceDescriptor<Inner> {
     fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
             self.inner
-                .cleanup_item_range(self.count + range.start..self.count + range.end)
+                .cleanup_item_range(self.count + range.start..self.count + range.end);
         }
     }
 }
@@ -830,7 +830,7 @@ impl<Inner: SourceDescriptor> SourceDescriptor for SkipSourceDescriptor<Inner> {
 impl<Inner: SourceDescriptor> Drop for SkipSourceDescriptor<Inner> {
     fn drop(&mut self) {
         if Self::NEEDS_CLEANUP && self.count != 0 {
-            self.inner.cleanup_item_range(0..self.count)
+            self.inner.cleanup_item_range(0..self.count);
         }
     }
 }
@@ -987,7 +987,7 @@ impl<Inner: SourceDescriptor> SourceCleanup for TakeSourceDescriptor<Inner> {
 
     fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
-            self.inner.cleanup_item_range(range)
+            self.inner.cleanup_item_range(range);
         }
     }
 }
@@ -1007,7 +1007,7 @@ impl<Inner: SourceDescriptor> SourceDescriptor for TakeSourceDescriptor<Inner> {
 impl<Inner: SourceDescriptor> Drop for TakeSourceDescriptor<Inner> {
     fn drop(&mut self) {
         if Self::NEEDS_CLEANUP && self.count != self.inner_len {
-            self.inner.cleanup_item_range(self.count..self.inner_len)
+            self.inner.cleanup_item_range(self.count..self.inner_len);
         }
     }
 }

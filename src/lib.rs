@@ -143,7 +143,9 @@ mod test {
                 test_source_adaptor_chain,
                 test_source_adaptor_chain_cleanup,
                 test_source_adaptor_chain_overflow => fail("called chain() with sources that together produce more than usize::MAX items"),
+                test_source_adaptor_chains_cleanup,
                 test_source_adaptor_enumerate,
+                test_source_adaptor_enumerate_cleanup,
                 test_source_adaptor_rev,
                 test_source_adaptor_rev_cleanup,
                 test_source_adaptor_skip,
@@ -1192,8 +1194,8 @@ mod test {
             .into_par_iter()
             .with_thread_pool(&mut thread_pool)
             .find_any(|x| {
-                if **x % 2 == 1 {
-                    true
+                if **x % 2 == 0 {
+                    false
                 } else {
                     panic!("arithmetic panic");
                 }
@@ -1213,8 +1215,8 @@ mod test {
             .into_par_iter()
             .with_thread_pool(&mut thread_pool)
             .find_first(|x| {
-                if **x % 2 == 1 {
-                    true
+                if **x % 2 == 0 {
+                    false
                 } else {
                     panic!("arithmetic panic");
                 }
@@ -1293,6 +1295,57 @@ mod test {
             .sum::<usize>();
     }
 
+    fn test_source_adaptor_chains_cleanup(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let make_chained_iters = || {
+            // Make a binary tree of chained iterators.
+            let inputs: [Vec<Box<u64>>; 16] = std::array::from_fn(|chunk| {
+                ((chunk as u64 * INPUT_LEN) / 16..((chunk as u64 + 1) * INPUT_LEN) / 16)
+                    .map(Box::new)
+                    .collect()
+            });
+
+            let [x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15] =
+                inputs.map(|chunk| chunk.into_par_iter());
+            let (y0, y1, y2, y3, y4, y5, y6, y7) = (
+                x0.chain(x1),
+                x2.chain(x3),
+                x4.chain(x5),
+                x6.chain(x7),
+                x8.chain(x9),
+                x10.chain(x11),
+                x12.chain(x13),
+                x14.chain(x15),
+            );
+            let (z0, z1, z2, z3) = (y0.chain(y1), y2.chain(y3), y4.chain(y5), y6.chain(y7));
+            let (t0, t1) = (z0.chain(z1), z2.chain(z3));
+            t0.chain(t1)
+        };
+
+        let sum = make_chained_iters()
+            .with_thread_pool(&mut thread_pool)
+            .map(|x| *x)
+            .sum::<u64>();
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN - 1) / 2);
+
+        let needle = make_chained_iters()
+            .with_thread_pool(&mut thread_pool)
+            .find_any(|x| **x % 10 == 9);
+        assert!(needle.is_some());
+        assert_eq!(*needle.unwrap() % 10, 9);
+
+        let needle = make_chained_iters()
+            .with_thread_pool(&mut thread_pool)
+            .find_first(|x| **x % 10 == 9);
+        assert_eq!(needle, Some(Box::new(9)));
+    }
+
     fn test_source_adaptor_enumerate(range_strategy: RangeStrategy) {
         let mut thread_pool = ThreadPoolBuilder {
             num_threads: ThreadCount::AvailableParallelism,
@@ -1312,6 +1365,46 @@ mod test {
             sum_squares,
             INPUT_LEN * (INPUT_LEN + 1) * (2 * INPUT_LEN + 1) / 6
         );
+    }
+
+    fn test_source_adaptor_enumerate_cleanup(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
+        let sum_squares = input
+            .clone()
+            .into_par_iter()
+            .enumerate()
+            .with_thread_pool(&mut thread_pool)
+            .map(|(i, x)| i as u64 * *x)
+            .sum::<u64>();
+        assert_eq!(
+            sum_squares,
+            INPUT_LEN * (INPUT_LEN + 1) * (2 * INPUT_LEN + 1) / 6
+        );
+
+        let needle = input
+            .clone()
+            .into_par_iter()
+            .enumerate()
+            .with_thread_pool(&mut thread_pool)
+            .find_any(|(_, x)| **x % 10 == 9);
+        let needle = needle.unwrap();
+        assert_eq!(*needle.1 % 10, 9);
+        assert_eq!(needle.0 as u64, *needle.1);
+
+        let needle = input
+            .clone()
+            .into_par_iter()
+            .enumerate()
+            .with_thread_pool(&mut thread_pool)
+            .find_first(|(_, x)| **x % 10 == 9);
+        assert_eq!(needle, Some((9, Box::new(9))));
     }
 
     fn test_source_adaptor_rev(range_strategy: RangeStrategy) {
@@ -1531,21 +1624,21 @@ mod test {
         }
         .build();
 
-        let input = (0..=2 * INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
+        let input = (0..=3 * INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
 
-        let sum_by_2 = input
+        let sum_by_3 = input
             .clone()
             .into_par_iter()
-            .step_by(2)
+            .step_by(3)
             .with_thread_pool(&mut thread_pool)
             .map(|x| *x)
             .sum::<u64>();
-        assert_eq!(sum_by_2, INPUT_LEN * (INPUT_LEN + 1));
+        assert_eq!(sum_by_3, 3 * INPUT_LEN * (INPUT_LEN + 1) / 2);
 
         let needle = input
             .clone()
             .into_par_iter()
-            .step_by(3)
+            .step_by(7)
             .with_thread_pool(&mut thread_pool)
             .find_any(|x| **x % 10 == 9);
         assert!(needle.is_some());
@@ -1553,10 +1646,10 @@ mod test {
 
         let needle = input
             .into_par_iter()
-            .step_by(3)
+            .step_by(7)
             .with_thread_pool(&mut thread_pool)
             .find_first(|x| **x % 10 == 9);
-        assert_eq!(needle, Some(Box::new(9)));
+        assert_eq!(needle, Some(Box::new(49)));
     }
 
     fn test_source_adaptor_step_by_zero(range_strategy: RangeStrategy) {
@@ -2360,13 +2453,7 @@ mod test {
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .copied()
-            .find_map_any(|x| {
-                if x == INPUT_LEN + 1 {
-                    Some(2 * x)
-                } else {
-                    None
-                }
-            });
+            .find_map_any(|x| if x > INPUT_LEN { Some(2 * x) } else { None });
         assert_eq!(end, None);
 
         let forty_two = input
@@ -3181,13 +3268,9 @@ mod test {
         let result = input
             .par_iter()
             .with_thread_pool(&mut thread_pool)
-            .try_for_each(|&x| {
-                if x <= INPUT_LEN {
-                    sum.fetch_add(x, Ordering::Relaxed);
-                    Ok(())
-                } else {
-                    Err(x)
-                }
+            .try_for_each(|&x| -> Result<_, ()> {
+                sum.fetch_add(x, Ordering::Relaxed);
+                Ok(())
             });
         assert_eq!(result, Ok(()));
         assert_eq!(sum.into_inner(), INPUT_LEN * (INPUT_LEN + 1) / 2);
@@ -3232,12 +3315,8 @@ mod test {
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .try_for_each(|&x| {
-                if x <= INPUT_LEN {
-                    sum.fetch_add(x, Ordering::Relaxed);
-                    Some(())
-                } else {
-                    None
-                }
+                sum.fetch_add(x, Ordering::Relaxed);
+                Some(())
             });
         assert_eq!(result, Some(()));
         assert_eq!(sum.into_inner(), INPUT_LEN * (INPUT_LEN + 1) / 2);
@@ -3279,14 +3358,10 @@ mod test {
         let result = input
             .par_iter()
             .with_thread_pool(&mut thread_pool)
-            .try_for_each_init(rand::thread_rng, |rng, &x| {
+            .try_for_each_init(rand::thread_rng, |rng, &x| -> Result<_, ()> {
                 let y = rng.gen_range(0..=x);
                 sum.fetch_add(y, Ordering::Relaxed);
-                if y <= INPUT_LEN {
-                    Ok(())
-                } else {
-                    Err(y)
-                }
+                Ok(())
             });
         assert_eq!(result, Ok(()));
         assert!(sum.into_inner() <= INPUT_LEN * (INPUT_LEN + 1) / 2);
@@ -3335,11 +3410,7 @@ mod test {
             .try_for_each_init(rand::thread_rng, |rng, &x| {
                 let y = rng.gen_range(0..=x);
                 sum.fetch_add(y, Ordering::Relaxed);
-                if y <= INPUT_LEN {
-                    Some(())
-                } else {
-                    None
-                }
+                Some(())
             });
         assert_eq!(result, Some(()));
         assert!(sum.into_inner() <= INPUT_LEN * (INPUT_LEN + 1) / 2);

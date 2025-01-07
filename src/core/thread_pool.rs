@@ -719,26 +719,28 @@ mod test {
 
     #[test]
     fn test_num_threads() {
-        let thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy: RangeStrategy::Fixed,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-        assert_eq!(
-            thread_pool.num_threads(),
-            std::thread::available_parallelism().unwrap()
-        );
+        for range_strategy in [RangeStrategy::Fixed, RangeStrategy::WorkStealing] {
+            let thread_pool = ThreadPoolBuilder {
+                num_threads: ThreadCount::AvailableParallelism,
+                range_strategy,
+                cpu_pinning: CpuPinningPolicy::No,
+            }
+            .build();
+            assert_eq!(
+                thread_pool.num_threads(),
+                std::thread::available_parallelism().unwrap()
+            );
 
-        let thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::try_from(4).unwrap(),
-            range_strategy: RangeStrategy::Fixed,
-            cpu_pinning: CpuPinningPolicy::No,
+            let thread_pool = ThreadPoolBuilder {
+                num_threads: ThreadCount::try_from(4).unwrap(),
+                range_strategy,
+                cpu_pinning: CpuPinningPolicy::No,
+            }
+            .build();
+            assert_eq!(
+                thread_pool.num_threads(),
+                NonZeroUsize::try_from(4).unwrap()
+            );
         }
-        .build();
-        assert_eq!(
-            thread_pool.num_threads(),
-            NonZeroUsize::try_from(4).unwrap()
-        );
     }
 }
