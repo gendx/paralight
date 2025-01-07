@@ -168,19 +168,25 @@ pub struct ZipMax<T>(T);
 #[must_use = "iterator adaptors are lazy"]
 pub struct ZipMin<T>(T);
 
-macro_rules! assert_eq_lens {
-    ( $descriptors:expr, $zero:tt, $($i:tt),* ) => {
+macro_rules! assert_all_eq {
+    ( $lens:expr, $zero:tt, $($i:tt),* ) => {
         $( assert_eq!(
-            $descriptors.0.len,
-            $descriptors.$i.len,
+            $lens.0,
+            $lens.$i,
             "called zip_eq() with sources of different lengths"
-        ); )+
+        ); )*
     }
 }
 
-macro_rules! min_lens {
-    ( $descriptors:expr, $zero:tt, $($i:tt),* ) => {
-        $descriptors.0.len $( .min($descriptors.$i.len) )+
+macro_rules! min_of {
+    ( $lens:expr, $zero:tt, $($i:tt),* ) => {
+        $lens.0 $( .min($lens.$i) )*
+    }
+}
+
+macro_rules! max_of {
+    ( $lens:expr, $zero:tt, $($i:tt),* ) => {
+        $lens.0 $( .max($lens.$i) )*
     }
 }
 
@@ -190,17 +196,15 @@ macro_rules! or_bools {
     }
 }
 
-/// Helper that associates a source length and its cleanup function.
-struct LengthCleanup<T> {
+struct ZipEqSourceDescriptor<T> {
+    descriptors: T,
     len: usize,
-    cleanup: T,
 }
 
-/// Helper to cleanup a [`ZipEq`] source.
-struct ZipEqCleanup<T>(T);
-
-/// Helper to cleanup a [`ZipMax`] source.
-struct ZipMaxCleanup<T>(T);
+struct ZipMaxSourceDescriptor<T> {
+    descriptors: T,
+    len: usize,
+}
 
 macro_rules! zipable_tuple {
     ( $detail:ident, $($tuple:ident $i:tt),+ ) => {
@@ -211,19 +215,14 @@ macro_rules! zipable_tuple {
         where $($tuple: ParallelSource),+ {
             type Item = ( $($tuple::Item),+ );
 
-            fn descriptor(
-                self,
-            ) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync, impl SourceCleanup + Sync>
-            {
+            fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
                 let tuple = self.0;
                 let descriptors = ( $(tuple.$i.descriptor()),+ );
-                assert_eq_lens!(descriptors, $($i),+);
-                SourceDescriptor {
-                    len: descriptors.0.len,
-                    fetch_item: move |index| {
-                        ( $( (descriptors.$i.fetch_item)(index) ),+ )
-                    },
-                    cleanup: ZipEqCleanup(( $(descriptors.$i.cleanup),+ )),
+                let lens = ( $(descriptors.$i.len()),+ );
+                assert_all_eq!(lens, $($i),+);
+                ZipEqSourceDescriptor {
+                    descriptors,
+                    len: lens.0,
                 }
             }
         }
@@ -232,29 +231,14 @@ macro_rules! zipable_tuple {
         where $($tuple: ParallelSource),+ {
             type Item = ( $(Option<$tuple::Item>),+ );
 
-            fn descriptor(
-                self,
-            ) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync, impl SourceCleanup + Sync>
-            {
+            fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
                 let tuple = self.0;
                 let descriptors = ( $(tuple.$i.descriptor()),+ );
-                let mut len = 0;
-                $( len = descriptors.$i.len.max(len); )+
-                SourceDescriptor {
+                let lens = ( $(descriptors.$i.len()),+ );
+                let len = max_of!(lens, $($i),+);
+                ZipMaxSourceDescriptor {
+                    descriptors,
                     len,
-                    fetch_item: move |index| {
-                        ( $(
-                            if index < descriptors.$i.len {
-                                Some((descriptors.$i.fetch_item)(index))
-                            } else {
-                                None
-                            }
-                        ),+ )
-                    },
-                    cleanup: ZipMaxCleanup(( $( LengthCleanup {
-                        len: descriptors.$i.len,
-                        cleanup: descriptors.$i.cleanup,
-                    } ),+ )),
                 }
             }
         }
@@ -263,30 +247,19 @@ macro_rules! zipable_tuple {
         where $($tuple: ParallelSource),+ {
             type Item = ( $($tuple::Item),+ );
 
-            fn descriptor(
-                self,
-            ) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync, impl SourceCleanup + Sync>
-            {
+            fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
                 let tuple = self.0;
                 let descriptors = ( $(tuple.$i.descriptor()),+ );
-                let len = min_lens!(descriptors, $($i),+);
-                SourceDescriptor {
+                let lens = ( $(descriptors.$i.len()),+ );
+                let len = min_of!(lens, $($i),+);
+                $detail::ZipMinSourceDescriptor {
+                    descriptors,
                     len,
-                    fetch_item: move |index| {
-                        ( $( (descriptors.$i.fetch_item)(index) ),+ )
-                    },
-                    cleanup: $detail::ZipMinCleanup {
-                        len,
-                        tuple: ( $( LengthCleanup {
-                            len: descriptors.$i.len,
-                            cleanup: descriptors.$i.cleanup,
-                        } ),+ ),
-                    },
                 }
             }
         }
 
-        impl<$($tuple),+> SourceCleanup for ZipEqCleanup<($($tuple),+)>
+        impl<$($tuple),+> SourceCleanup for ZipEqSourceDescriptor<($($tuple),+)>
         where $($tuple: SourceCleanup),+ {
             const NEEDS_CLEANUP: bool = {
                 let need_cleanups = ( $($tuple::NEEDS_CLEANUP),+ );
@@ -295,13 +268,26 @@ macro_rules! zipable_tuple {
 
             fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
                 if Self::NEEDS_CLEANUP {
-                    $( self.0.$i.cleanup_item_range(range.clone()); )+
+                    $( self.descriptors.$i.cleanup_item_range(range.clone()); )+
                 }
             }
         }
 
-        impl<$($tuple),+> SourceCleanup for ZipMaxCleanup<($( LengthCleanup<$tuple> ),+)>
-        where $($tuple: SourceCleanup),+ {
+        impl<$($tuple),+> SourceDescriptor for ZipEqSourceDescriptor<($($tuple),+)>
+        where $($tuple: SourceDescriptor),+ {
+            type Item = ( $($tuple::Item),+ );
+
+            fn len(&self) -> usize {
+                self.len
+            }
+
+            fn fetch_item(&self, index: usize) -> Self::Item {
+                ( $( self.descriptors.$i.fetch_item(index) ),+ )
+            }
+        }
+
+        impl<$($tuple),+> SourceCleanup for ZipMaxSourceDescriptor<($($tuple),+)>
+        where $($tuple: SourceDescriptor),+ {
             const NEEDS_CLEANUP: bool = {
                 let need_cleanups = ( $($tuple::NEEDS_CLEANUP),+ );
                 or_bools!(need_cleanups, $($i),+)
@@ -309,34 +295,49 @@ macro_rules! zipable_tuple {
 
             fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
                 if Self::NEEDS_CLEANUP {
-                    let tuple = &self.0;
                     $( {
-                        let this_len = tuple.$i.len;
+                        let this_len = self.descriptors.$i.len();
                         let this_range = range.start.min(this_len)..range.end.min(this_len);
-                        tuple.$i.cleanup.cleanup_item_range(this_range);
+                        self.descriptors.$i.cleanup_item_range(this_range);
                     } )+
                 }
             }
         }
 
+        impl<$($tuple),+> SourceDescriptor for ZipMaxSourceDescriptor<($($tuple),+)>
+        where $($tuple: SourceDescriptor),+ {
+            type Item = ( $(Option<$tuple::Item>),+ );
+
+            fn len(&self) -> usize {
+                self.len
+            }
+
+            fn fetch_item(&self, index: usize) -> Self::Item {
+                ( $( if index < self.descriptors.$i.len() {
+                    Some(self.descriptors.$i.fetch_item(index))
+                } else {
+                    None
+                } ),+ )
+            }
+        }
+
         // As long as Rust lacks variadic generics (or drop specialization), we need to define a
-        // separate `ZipMinCleanup` struct for each tuple length, because the `Drop` implementation
-        // only applies to tuples. Defining a more general `ZipMinCleanup<T>` like for
-        // `ZipEqCleanup` and `ZipMaxCleanup` would prevent defining the `Drop` implementation only
-        // when `T` is a tuple, as `Drop` must be implemented for the same constraints as the
-        // struct.
+        // separate `ZipMinSourceDescriptor` struct for each tuple length, because the `Drop`
+        // implementation only applies to tuples. Defining a more general
+        // `ZipMinSourceDescriptor<T>` like for `ZipEqSourceDescriptor` and `ZipMaxSourceDescriptor`
+        // would prevent defining the `Drop` implementation only when `T` is a tuple, as `Drop` must
+        // be implemented for the same constraints as the struct.
         mod $detail {
             use super::*;
 
-            /// Helper to cleanup a [`ZipMin`] source.
-            pub struct ZipMinCleanup<$($tuple),+>
-            where $($tuple: SourceCleanup),+ {
+            pub struct ZipMinSourceDescriptor<$($tuple),+>
+            where $($tuple: SourceDescriptor),+ {
+                pub descriptors: ($($tuple),+),
                 pub len: usize,
-                pub tuple: ( $( LengthCleanup<$tuple> ),+ ),
             }
 
-            impl<$($tuple),+> SourceCleanup for ZipMinCleanup<$($tuple),+>
-            where $($tuple: SourceCleanup),+ {
+            impl<$($tuple),+> SourceCleanup for ZipMinSourceDescriptor<$($tuple),+>
+            where $($tuple: SourceDescriptor),+ {
                 const NEEDS_CLEANUP: bool = {
                     let need_cleanups = ( $($tuple::NEEDS_CLEANUP),+ );
                     or_bools!(need_cleanups, $($i),+)
@@ -344,16 +345,29 @@ macro_rules! zipable_tuple {
 
                 fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
                     if Self::NEEDS_CLEANUP {
-                        $( self.tuple.$i.cleanup.cleanup_item_range(range.clone()); )+
+                        $( self.descriptors.$i.cleanup_item_range(range.clone()); )+
                     }
                 }
             }
 
-            impl<$($tuple),+> Drop for ZipMinCleanup<$($tuple),+>
-            where $($tuple: SourceCleanup),+ {
+            impl<$($tuple),+> SourceDescriptor for ZipMinSourceDescriptor<$($tuple),+>
+            where $($tuple: SourceDescriptor),+ {
+                type Item = ( $($tuple::Item),+ );
+
+                fn len(&self) -> usize {
+                    self.len
+                }
+
+                fn fetch_item(&self, index: usize) -> Self::Item {
+                    ( $( self.descriptors.$i.fetch_item(index) ),+ )
+                }
+            }
+
+            impl<$($tuple),+> Drop for ZipMinSourceDescriptor<$($tuple),+>
+            where $($tuple: SourceDescriptor),+ {
                 fn drop(&mut self) {
                     if Self::NEEDS_CLEANUP {
-                        $( self.tuple.$i.cleanup.cleanup_item_range(self.len..self.tuple.$i.len); )+
+                        $( self.descriptors.$i.cleanup_item_range(self.len..self.descriptors.$i.len()); )+
                     }
                 }
             }
@@ -375,43 +389,35 @@ zipable_tuple!(zip12, A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9, K 10, L 
 
 #[cfg(test)]
 mod test {
-    struct LenField {
-        len: usize,
-    }
-
-    fn len(len: usize) -> LenField {
-        LenField { len }
-    }
-
     #[test]
-    fn assert_eq_lens() {
-        assert_eq_lens!((len(1), len(1)), 0, 1);
-        assert_eq_lens!((len(1), len(1), len(1)), 0, 1, 2);
-        assert_eq_lens!((len(1), len(1), len(1), len(1)), 0, 1, 2, 3);
+    fn assert_all_eq() {
+        assert_all_eq!((1, 1), 0, 1);
+        assert_all_eq!((1, 1, 1), 0, 1, 2);
+        assert_all_eq!((1, 1, 1, 1), 0, 1, 2, 3);
     }
 
     #[test]
     #[should_panic(expected = "called zip_eq() with sources of different lengths")]
-    fn assert_eq_lens_unequal_2() {
-        assert_eq_lens!((len(1), len(2)), 0, 1);
+    fn assert_all_eq_unequal_2() {
+        assert_all_eq!((1, 2), 0, 1);
     }
 
     #[test]
     #[should_panic(expected = "called zip_eq() with sources of different lengths")]
-    fn assert_eq_lens_unequal_3() {
-        assert_eq_lens!((len(1), len(1), len(2)), 0, 1, 2);
+    fn assert_all_eq_unequal_3() {
+        assert_all_eq!((1, 1, 2), 0, 1, 2);
     }
 
     #[test]
-    fn min_lens() {
-        assert_eq!(min_lens!((len(1), len(2)), 0, 1), 1);
-        assert_eq!(min_lens!((len(2), len(1)), 0, 1), 1);
+    fn min_of() {
+        assert_eq!(min_of!((1, 2), 0, 1), 1);
+        assert_eq!(min_of!((2, 1), 0, 1), 1);
 
-        assert_eq!(min_lens!((len(1), len(2), len(3)), 0, 1, 2), 1);
-        assert_eq!(min_lens!((len(1), len(3), len(2)), 0, 1, 2), 1);
-        assert_eq!(min_lens!((len(2), len(1), len(3)), 0, 1, 2), 1);
-        assert_eq!(min_lens!((len(2), len(3), len(1)), 0, 1, 2), 1);
-        assert_eq!(min_lens!((len(3), len(1), len(2)), 0, 1, 2), 1);
-        assert_eq!(min_lens!((len(3), len(2), len(1)), 0, 1, 2), 1);
+        assert_eq!(min_of!((1, 2, 3), 0, 1, 2), 1);
+        assert_eq!(min_of!((1, 3, 2), 0, 1, 2), 1);
+        assert_eq!(min_of!((2, 1, 3), 0, 1, 2), 1);
+        assert_eq!(min_of!((2, 3, 1), 0, 1, 2), 1);
+        assert_eq!(min_of!((3, 1, 2), 0, 1, 2), 1);
+        assert_eq!(min_of!((3, 2, 1), 0, 1, 2), 1);
     }
 }

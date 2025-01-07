@@ -153,7 +153,7 @@ impl ThreadPool {
         process_item: impl Fn(Accum, usize) -> ControlFlow<Accum, Accum> + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
-        cleanup: impl SourceCleanup + Sync,
+        cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
         self.inner
             .upper_bounded_pipeline(input_len, init, process_item, finalize, reduce, cleanup)
@@ -166,7 +166,7 @@ impl ThreadPool {
         input_len: usize,
         accum: impl Accumulator<usize, Output> + Sync,
         reduce: impl Accumulator<Output, Output>,
-        cleanup: impl SourceCleanup + Sync,
+        cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
         self.inner.iter_pipeline(input_len, accum, reduce, cleanup)
     }
@@ -224,7 +224,7 @@ impl ThreadPoolEnum {
         process_item: impl Fn(Accum, usize) -> ControlFlow<Accum, Accum> + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
-        cleanup: impl SourceCleanup + Sync,
+        cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
         match self {
             ThreadPoolEnum::Fixed(inner) => inner.upper_bounded_pipeline(
@@ -253,7 +253,7 @@ impl ThreadPoolEnum {
         input_len: usize,
         accum: impl Accumulator<usize, Output> + Sync,
         reduce: impl Accumulator<Output, Output>,
-        cleanup: impl SourceCleanup + Sync,
+        cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
         match self {
             ThreadPoolEnum::Fixed(inner) => inner.iter_pipeline(input_len, accum, reduce, cleanup),
@@ -387,7 +387,7 @@ impl<F: RangeFactory> ThreadPoolImpl<F> {
         process_item: impl Fn(Accum, usize) -> ControlFlow<Accum, Accum> + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
-        cleanup: impl SourceCleanup + Sync,
+        cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
         self.range_orchestrator.reset_ranges(input_len);
 
@@ -420,7 +420,7 @@ impl<F: RangeFactory> ThreadPoolImpl<F> {
         input_len: usize,
         accum: impl Accumulator<usize, Output> + Sync,
         reduce: impl Accumulator<Output, Output>,
-        cleanup: impl SourceCleanup + Sync,
+        cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
         self.range_orchestrator.reset_ranges(input_len);
 
@@ -479,6 +479,7 @@ impl<R: Range> LifetimeParameterized for DynLifetimeSyncPipeline<R> {
 }
 
 struct UpperBoundedPipelineImpl<
+    'a,
     Output,
     Accum,
     Init: Fn() -> Accum,
@@ -491,11 +492,11 @@ struct UpperBoundedPipelineImpl<
     init: Init,
     process_item: ProcessItem,
     finalize: Finalize,
-    cleanup: Cleanup,
+    cleanup: &'a Cleanup,
 }
 
 impl<R, Output, Accum, Init, ProcessItem, Finalize, Cleanup> Pipeline<R>
-    for UpperBoundedPipelineImpl<Output, Accum, Init, ProcessItem, Finalize, Cleanup>
+    for UpperBoundedPipelineImpl<'_, Output, Accum, Init, ProcessItem, Finalize, Cleanup>
 where
     R: Range,
     Init: Fn() -> Accum,
@@ -507,7 +508,7 @@ where
         let mut accumulator = (self.init)();
         let iter = SkipIteratorWrapper {
             iter: range.upper_bounded_iter(&self.bound),
-            cleanup: &self.cleanup,
+            cleanup: self.cleanup,
         };
         for i in iter {
             let acc = (self.process_item)(accumulator, i);
@@ -524,13 +525,13 @@ where
     }
 }
 
-struct IterPipelineImpl<Output, Accum: Accumulator<usize, Output>, Cleanup: SourceCleanup> {
+struct IterPipelineImpl<'a, Output, Accum: Accumulator<usize, Output>, Cleanup: SourceCleanup> {
     outputs: Arc<[Mutex<Option<Output>>]>,
     accum: Accum,
-    cleanup: Cleanup,
+    cleanup: &'a Cleanup,
 }
 
-impl<R, Output, Accum, Cleanup> Pipeline<R> for IterPipelineImpl<Output, Accum, Cleanup>
+impl<R, Output, Accum, Cleanup> Pipeline<R> for IterPipelineImpl<'_, Output, Accum, Cleanup>
 where
     R: Range,
     Accum: Accumulator<usize, Output>,
@@ -539,7 +540,7 @@ where
     fn run(&self, worker_id: usize, range: &R) {
         let iter = SkipIteratorWrapper {
             iter: range.iter(),
-            cleanup: &self.cleanup,
+            cleanup: self.cleanup,
         };
         let output = self.accum.accumulate(iter);
         *self.outputs[worker_id].lock().unwrap() = Some(output);

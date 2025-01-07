@@ -6,12 +6,51 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use super::{
-    IntoParallelSource, NoopSourceCleanup, ParallelSource, SourceCleanup, SourceDescriptor,
-};
+use super::{IntoParallelSource, ParallelSource, SourceCleanup, SourceDescriptor};
 #[cfg(feature = "nightly")]
 use std::iter::Step;
 use std::ops::{Range, RangeInclusive};
+
+struct RangeSourceDescriptor<T> {
+    start: T,
+    len: usize,
+}
+
+impl<T> SourceCleanup for RangeSourceDescriptor<T> {
+    const NEEDS_CLEANUP: bool = false;
+
+    fn cleanup_item_range(&self, _range: Range<usize>) {
+        // Nothing to cleanup
+    }
+}
+
+#[cfg(feature = "nightly")]
+impl<T: Step + Copy + Send + Sync> SourceDescriptor for RangeSourceDescriptor<T> {
+    type Item = T;
+
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    fn fetch_item(&self, index: usize) -> Self::Item {
+        debug_assert!(index < self.len);
+        T::forward(self.start, index)
+    }
+}
+
+#[cfg(not(feature = "nightly"))]
+impl SourceDescriptor for RangeSourceDescriptor<usize> {
+    type Item = usize;
+
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    fn fetch_item(&self, index: usize) -> Self::Item {
+        debug_assert!(index < self.len);
+        self.start + index
+    }
+}
 
 /// A parallel source over a [`Range`]. This struct is created by the
 /// [`into_par_iter()`](IntoParallelSource::into_par_iter) method on
@@ -40,10 +79,7 @@ impl<T: Step + Copy + Send + Sync> IntoParallelSource for Range<T> {
 impl<T: Step + Copy + Send + Sync> ParallelSource for RangeParallelSource<T> {
     type Item = T;
 
-    fn descriptor(
-        self,
-    ) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync, impl SourceCleanup + Sync>
-    {
+    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
         let range = self.range;
         let (len_hint, len) = T::steps_between(&range.start, &range.end);
         let len = len.unwrap_or_else(|| {
@@ -56,10 +92,9 @@ impl<T: Step + Copy + Send + Sync> ParallelSource for RangeParallelSource<T> {
                 );
             }
         });
-        SourceDescriptor {
+        RangeSourceDescriptor {
+            start: range.start,
             len,
-            fetch_item: move |index| T::forward(range.start, index),
-            cleanup: NoopSourceCleanup,
         }
     }
 }
@@ -78,19 +113,15 @@ impl IntoParallelSource for Range<usize> {
 impl ParallelSource for RangeParallelSource<usize> {
     type Item = usize;
 
-    fn descriptor(
-        self,
-    ) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync, impl SourceCleanup + Sync>
-    {
+    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
         let range = self.range;
         let len = range
             .end
             .checked_sub(range.start)
             .expect("cannot iterate over a backward range");
-        SourceDescriptor {
+        RangeSourceDescriptor {
+            start: range.start,
             len,
-            fetch_item: move |index| range.start + index,
-            cleanup: NoopSourceCleanup,
         }
     }
 }
@@ -122,10 +153,7 @@ impl<T: Step + Copy + Send + Sync> IntoParallelSource for RangeInclusive<T> {
 impl<T: Step + Copy + Send + Sync> ParallelSource for RangeInclusiveParallelSource<T> {
     type Item = T;
 
-    fn descriptor(
-        self,
-    ) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync, impl SourceCleanup + Sync>
-    {
+    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
         let (start, end) = self.range.into_inner();
         let (len_hint, len) = T::steps_between(&start, &end);
         let len = len.unwrap_or_else(|| {
@@ -144,11 +172,7 @@ impl<T: Step + Copy + Send + Sync> ParallelSource for RangeInclusiveParallelSour
                 usize::MAX
             );
         });
-        SourceDescriptor {
-            len,
-            fetch_item: move |index| T::forward(start, index),
-            cleanup: NoopSourceCleanup,
-        }
+        RangeSourceDescriptor { start, len }
     }
 }
 
@@ -166,10 +190,7 @@ impl IntoParallelSource for RangeInclusive<usize> {
 impl ParallelSource for RangeInclusiveParallelSource<usize> {
     type Item = usize;
 
-    fn descriptor(
-        self,
-    ) -> SourceDescriptor<Self::Item, impl Fn(usize) -> Self::Item + Sync, impl SourceCleanup + Sync>
-    {
+    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
         let (start, end) = self.range.into_inner();
         let len = end
             .checked_sub(start)
@@ -180,10 +201,6 @@ impl ParallelSource for RangeInclusiveParallelSource<usize> {
                 usize::MAX
             );
         });
-        SourceDescriptor {
-            len,
-            fetch_item: move |index| start + index,
-            cleanup: NoopSourceCleanup,
-        }
+        RangeSourceDescriptor { start, len }
     }
 }
