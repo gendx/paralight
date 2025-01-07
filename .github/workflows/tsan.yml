@@ -2,6 +2,17 @@ on: [push, pull_request]
 name: Tests with TSAN
 jobs:
   tsan:
+    strategy:
+      matrix:
+        test_features:
+          - ""
+          - ",nightly,nightly_tests"
+        include:
+          - test_features: ""
+            all_test_features: ""
+          - test_features: ",nightly,nightly_tests"
+            all_test_features: "--features=nightly,nightly_tests"
+      fail-fast: false
     runs-on: ubuntu-latest
     env:
       RUSTFLAGS: "-D warnings -Zsanitizer=thread"
@@ -13,8 +24,8 @@ jobs:
           components: rust-src
 
       - name: Run tests (no default features)
-        run: cargo test --release -Zbuild-std --target=x86_64-unknown-linux-gnu --verbose --all --no-default-features --features=nightly,nightly_tests
+        run: cargo test --release -Zbuild-std --target=x86_64-unknown-linux-gnu --verbose --all --no-default-features ${{ matrix.all_test_features }}
       - name: Run tests (log feature)
-        run: cargo test --release -Zbuild-std --target=x86_64-unknown-linux-gnu --verbose --all --no-default-features --features=log,nightly,nightly_tests
+        run: cargo test --release -Zbuild-std --target=x86_64-unknown-linux-gnu --verbose --all --no-default-features --features=log${{ matrix.test_features }}
       - name: Run tests (log_parallelism feature)
-        run: cargo test --release -Zbuild-std --target=x86_64-unknown-linux-gnu --verbose --all --no-default-features --features=log_parallelism,nightly,nightly_tests
+        run: cargo test --release -Zbuild-std --target=x86_64-unknown-linux-gnu --verbose --all --no-default-features --features=log_parallelism${{ matrix.test_features }}

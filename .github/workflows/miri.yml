@@ -2,6 +2,12 @@ on: [push, pull_request]
 name: Miri tests
 jobs:
   miri:
+    strategy:
+      matrix:
+        features:
+          - ""
+          - "--all-features"
+      fail-fast: false
     runs-on: ubuntu-latest
     env:
       RUSTFLAGS: "-D warnings"
@@ -12,5 +18,5 @@ jobs:
         with:
           components: miri
 
-      - name: Run miri tests (default features)
-        run: cargo miri test --all
+      - name: Run miri tests
+        run: cargo miri test --all ${{ matrix.features }}
