@@ -63,6 +63,15 @@ impl SourceDescriptor for RangeSourceDescriptor<usize> {
 ///
 /// See also [`RangeInclusiveParallelSource`].
 ///
+/// ### Stability blockers
+///
+/// On stable Rust, this struct is currently only implemented for ranges of
+/// [`usize`]. Ranges over any [`Step`] type are only available on Rust nightly
+/// with the `nightly` feature of Paralight enabled. This is because the
+/// implementation depends on the
+/// [`step_trait`](https://github.com/rust-lang/rust/issues/42168) nightly Rust
+/// feature.
+///
 /// ```
 /// # use paralight::iter::{
 /// #     IntoParallelSource, ParallelIteratorExt, ParallelSourceExt, RangeParallelSource,
@@ -154,6 +163,15 @@ impl ParallelSource for RangeParallelSource<usize> {
 /// is nonetheless public because of the `must_use` annotation.
 ///
 /// See also [`RangeParallelSource`].
+///
+/// ### Stability blockers
+///
+/// On stable Rust, this struct is currently only implemented for ranges of
+/// [`usize`]. Ranges over any [`Step`] type are only available on Rust nightly
+/// with the `nightly` feature of Paralight enabled. This is because the
+/// implementation depends on the
+/// [`step_trait`](https://github.com/rust-lang/rust/issues/42168) nightly Rust
+/// feature.
 ///
 /// ```
 /// # use paralight::iter::{

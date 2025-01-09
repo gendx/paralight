@@ -2553,6 +2553,15 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// See also [`try_for_each_init()`](Self::try_for_each_init) if you need to
     /// initialize a per-thread value and pass it together with each item.
     ///
+    /// # Stability blockers
+    ///
+    /// On stable Rust, this adaptor is currently only implemented for
+    /// [`Result`] outputs. Outputs of arbitrary [`Try`] types are only
+    /// available on Rust nightly with the `nightly` feature of Paralight
+    /// enabled. This is because the implementation depends on the
+    /// [`try_trait_v2`](https://github.com/rust-lang/rust/issues/84277) nightly
+    /// Rust feature.
+    ///
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
     /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
@@ -2649,6 +2658,15 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// See also [`try_for_each_init()`](Self::try_for_each_init) if you need to
     /// initialize a per-thread value and pass it together with each item.
+    ///
+    /// # Stability blockers
+    ///
+    /// On stable Rust, this adaptor is currently only implemented for
+    /// [`Result`] outputs. Outputs of arbitrary [`Try`] types are only
+    /// available on Rust nightly with the `nightly` feature of Paralight
+    /// enabled. This is because the implementation depends on the
+    /// [`try_trait_v2`](https://github.com/rust-lang/rust/issues/84277) nightly
+    /// Rust feature.
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
@@ -2749,6 +2767,15 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// companion value returned by `init` doesn't need to be [`Send`] nor
     /// [`Sync`].
     ///
+    /// # Stability blockers
+    ///
+    /// On stable Rust, this adaptor is currently only implemented for
+    /// [`Result`] outputs. Outputs of arbitrary [`Try`] types are only
+    /// available on Rust nightly with the `nightly` feature of Paralight
+    /// enabled. This is because the implementation depends on the
+    /// [`try_trait_v2`](https://github.com/rust-lang/rust/issues/84277) nightly
+    /// Rust feature.
+    ///
     /// ```
     /// # use paralight::iter::{IntoParallelSource, ParallelIteratorExt, ParallelSourceExt};
     /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
@@ -2807,6 +2834,15 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// The `init` function will be called only once per worker thread. The
     /// companion value returned by `init` doesn't need to be [`Send`] nor
     /// [`Sync`].
+    ///
+    /// # Stability blockers
+    ///
+    /// On stable Rust, this adaptor is currently only implemented for
+    /// [`Result`] outputs. Outputs of arbitrary [`Try`] types are only
+    /// available on Rust nightly with the `nightly` feature of Paralight
+    /// enabled. This is because the implementation depends on the
+    /// [`try_trait_v2`](https://github.com/rust-lang/rust/issues/84277) nightly
+    /// Rust feature.
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelSource, ParallelIteratorExt, ParallelSourceExt};
