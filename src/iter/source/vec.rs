@@ -1,4 +1,4 @@
-// Copyright 2024 Google LLC
+// Copyright 2025 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -17,6 +17,26 @@ use std::mem::ManuallyDrop;
 /// implements the [`ParallelSource`] and
 /// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it
 /// is nonetheless public because of the `must_use` annotation.
+///
+/// See also [`SliceParallelSource`](super::slice::SliceParallelSource) and
+/// [`MutSliceParallelSource`](super::slice::MutSliceParallelSource).
+///
+/// ```
+/// # use paralight::iter::{
+/// #     IntoParallelSource, ParallelIteratorExt, ParallelSourceExt, VecParallelSource,
+/// # };
+/// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+/// # let mut thread_pool = ThreadPoolBuilder {
+/// #     num_threads: ThreadCount::AvailableParallelism,
+/// #     range_strategy: RangeStrategy::WorkStealing,
+/// #     cpu_pinning: CpuPinningPolicy::No,
+/// # }
+/// # .build();
+/// let input = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+/// let iter: VecParallelSource<_> = input.into_par_iter();
+/// let sum = iter.with_thread_pool(&mut thread_pool).sum::<i32>();
+/// assert_eq!(sum, 5 * 11);
+/// ```
 #[must_use = "iterator adaptors are lazy"]
 pub struct VecParallelSource<T> {
     vec: Vec<T>,

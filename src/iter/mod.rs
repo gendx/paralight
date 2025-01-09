@@ -1,4 +1,4 @@
-// Copyright 2024 Google LLC
+// Copyright 2024-2025 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -11,9 +11,9 @@
 mod source;
 
 use crossbeam_utils::CachePadded;
-pub use source::owned_slice::VecParallelSource;
 pub use source::range::{RangeInclusiveParallelSource, RangeParallelSource};
 pub use source::slice::{MutSliceParallelSource, SliceParallelSource};
+pub use source::vec::VecParallelSource;
 pub use source::zip::{ZipEq, ZipMax, ZipMin, ZipableSource};
 pub use source::{
     IntoParallelRefMutSource, IntoParallelRefSource, IntoParallelSource, ParallelSource,

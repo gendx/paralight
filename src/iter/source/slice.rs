@@ -1,4 +1,4 @@
-// Copyright 2024 Google LLC
+// Copyright 2024-2025 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -17,6 +17,25 @@ use std::marker::PhantomData;
 /// implements the [`ParallelSource`] and
 /// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it
 /// is nonetheless public because of the `must_use` annotation.
+///
+/// See also [`MutSliceParallelSource`].
+///
+/// ```
+/// # use paralight::iter::{
+/// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, SliceParallelSource,
+/// # };
+/// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+/// # let mut thread_pool = ThreadPoolBuilder {
+/// #     num_threads: ThreadCount::AvailableParallelism,
+/// #     range_strategy: RangeStrategy::WorkStealing,
+/// #     cpu_pinning: CpuPinningPolicy::No,
+/// # }
+/// # .build();
+/// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+/// let iter: SliceParallelSource<_> = input.par_iter();
+/// let sum = iter.with_thread_pool(&mut thread_pool).sum::<i32>();
+/// assert_eq!(sum, 5 * 11);
+/// ```
 #[must_use = "iterator adaptors are lazy"]
 pub struct SliceParallelSource<'data, T> {
     slice: &'data [T],
@@ -72,6 +91,26 @@ impl<'data, T: Sync> SourceDescriptor for SliceSourceDescriptor<'data, T> {
 /// implements the [`ParallelSource`] and
 /// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it
 /// is nonetheless public because of the `must_use` annotation.
+///
+/// See also [`SliceParallelSource`].
+///
+/// ```
+/// # use paralight::iter::{
+/// #     IntoParallelRefMutSource, MutSliceParallelSource, ParallelIteratorExt, ParallelSourceExt,
+/// # };
+/// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+/// # let mut thread_pool = ThreadPoolBuilder {
+/// #     num_threads: ThreadCount::AvailableParallelism,
+/// #     range_strategy: RangeStrategy::WorkStealing,
+/// #     cpu_pinning: CpuPinningPolicy::No,
+/// # }
+/// # .build();
+/// let mut values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+/// let iter: MutSliceParallelSource<_> = values.par_iter_mut();
+/// iter.with_thread_pool(&mut thread_pool)
+///     .for_each(|x| *x *= 2);
+/// assert_eq!(values, [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]);
+/// ```
 #[must_use = "iterator adaptors are lazy"]
 pub struct MutSliceParallelSource<'data, T> {
     slice: &'data mut [T],
