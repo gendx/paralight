@@ -6,12 +6,15 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use super::{IntoParallelSource, ParallelSource, SourceCleanup, SourceDescriptor};
+use super::{
+    IntoParallelRefMutSource, IntoParallelRefSource, ParallelSource, SourceCleanup,
+    SourceDescriptor,
+};
 use std::marker::PhantomData;
 
 /// A parallel source over a [slice](slice). This struct is created by the
-/// [`par_iter()`](super::IntoParallelRefSource::par_iter) method on
-/// [`IntoParallelRefSource`](super::IntoParallelRefSource).
+/// [`par_iter()`](IntoParallelRefSource::par_iter) method on
+/// [`IntoParallelRefSource`].
 ///
 /// You most likely won't need to interact with this struct directly, as it
 /// implements the [`ParallelSource`] and
@@ -41,11 +44,11 @@ pub struct SliceParallelSource<'data, T> {
     slice: &'data [T],
 }
 
-impl<'data, T: Sync> IntoParallelSource for &'data [T] {
+impl<'data, T: Sync + 'data> IntoParallelRefSource<'data> for [T] {
     type Item = &'data T;
     type Source = SliceParallelSource<'data, T>;
 
-    fn into_par_iter(self) -> Self::Source {
+    fn par_iter(&'data self) -> Self::Source {
         SliceParallelSource { slice: self }
     }
 }
@@ -82,10 +85,9 @@ impl<'data, T: Sync> SourceDescriptor for SliceSourceDescriptor<'data, T> {
     }
 }
 
-#[allow(clippy::too_long_first_doc_paragraph)]
 /// A parallel source over a [mutable slice](slice). This struct is created by
-/// the [`par_iter_mut()`](super::IntoParallelRefMutSource::par_iter_mut) method
-/// on [`IntoParallelRefMutSource`](super::IntoParallelRefMutSource).
+/// the [`par_iter_mut()`](IntoParallelRefMutSource::par_iter_mut) method on
+/// [`IntoParallelRefMutSource`].
 ///
 /// You most likely won't need to interact with this struct directly, as it
 /// implements the [`ParallelSource`] and
@@ -116,11 +118,11 @@ pub struct MutSliceParallelSource<'data, T> {
     slice: &'data mut [T],
 }
 
-impl<'data, T: Send> IntoParallelSource for &'data mut [T] {
+impl<'data, T: Send + 'data> IntoParallelRefMutSource<'data> for [T] {
     type Item = &'data mut T;
     type Source = MutSliceParallelSource<'data, T>;
 
-    fn into_par_iter(self) -> Self::Source {
+    fn par_iter_mut(&'data mut self) -> Self::Source {
         MutSliceParallelSource { slice: self }
     }
 }

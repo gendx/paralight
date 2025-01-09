@@ -131,18 +131,6 @@ pub trait IntoParallelRefSource<'data> {
     fn par_iter(&'data self) -> Self::Source;
 }
 
-impl<'data, T: 'data + ?Sized> IntoParallelRefSource<'data> for T
-where
-    &'data T: IntoParallelSource,
-{
-    type Item = <&'data T as IntoParallelSource>::Item;
-    type Source = <&'data T as IntoParallelSource>::Source;
-
-    fn par_iter(&'data self) -> Self::Source {
-        self.into_par_iter()
-    }
-}
-
 /// Trait for converting into a [`ParallelSource`] that produces mutable
 /// references.
 ///
@@ -182,18 +170,6 @@ pub trait IntoParallelRefMutSource<'data> {
     /// assert_eq!(values, [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]);
     /// ```
     fn par_iter_mut(&'data mut self) -> Self::Source;
-}
-
-impl<'data, T: 'data + ?Sized> IntoParallelRefMutSource<'data> for T
-where
-    &'data mut T: IntoParallelSource,
-{
-    type Item = <&'data mut T as IntoParallelSource>::Item;
-    type Source = <&'data mut T as IntoParallelSource>::Source;
-
-    fn par_iter_mut(&'data mut self) -> Self::Source {
-        self.into_par_iter()
-    }
 }
 
 /// Additional methods provided for types that implement [`ParallelSource`].
