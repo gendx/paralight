@@ -11,6 +11,7 @@
 pub mod range;
 pub mod slice;
 pub mod vec;
+pub mod vec_deque;
 pub mod zip;
 
 use super::{Accumulator, ParallelIterator};

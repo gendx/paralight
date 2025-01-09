@@ -36,7 +36,7 @@ mod test {
     };
     use rand::Rng;
     use std::cell::Cell;
-    use std::collections::HashSet;
+    use std::collections::{HashSet, VecDeque};
     use std::rc::Rc;
     use std::sync::atomic::AtomicU64;
     #[cfg(all(not(miri), feature = "log"))]
@@ -140,6 +140,8 @@ mod test {
                 test_source_vec_panic => fail("worker thread(s) panicked!"),
                 test_source_vec_find_any_panic => fail("worker thread(s) panicked!"),
                 test_source_vec_find_first_panic => fail("worker thread(s) panicked!"),
+                test_source_vec_deque_ref,
+                test_source_vec_deque_ref_mut,
                 test_source_adaptor_chain,
                 test_source_adaptor_chain_cleanup,
                 test_source_adaptor_chain_overflow => fail("called chain() with sources that together produce more than usize::MAX items"),
@@ -1222,6 +1224,72 @@ mod test {
                     panic!("arithmetic panic");
                 }
             });
+    }
+
+    fn test_source_vec_deque_ref(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        // Simple contiguous VecDeque.
+        let input = (0..=INPUT_LEN).collect::<VecDeque<u64>>();
+        assert!(vec_deque_is_contiguous(&input));
+
+        let sum = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+
+        // VecDeque split in 2 parts.
+        let mut input = (1..=INPUT_LEN).collect::<VecDeque<u64>>();
+        input.push_front(0);
+        assert!(!vec_deque_is_contiguous(&input));
+
+        let sum = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_source_vec_deque_ref_mut(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        // Simple contiguous VecDeque.
+        let mut values = (0..=INPUT_LEN).collect::<VecDeque<u64>>();
+        assert!(vec_deque_is_contiguous(&values));
+
+        values
+            .par_iter_mut()
+            .with_thread_pool(&mut thread_pool)
+            .for_each(|x| *x *= 2);
+        assert_eq!(
+            values,
+            (0..=INPUT_LEN).map(|x| x * 2).collect::<VecDeque<_>>()
+        );
+
+        // VecDeque split in 2 parts.
+        let mut values = (1..=INPUT_LEN).collect::<VecDeque<u64>>();
+        values.push_front(0);
+        assert!(!vec_deque_is_contiguous(&values));
+
+        values
+            .par_iter_mut()
+            .with_thread_pool(&mut thread_pool)
+            .for_each(|x| *x *= 2);
+        assert_eq!(
+            values,
+            (0..=INPUT_LEN).map(|x| x * 2).collect::<VecDeque<_>>()
+        );
     }
 
     fn test_source_adaptor_chain(range_strategy: RangeStrategy) {
@@ -3560,6 +3628,7 @@ mod test {
         assert!(result.is_none());
     }
 
+    /* Helper functions */
     const fn expected_sum_lengths(max: u64) -> u64 {
         if max < 10 {
             max + 1
@@ -3584,6 +3653,11 @@ mod test {
             }
             expected
         }
+    }
+
+    fn vec_deque_is_contiguous<T>(v: &VecDeque<T>) -> bool {
+        let (left, right) = v.as_slices();
+        left.is_empty() || right.is_empty()
     }
 
     #[test]
