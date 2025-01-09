@@ -2,7 +2,7 @@
 
 [![Crate](https://img.shields.io/crates/v/paralight.svg?logo=rust)](https://crates.io/crates/paralight)
 [![Documentation](https://img.shields.io/docsrs/paralight?logo=rust)](https://docs.rs/paralight)
-[![Minimum Rust 1.75.0](https://img.shields.io/badge/rust-1.75.0%2B-orange.svg?logo=rust)](https://releases.rs/docs/1.75.0/)
+[![Minimum Rust 1.77.0](https://img.shields.io/badge/rust-1.77.0%2B-orange.svg?logo=rust)](https://releases.rs/docs/1.77.0/)
 [![Lines of Code](https://www.aschey.tech/tokei/github/gendx/paralight?category=code&branch=main)](https://github.com/gendx/paralight)
 [![Dependencies](https://deps.rs/repo/github/gendx/paralight/status.svg)](https://deps.rs/repo/github/gendx/paralight)
 [![License](https://img.shields.io/crates/l/paralight.svg)](https://github.com/gendx/paralight/blob/main/LICENSE)

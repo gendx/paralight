@@ -10,7 +10,7 @@ categories = ["concurrency"]
 keywords = ["parallelism"]
 exclude = [".github/*"]
 edition = "2021"
-rust-version = "1.75.0"
+rust-version = "1.77.0"
 
 [package.metadata.docs.rs]
 features = ["log", "log_parallelism"]
