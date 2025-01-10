@@ -16,9 +16,17 @@
 #![cfg_attr(not(test), forbid(clippy::undocumented_unsafe_blocks))]
 #![cfg_attr(
     all(test, feature = "nightly_tests"),
-    feature(negative_impls, coverage_attribute)
+    feature(coverage_attribute, negative_impls)
 )]
-#![cfg_attr(feature = "nightly", feature(step_trait, try_trait_v2))]
+#![cfg_attr(
+    feature = "nightly",
+    feature(
+        array_ptr_get,
+        maybe_uninit_uninit_array_transpose,
+        step_trait,
+        try_trait_v2
+    )
+)]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 mod core;
@@ -112,6 +120,16 @@ mod test {
                 test_pipeline_local_lifetime_input,
                 test_pipeline_local_lifetime_output,
                 test_pipeline_local_lifetime_accumulator,
+                #[cfg(feature = "nightly")]
+                test_source_array,
+                #[cfg(feature = "nightly")]
+                test_source_array_boxed,
+                #[cfg(feature = "nightly")]
+                test_source_array_panic => fail("worker thread(s) panicked!"),
+                #[cfg(feature = "nightly")]
+                test_source_array_find_any_panic => fail("worker thread(s) panicked!"),
+                #[cfg(feature = "nightly")]
+                test_source_array_find_first_panic => fail("worker thread(s) panicked!"),
                 test_source_boxed_slice,
                 test_source_slice,
                 #[cfg(feature = "nightly_tests")]
@@ -225,6 +243,15 @@ mod test {
     const INPUT_LEN: u64 = 100_000;
     #[cfg(miri)]
     const INPUT_LEN: u64 = 200;
+
+    // TSAN reports segmentation faults when creating too large arrays on the stack,
+    // so we cap the input size accordingly.
+    #[cfg(feature = "nightly")]
+    const ARRAY_LEN: u64 = if INPUT_LEN < 10_000 {
+        INPUT_LEN
+    } else {
+        10_000
+    };
 
     fn test_pipeline_sum_integers(range_strategy: RangeStrategy) {
         let mut thread_pool = ThreadPoolBuilder {
@@ -844,6 +871,135 @@ mod test {
                 |a, b| a + b,
             );
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    #[cfg(feature = "nightly")]
+    fn test_source_array(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input: [u64; ARRAY_LEN as usize + 1] = std::array::from_fn(|i| i as u64);
+        let sum = input
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+        assert_eq!(sum, ARRAY_LEN * (ARRAY_LEN + 1) / 2);
+
+        let input: [u64; ARRAY_LEN as usize + 1] = std::array::from_fn(|i| i as u64);
+        let needle = input
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .find_any(|x| *x % 10 == 9);
+        assert!(needle.is_some());
+        assert_eq!(needle.unwrap() % 10, 9);
+
+        let input: [u64; ARRAY_LEN as usize + 1] = std::array::from_fn(|i| i as u64);
+        let needle = input
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .find_first(|x| *x % 10 == 9);
+        assert_eq!(needle, Some(9));
+    }
+
+    #[cfg(feature = "nightly")]
+    fn test_source_array_boxed(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input: [Box<u64>; ARRAY_LEN as usize + 1] = std::array::from_fn(|i| Box::new(i as u64));
+        let sum = input
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .map(|x| *x)
+            .sum::<u64>();
+        assert_eq!(sum, ARRAY_LEN * (ARRAY_LEN + 1) / 2);
+
+        let input: [Box<u64>; ARRAY_LEN as usize + 1] = std::array::from_fn(|i| Box::new(i as u64));
+        let needle = input
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .find_any(|x| **x % 10 == 9);
+        assert!(needle.is_some());
+        assert_eq!(*needle.unwrap() % 10, 9);
+
+        let input: [Box<u64>; ARRAY_LEN as usize + 1] = std::array::from_fn(|i| Box::new(i as u64));
+        let needle = input
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .find_first(|x| **x % 10 == 9);
+        assert_eq!(needle, Some(Box::new(9)));
+    }
+
+    #[cfg(feature = "nightly")]
+    fn test_source_array_panic(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input: [Box<u64>; ARRAY_LEN as usize + 1] = std::array::from_fn(|i| Box::new(i as u64));
+        input
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .for_each(|x| {
+                if *x % 2 == 1 {
+                    panic!("arithmetic panic");
+                }
+            });
+    }
+
+    #[cfg(feature = "nightly")]
+    fn test_source_array_find_any_panic(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input: [Box<u64>; ARRAY_LEN as usize + 1] = std::array::from_fn(|i| Box::new(i as u64));
+        input
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .find_any(|x| {
+                if **x % 2 == 0 {
+                    false
+                } else {
+                    panic!("arithmetic panic");
+                }
+            });
+    }
+
+    #[cfg(feature = "nightly")]
+    fn test_source_array_find_first_panic(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input: [Box<u64>; ARRAY_LEN as usize + 1] = std::array::from_fn(|i| Box::new(i as u64));
+        input
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .find_first(|x| {
+                if **x % 2 == 0 {
+                    false
+                } else {
+                    panic!("arithmetic panic");
+                }
+            });
     }
 
     fn test_source_boxed_slice(range_strategy: RangeStrategy) {

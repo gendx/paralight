@@ -8,6 +8,9 @@
 
 //! Parallel sources from which parallel iterators are derived.
 
+#[cfg(feature = "nightly")]
+#[cfg_attr(docsrs, doc(cfg(feature = "nightly")))]
+pub mod array;
 pub mod range;
 pub mod slice;
 pub mod vec;

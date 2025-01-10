@@ -11,6 +11,8 @@
 mod source;
 
 use crossbeam_utils::CachePadded;
+#[cfg(feature = "nightly")]
+pub use source::array::ArrayParallelSource;
 pub use source::range::{RangeInclusiveParallelSource, RangeParallelSource};
 pub use source::slice::{MutSliceParallelSource, SliceParallelSource};
 pub use source::vec::VecParallelSource;
