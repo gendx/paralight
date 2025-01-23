@@ -1,4 +1,4 @@
-// Copyright 2024 Google LLC
+// Copyright 2024-2025 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -146,6 +146,15 @@ impl ThreadPool {
     /// With this variant, the pipeline may skip processing items at larger
     /// indices whenever a call to `process_item` returns
     /// [`ControlFlow::Break`].
+    ///
+    /// # Safety guarantees
+    ///
+    /// This function guarantees that:
+    /// - the indices passed to `process_item()` are in `0..input_len`,
+    /// - the ranges passed to `cleanup.cleanup_item_range()` are included in
+    ///   `0..input_len`,
+    /// - each index in `0..inner_len` is passed exactly once in calls to
+    ///   `process_item()` and `cleanup.cleanup_item_range()`.
     pub(crate) fn upper_bounded_pipeline<Output: Send, Accum>(
         &mut self,
         input_len: usize,
@@ -155,12 +164,22 @@ impl ThreadPool {
         reduce: impl Fn(Output, Output) -> Output,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
+        // Proof of the safety guarantees is deferred to the inner function.
         self.inner
             .upper_bounded_pipeline(input_len, init, process_item, finalize, reduce, cleanup)
     }
 
     /// Processes an input of the given length in parallel and returns the
     /// aggregated output.
+    ///
+    /// # Safety guarantees
+    ///
+    /// This function guarantees that:
+    /// - the indices passed to `accum.accumulate()` are in `0..input_len`,
+    /// - the ranges passed to `cleanup.cleanup_item_range()` are included in
+    ///   `0..input_len`,
+    /// - each index in `0..inner_len` is passed exactly once in calls to
+    ///   `accum.accumulate()` and `cleanup.cleanup_item_range()`.
     pub(crate) fn iter_pipeline<Output: Send>(
         &mut self,
         input_len: usize,
@@ -168,6 +187,7 @@ impl ThreadPool {
         reduce: impl Accumulator<Output, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
+        // Proof of the safety guarantees is deferred to the inner function.
         self.inner.iter_pipeline(input_len, accum, reduce, cleanup)
     }
 }
@@ -217,6 +237,15 @@ impl ThreadPoolEnum {
     /// With this variant, the pipeline may skip processing items at larger
     /// indices whenever a call to `process_item` returns
     /// [`ControlFlow::Break`].
+    ///
+    /// # Safety guarantees
+    ///
+    /// This function guarantees that:
+    /// - the indices passed to `process_item()` are in `0..input_len`,
+    /// - the ranges passed to `cleanup.cleanup_item_range()` are included in
+    ///   `0..input_len`,
+    /// - each index in `0..inner_len` is passed exactly once in calls to
+    ///   `process_item()` and `cleanup.cleanup_item_range()`.
     fn upper_bounded_pipeline<Output: Send, Accum>(
         &mut self,
         input_len: usize,
@@ -226,6 +255,7 @@ impl ThreadPoolEnum {
         reduce: impl Fn(Output, Output) -> Output,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
+        // Proof of the safety guarantees is deferred to the inner function.
         match self {
             ThreadPoolEnum::Fixed(inner) => inner.upper_bounded_pipeline(
                 input_len,
@@ -248,6 +278,15 @@ impl ThreadPoolEnum {
 
     /// Processes an input of the given length in parallel and returns the
     /// aggregated output.
+    ///
+    /// # Safety guarantees
+    ///
+    /// This function guarantees that:
+    /// - the indices passed to `accum.accumulate()` are in `0..input_len`,
+    /// - the ranges passed to `cleanup.cleanup_item_range()` are included in
+    ///   `0..input_len`,
+    /// - each index in `0..inner_len` is passed exactly once in calls to
+    ///   `accum.accumulate()` and `cleanup.cleanup_item_range()`.
     fn iter_pipeline<Output: Send>(
         &mut self,
         input_len: usize,
@@ -255,6 +294,7 @@ impl ThreadPoolEnum {
         reduce: impl Accumulator<Output, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
+        // Proof of the safety guarantees is deferred to the inner function.
         match self {
             ThreadPoolEnum::Fixed(inner) => inner.iter_pipeline(input_len, accum, reduce, cleanup),
             ThreadPoolEnum::WorkStealing(inner) => {
@@ -380,6 +420,15 @@ impl<F: RangeFactory> ThreadPoolImpl<F> {
     /// With this variant, the pipeline may skip processing items at larger
     /// indices whenever a call to `process_item` returns
     /// [`ControlFlow::Break`].
+    ///
+    /// # Safety guarantees
+    ///
+    /// This function guarantees that:
+    /// - the indices passed to `process_item()` are in `0..input_len`,
+    /// - the ranges passed to `cleanup.cleanup_item_range()` are included in
+    ///   `0..input_len`,
+    /// - each index in `0..inner_len` is passed exactly once in calls to
+    ///   `process_item()` and `cleanup.cleanup_item_range()`.
     fn upper_bounded_pipeline<Output: Send, Accum>(
         &mut self,
         input_len: usize,
@@ -389,6 +438,9 @@ impl<F: RangeFactory> ThreadPoolImpl<F> {
         reduce: impl Fn(Output, Output) -> Output,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
+        // The safety guarantees derive from this call as well as how the
+        // `UpperBoundedPipelineImpl` uses a `SkipIteratorWrapper` on each worker
+        // thread's range.
         self.range_orchestrator.reset_ranges(input_len);
 
         let num_threads = self.threads.len();
@@ -415,6 +467,15 @@ impl<F: RangeFactory> ThreadPoolImpl<F> {
 
     /// Processes an input of the given length in parallel and returns the
     /// aggregated output.
+    ///
+    /// # Safety guarantees
+    ///
+    /// This function guarantees that:
+    /// - the indices passed to `accum.accumulate()` are in `0..input_len`,
+    /// - the ranges passed to `cleanup.cleanup_item_range()` are included in
+    ///   `0..input_len`,
+    /// - each index in `0..inner_len` is passed exactly once in calls to
+    ///   `accum.accumulate()` and `cleanup.cleanup_item_range()`.
     fn iter_pipeline<Output: Send>(
         &mut self,
         input_len: usize,
@@ -422,6 +483,9 @@ impl<F: RangeFactory> ThreadPoolImpl<F> {
         reduce: impl Accumulator<Output, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
+        // The safety guarantees derive from this call as well as how the
+        // `IterPipelineImpl` uses a `SkipIteratorWrapper` on each worker thread's
+        // range.
         self.range_orchestrator.reset_ranges(input_len);
 
         let num_threads = self.threads.len();
@@ -560,7 +624,15 @@ impl<I: SkipIterator, Cleanup: SourceCleanup> Iterator for SkipIteratorWrapper<'
             match self.iter.next() {
                 (index, None) => return index,
                 (index, Some(skipped_range)) => {
-                    self.cleanup.cleanup_item_range(skipped_range);
+                    // SAFETY: Due to the safety guarantees of `RangeFactory`:
+                    // - `skipped_range` is included in the range `0..input_len` (where `input_len`
+                    //   is the parameter to the `ThreadPool::*_pipeline()` call),
+                    // - `skipped_range` doesn't overlap with any other range passed to
+                    //   `cleanup_item_range()` (here or in the `Drop` implementation) nor index
+                    //   passed to `fetch_item()` (any index returned by this `next()` function).
+                    unsafe {
+                        self.cleanup.cleanup_item_range(skipped_range);
+                    }
                     if index.is_some() {
                         return index;
                     }
@@ -573,7 +645,15 @@ impl<I: SkipIterator, Cleanup: SourceCleanup> Iterator for SkipIteratorWrapper<'
 impl<I: SkipIterator, Cleanup: SourceCleanup> Drop for SkipIteratorWrapper<'_, I, Cleanup> {
     fn drop(&mut self) {
         if let Some(range) = self.iter.remaining_range() {
-            self.cleanup.cleanup_item_range(range);
+            // SAFETY: Due to the safety guarantees of `RangeFactory`:
+            // - `range` is included in the range `0..input_len` (where `input_len` is the
+            //   parameter to the `ThreadPool::*_pipeline()` call),
+            // - `range` doesn't overlap with any other range passed to
+            //   `cleanup_item_range()` (here or in the `next()` implementation) nor index
+            //   passed to `fetch_item()` (any index returned by the `next()` function).
+            unsafe {
+                self.cleanup.cleanup_item_range(range);
+            }
         }
     }
 }

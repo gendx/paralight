@@ -68,7 +68,7 @@ struct SliceSourceDescriptor<'data, T: Sync> {
 impl<T: Sync> SourceCleanup for SliceSourceDescriptor<'_, T> {
     const NEEDS_CLEANUP: bool = false;
 
-    fn cleanup_item_range(&self, _range: std::ops::Range<usize>) {
+    unsafe fn cleanup_item_range(&self, _range: std::ops::Range<usize>) {
         // Nothing to cleanup
     }
 }
@@ -80,7 +80,7 @@ impl<'data, T: Sync> SourceDescriptor for SliceSourceDescriptor<'data, T> {
         self.slice.len()
     }
 
-    fn fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn fetch_item(&self, index: usize) -> Self::Item {
         &self.slice[index]
     }
 }
@@ -150,7 +150,7 @@ struct MutSliceSourceDescriptor<'data, T: Send + 'data> {
 impl<'data, T: Send + 'data> SourceCleanup for MutSliceSourceDescriptor<'data, T> {
     const NEEDS_CLEANUP: bool = false;
 
-    fn cleanup_item_range(&self, _range: std::ops::Range<usize>) {
+    unsafe fn cleanup_item_range(&self, _range: std::ops::Range<usize>) {
         // Nothing to cleanup
     }
 }
@@ -162,14 +162,15 @@ impl<'data, T: Send + 'data> SourceDescriptor for MutSliceSourceDescriptor<'data
         self.len
     }
 
-    fn fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn fetch_item(&self, index: usize) -> Self::Item {
         assert!(index < self.len);
         let base_ptr: *mut T = self.ptr.get();
         // SAFETY:
         // - The offset in bytes `index * size_of::<T>()` fits in an `isize`, because
         //   the index is smaller than the length of the (well-formed) input slice. This
-        //   is ensured by the thread pool's `pipeline()` function (which yields indices
-        //   in the range `0..len`), and further confirmed by the assertion.
+        //   is ensured by the safety pre-conditions of the `fetch_item()` function (the
+        //   `index` must be in the range `0..self.len`), and further confirmed by the
+        //   assertion.
         // - The `base_ptr` is derived from an allocated object (the input slice), and
         //   the entire range between `base_ptr` and the resulting `item_ptr` is in
         //   bounds of that allocated object. This is because the index is smaller than
@@ -191,9 +192,10 @@ impl<'data, T: Send + 'data> SourceDescriptor for MutSliceSourceDescriptor<'data
         // - The `item_ptr` follows the aliasing rules: while this reference exists
         //   (within this scope and in particular during the call to `process_item()`),
         //   the memory it points to isn't accessed through any other pointer or
-        //   reference. This is ensured because the thread pool's `pipeline()` function
-        //   yields distinct indices, and because the slice is exclusively owned during
-        //   the scope of this `ParallelIterator::pipeline()` function.
+        //   reference. This is ensured by the safety pre-conditions of the
+        //   `fetch_item()` function (each index must be passed at most once), and
+        //   because the slice is exclusively owned during the scope of this
+        //   `ParallelIterator::pipeline()` function.
         //
         // Lastly, materializing this mutable reference on any thread is sound given
         // that `T` is `Send`. Indeed, this amounts to sending a `&mut T` across

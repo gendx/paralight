@@ -19,7 +19,7 @@ struct RangeSourceDescriptor<T> {
 impl<T> SourceCleanup for RangeSourceDescriptor<T> {
     const NEEDS_CLEANUP: bool = false;
 
-    fn cleanup_item_range(&self, _range: Range<usize>) {
+    unsafe fn cleanup_item_range(&self, _range: Range<usize>) {
         // Nothing to cleanup
     }
 }
@@ -32,7 +32,7 @@ impl<T: Step + Copy + Send + Sync> SourceDescriptor for RangeSourceDescriptor<T>
         self.len
     }
 
-    fn fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.len);
         T::forward(self.start, index)
     }
@@ -46,7 +46,7 @@ impl SourceDescriptor for RangeSourceDescriptor<usize> {
         self.len
     }
 
-    fn fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.len);
         self.start + index
     }

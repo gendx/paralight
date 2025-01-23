@@ -296,9 +296,23 @@ macro_rules! zipable_tuple {
                 or_bools!(need_cleanups, $($i),+)
             };
 
-            fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
+            unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
                 if Self::NEEDS_CLEANUP {
-                    $( self.descriptors.$i.cleanup_item_range(range.clone()); )+
+                    $(
+                        // SAFETY: Given descriptors of equal lengths `len`, the `ZipEqSourceDescriptor`
+                        // implements a pass-through of indices in `0..len` to all of them.
+                        //
+                        // Therefore:
+                        // - if the caller passes ranges included in `0..len`, ranges passed to the
+                        //   downstream `cleanup_item_range()` functions are also included in the
+                        //   `0..len` range,
+                        // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
+                        //   and `fetch_item()`, the zip-eq adaptor doesn't repeat indices passed to the
+                        //   downstream descriptors.
+                        unsafe {
+                            self.descriptors.$i.cleanup_item_range(range.clone());
+                        }
+                    )+
                 }
             }
         }
@@ -311,8 +325,21 @@ macro_rules! zipable_tuple {
                 self.len
             }
 
-            fn fetch_item(&self, index: usize) -> Self::Item {
-                ( $( self.descriptors.$i.fetch_item(index) ),+ )
+            unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+                ( $(
+                    // SAFETY: Given descriptors of equal lengths `len`, the `ZipEqSourceDescriptor`
+                    // implements a pass-through of indices in `0..len` to all of them.
+                    //
+                    // Therefore:
+                    // - if the caller passes indices in `0..len`, indices passed to the downstream
+                    //   `fetch_item()` functions are also in the `0..len` range,
+                    // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
+                    //   and `fetch_item()`, the zip-eq adaptor doesn't repeat indices passed to the
+                    //   downstream descriptors.
+                    unsafe {
+                        self.descriptors.$i.fetch_item(index)
+                    }
+                ),+ )
             }
         }
 
@@ -323,12 +350,27 @@ macro_rules! zipable_tuple {
                 or_bools!(need_cleanups, $($i),+)
             };
 
-            fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
+            unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
                 if Self::NEEDS_CLEANUP {
                     $( {
                         let this_len = self.descriptors.$i.len();
                         let this_range = range.start.min(this_len)..range.end.min(this_len);
-                        self.descriptors.$i.cleanup_item_range(this_range);
+                        // SAFETY: Given descriptors of maximal length `len`, the
+                        // `ZipMaxSourceDescriptor` implements a pass-through of indices in `0..len` to
+                        // all of them, padding with `None` values beyond each descriptor's length.
+                        //
+                        // Therefore:
+                        // - ranges passed to the downstream `cleanup_item_range()` functions are in
+                        //   their respective `0..len_i` ranges after clamping,
+                        // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
+                        //   and `fetch_item()`, the zip-max adaptor doesn't repeat indices passed to
+                        //   the downstream descriptors.
+                        //
+                        // This line implements the pass-through function, clamped to the current
+                        // descriptor length.
+                        unsafe {
+                            self.descriptors.$i.cleanup_item_range(this_range);
+                        }
                     } )+
                 }
             }
@@ -342,9 +384,24 @@ macro_rules! zipable_tuple {
                 self.len
             }
 
-            fn fetch_item(&self, index: usize) -> Self::Item {
+            unsafe fn fetch_item(&self, index: usize) -> Self::Item {
                 ( $( if index < self.descriptors.$i.len() {
-                    Some(self.descriptors.$i.fetch_item(index))
+                    // SAFETY: Given descriptors of maximal length `len`, the
+                    // `ZipMaxSourceDescriptor` implements a pass-through of indices in `0..len` to
+                    // all of them, padding with `None` values beyond each descriptor's length.
+                    //
+                    // Therefore:
+                    // - indices passed to the downstream `fetch_item()` functions are in their
+                    //   respective `0..len_i` ranges in this branch,
+                    // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
+                    //   and `fetch_item()`, the zip-max adaptor doesn't repeat indices passed to
+                    //   the downstream descriptors.
+                    //
+                    // This line implements the pass-through function, when the index is lower than
+                    // the current descriptor length.
+                    unsafe {
+                        Some(self.descriptors.$i.fetch_item(index))
+                    }
                 } else {
                     None
                 } ),+ )
@@ -373,9 +430,25 @@ macro_rules! zipable_tuple {
                     or_bools!(need_cleanups, $($i),+)
                 };
 
-                fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
+                unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
                     if Self::NEEDS_CLEANUP {
-                        $( self.descriptors.$i.cleanup_item_range(range.clone()); )+
+                        $(
+                            // SAFETY: Given descriptors of minimal length `len`, the
+                            // `ZipMinSourceDescriptor` implements a pass-through of indices in `0..len`
+                            // to all of them.
+                            //
+                            // Therefore:
+                            // - if the caller passes ranges included in `0..len`, ranges passed to the
+                            //   downstream `cleanup_item_range()` functions are also included in the
+                            //   `0..len` range, itself included in the respective `0..len_i` ranges
+                            //   (because `len <= len_i`),
+                            // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
+                            //   and `fetch_item()`, the zip-min adaptor doesn't repeat indices passed to
+                            //   the downstream descriptors.
+                            unsafe {
+                                self.descriptors.$i.cleanup_item_range(range.clone());
+                            }
+                        )+
                     }
                 }
             }
@@ -388,8 +461,23 @@ macro_rules! zipable_tuple {
                     self.len
                 }
 
-                fn fetch_item(&self, index: usize) -> Self::Item {
-                    ( $( self.descriptors.$i.fetch_item(index) ),+ )
+                unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+                    ( $(
+                        // SAFETY: Given descriptors of minimal length `len`, the
+                        // `ZipMinSourceDescriptor` implements a pass-through of indices in `0..len`
+                        // to all of them.
+                        //
+                        // Therefore:
+                        // - if the caller passes indices in `0..len`, indices passed to the downstream
+                        //   `fetch_item()` functions are also in the `0..len` range, itself included in
+                        //   the respective `0..len_i` ranges (because `len <= len_i`),
+                        // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
+                        //   and `fetch_item()`, the zip-min adaptor doesn't repeat indices passed to
+                        //   the downstream descriptors.
+                        unsafe {
+                            self.descriptors.$i.fetch_item(index)
+                        }
+                    ),+ )
                 }
             }
 
@@ -397,7 +485,19 @@ macro_rules! zipable_tuple {
             where $($tuple: SourceDescriptor),+ {
                 fn drop(&mut self) {
                     if Self::NEEDS_CLEANUP {
-                        $( self.descriptors.$i.cleanup_item_range(self.len..self.descriptors.$i.len()); )+
+                        $(
+                            // SAFETY: Given descriptors of minimal length `len`, the
+                            // `ZipMinSourceDescriptor` implements a pass-through of indices in `0..len`
+                            // to all of them.
+                            //
+                            // Therefore:
+                            // - the range `len..len_i` is included in the respective range `0..len_i`,
+                            // - items beyond the common `len` aren't passed to the inner descriptor other
+                            //   than in this drop implementation.
+                            unsafe {
+                                self.descriptors.$i.cleanup_item_range(self.len..self.descriptors.$i.len());
+                            }
+                        )+
                     }
                 }
             }
@@ -484,11 +584,21 @@ where
 {
     const NEEDS_CLEANUP: bool = T::NEEDS_CLEANUP;
 
-    fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
+    unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
-            self.descriptors
-                .each_ref()
-                .map(|desc| desc.cleanup_item_range(range.clone()));
+            self.descriptors.each_ref().map(|desc| {
+                // SAFETY: Given descriptors of equal lengths `len`, the `ZipEqSourceDescriptor`
+                // implements a pass-through of indices in `0..len` to all of them.
+                //
+                // Therefore:
+                // - if the caller passes ranges included in `0..len`, ranges passed to the
+                //   downstream `cleanup_item_range()` functions are also included in the
+                //   `0..len` range,
+                // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
+                //   and `fetch_item()`, the zip-eq adaptor doesn't repeat indices passed to the
+                //   downstream descriptors.
+                unsafe { desc.cleanup_item_range(range.clone()) }
+            });
         }
     }
 }
@@ -503,10 +613,19 @@ where
         self.len
     }
 
-    fn fetch_item(&self, index: usize) -> Self::Item {
-        self.descriptors
-            .each_ref()
-            .map(|desc| desc.fetch_item(index))
+    unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+        self.descriptors.each_ref().map(|desc| {
+            // SAFETY: Given descriptors of equal lengths `len`, the `ZipEqSourceDescriptor`
+            // implements a pass-through of indices in `0..len` to all of them.
+            //
+            // Therefore:
+            // - if the caller passes indices in `0..len`, indices passed to the downstream
+            //   `fetch_item()` functions are also in the `0..len` range,
+            // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
+            //   and `fetch_item()`, the zip-eq adaptor doesn't repeat indices passed to the
+            //   downstream descriptors.
+            unsafe { desc.fetch_item(index) }
+        })
     }
 }
 
@@ -516,12 +635,27 @@ where
 {
     const NEEDS_CLEANUP: bool = T::NEEDS_CLEANUP;
 
-    fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
+    unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
             self.descriptors.each_ref().map(|desc| {
                 let this_len = desc.len();
                 let this_range = range.start.min(this_len)..range.end.min(this_len);
-                desc.cleanup_item_range(this_range);
+                // SAFETY: Given descriptors of maximal length `len`, the
+                // `ZipMaxSourceDescriptor` implements a pass-through of indices in `0..len` to
+                // all of them, padding with `None` values beyond each descriptor's length.
+                //
+                // Therefore:
+                // - ranges passed to the downstream `cleanup_item_range()` functions are in
+                //   their respective `0..len_i` ranges after clamping,
+                // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
+                //   and `fetch_item()`, the zip-max adaptor doesn't repeat indices passed to
+                //   the downstream descriptors.
+                //
+                // This line implements the pass-through function, clamped to the current
+                // descriptor length.
+                unsafe {
+                    desc.cleanup_item_range(this_range);
+                }
             });
         }
     }
@@ -537,10 +671,23 @@ where
         self.len
     }
 
-    fn fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn fetch_item(&self, index: usize) -> Self::Item {
         self.descriptors.each_ref().map(|desc| {
             if index < desc.len() {
-                Some(desc.fetch_item(index))
+                // SAFETY: Given descriptors of maximal length `len`, the
+                // `ZipMaxSourceDescriptor` implements a pass-through of indices in `0..len` to
+                // all of them, padding with `None` values beyond each descriptor's length.
+                //
+                // Therefore:
+                // - indices passed to the downstream `fetch_item()` functions are in their
+                //   respective `0..len_i` ranges in this branch,
+                // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
+                //   and `fetch_item()`, the zip-max adaptor doesn't repeat indices passed to
+                //   the downstream descriptors.
+                //
+                // This line implements the pass-through function, when the index is lower than
+                // the current descriptor length.
+                unsafe { Some(desc.fetch_item(index)) }
             } else {
                 None
             }
@@ -562,10 +709,24 @@ where
 {
     const NEEDS_CLEANUP: bool = T::NEEDS_CLEANUP;
 
-    fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
+    unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
             self.descriptors.each_ref().map(|desc| {
-                desc.cleanup_item_range(range.clone());
+                // SAFETY: Given descriptors of minimal length `len`, the
+                // `ZipMinSourceDescriptor` implements a pass-through of indices in `0..len`
+                // to all of them.
+                //
+                // Therefore:
+                // - if the caller passes ranges included in `0..len`, ranges passed to the
+                //   downstream `cleanup_item_range()` functions are also included in the
+                //   `0..len` range, itself included in the respective `0..len_i` ranges
+                //   (because `len <= len_i`),
+                // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
+                //   and `fetch_item()`, the zip-min adaptor doesn't repeat indices passed to
+                //   the downstream descriptors.
+                unsafe {
+                    desc.cleanup_item_range(range.clone());
+                }
             });
         }
     }
@@ -581,10 +742,21 @@ where
         self.len
     }
 
-    fn fetch_item(&self, index: usize) -> Self::Item {
-        self.descriptors
-            .each_ref()
-            .map(|desc| desc.fetch_item(index))
+    unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+        self.descriptors.each_ref().map(|desc| {
+            // SAFETY: Given descriptors of minimal length `len`, the
+            // `ZipMinSourceDescriptor` implements a pass-through of indices in `0..len`
+            // to all of them.
+            //
+            // Therefore:
+            // - if the caller passes indices in `0..len`, indices passed to the downstream
+            //   `fetch_item()` functions are also in the `0..len` range, itself included in
+            //   the respective `0..len_i` ranges (because `len <= len_i`),
+            // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
+            //   and `fetch_item()`, the zip-min adaptor doesn't repeat indices passed to
+            //   the downstream descriptors.
+            unsafe { desc.fetch_item(index) }
+        })
     }
 }
 
@@ -595,7 +767,17 @@ where
     fn drop(&mut self) {
         if Self::NEEDS_CLEANUP {
             self.descriptors.each_ref().map(|desc| {
-                desc.cleanup_item_range(self.len..desc.len());
+                // SAFETY: Given descriptors of minimal length `len`, the
+                // `ZipMinSourceDescriptor` implements a pass-through of indices in `0..len`
+                // to all of them.
+                //
+                // Therefore:
+                // - the range `len..len_i` is included in the respective range `0..len_i`,
+                // - items beyond the common `len` aren't passed to the inner descriptor other
+                //   than in this drop implementation.
+                unsafe {
+                    desc.cleanup_item_range(self.len..desc.len());
+                }
             });
         }
     }

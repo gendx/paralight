@@ -1,4 +1,4 @@
-// Copyright 2024 Google LLC
+// Copyright 2024-2025 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -18,6 +18,25 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 /// A factory for handing out ranges of items to various threads.
+///
+/// # Safety
+///
+/// Implementers of the [`RangeFactory`] must guarantee the following contract.
+///
+/// Given a number of threads `num_threads` and a factory created by
+/// `RangeFactory::new(num_threads)`, from which are derived `num_threads`
+/// ranges as `(0..num_threads).iter().map(|i| factory.range(i)).collect()` and
+/// an orchestrator as `factory.orchestrator()`:
+///
+/// - Given a number of elements `num_elements`, calling
+///   `orchestrator.reset_ranges(num_elements)` followed by `range.iter()` on
+///   all ranges, each index in `0..num_elements` will appear once and only once
+///   in the `num_threads` resulting [`SkipIterator`]s (in the union of regular
+///   items and skipped ranges obtained via calls to `iter.next()` and
+///   `iter.remaining_range()`).
+/// - Likewise, calling `orchestrator.reset_ranges(num_elements)` followed by
+///   `range.upper_bounded_iter(&bound)` on all ranges will yield each index in
+///   `0..num_elements` once and only once.
 pub trait RangeFactory {
     type Range: Range;
     type Orchestrator: RangeOrchestrator;
@@ -95,6 +114,29 @@ pub struct FixedRangeFactory {
     num_elements: Arc<AtomicUsize>,
 }
 
+// Here is a proof that `FixedRangeFactory` upholds the safety contract of
+// `RangeFactory`.
+//
+// Upon calling `FixedRangeOrchestrator::reset_ranges(num_elements)`, a common
+// `AtomicUsize` shared with all the `FixedRange`s is updated to this number of
+// elements. This update uses `Ordering::Relaxed`, which is fine because it's
+// the caller's responsibility to ensure that the `reset_ranges()` call happens
+// before calls to `range.iter()` or `range.upper_bounded_iter(&bound)`.
+//
+// Then, the range `0..num_elements` is partitioned into `num_threads`
+// non-overlapping ranges via the `FixedRange::range()` function.
+//
+// - In the `range.iter()` case, `SkipIterator::next()` calls simply pop the
+//   first element of the local range, and `SkipIterator::remaining_range()`
+//   returns the remaining items (if any).
+// - In the `range.upper_bounded_iter()` case, `UpperBoundedRange::next()` calls
+//   also pop the first element, but may alternatively pop nothing (and leave
+//   the iterator's state unchanged) if the upper bound is identified as
+//   reached. `UpperBoundedRange::remaining_range()` returns the remaining items
+//   that haven't been popped (if any).
+//
+// In both cases, this ensures full coverage of the `0..num_elements` range, as
+// well as uniqueness.
 impl RangeFactory for FixedRangeFactory {
     type Range = FixedRange;
     type Orchestrator = FixedRangeOrchestrator;
@@ -229,6 +271,8 @@ pub struct WorkStealingRangeFactory {
     stats: Arc<Mutex<WorkStealingStats>>,
 }
 
+// TODO: A formal proof that `WorkStealingRangeFactory` upholds the safety
+// contract of `RangeFactory` isn't yet written.
 impl RangeFactory for WorkStealingRangeFactory {
     type Range = WorkStealingRange;
     type Orchestrator = WorkStealingRangeOrchestrator;
