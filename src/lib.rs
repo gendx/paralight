@@ -1703,7 +1703,7 @@ mod test {
             .skip(INPUT_LEN as usize / 2)
             .with_thread_pool(&mut thread_pool)
             .sum::<u64>();
-        assert_eq!(sum, ((INPUT_LEN + 1) / 2) * ((3 * INPUT_LEN) / 2 + 1) / 2);
+        assert_eq!(sum, INPUT_LEN.div_ceil(2) * ((3 * INPUT_LEN) / 2 + 1) / 2);
 
         let sum_empty = input
             .par_iter()
@@ -1733,7 +1733,7 @@ mod test {
             .sum::<u64>();
         assert_eq!(
             sum,
-            ((3 * INPUT_LEN + 1) / 2) * ((5 * INPUT_LEN) / 2 + 1) / 2
+            (3 * INPUT_LEN).div_ceil(2) * ((5 * INPUT_LEN) / 2 + 1) / 2
         );
 
         // Skip more than half of the items.
@@ -1744,7 +1744,7 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .map(|x| *x)
             .sum::<u64>();
-        assert_eq!(sum, ((INPUT_LEN + 1) / 2) * ((7 * INPUT_LEN) / 2 + 1) / 2);
+        assert_eq!(sum, INPUT_LEN.div_ceil(2) * ((7 * INPUT_LEN) / 2 + 1) / 2);
 
         // Skip less than half or more than half of the items.
         for skip in [INPUT_LEN / 2, 3 * INPUT_LEN / 2] {
@@ -1783,7 +1783,7 @@ mod test {
             .skip_exact(INPUT_LEN as usize / 2)
             .with_thread_pool(&mut thread_pool)
             .sum::<u64>();
-        assert_eq!(sum, ((INPUT_LEN + 1) / 2) * ((3 * INPUT_LEN) / 2 + 1) / 2);
+        assert_eq!(sum, INPUT_LEN.div_ceil(2) * ((3 * INPUT_LEN) / 2 + 1) / 2);
     }
 
     fn test_source_adaptor_skip_exact_too_much(range_strategy: RangeStrategy) {
