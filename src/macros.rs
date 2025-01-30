@@ -24,7 +24,6 @@ macro_rules! log_error {
 }
 
 #[cfg(all(feature = "log", feature = "log_parallelism"))]
-#[cfg_attr(docsrs, doc(cfg(feature = "log_parallelism")))]
 macro_rules! log_info {
     ( $($args:tt)* ) => {
         log::info!( $($args)* )
@@ -32,7 +31,6 @@ macro_rules! log_info {
 }
 
 #[cfg(all(feature = "log", feature = "log_parallelism"))]
-#[cfg_attr(docsrs, doc(cfg(feature = "log_parallelism")))]
 macro_rules! log_trace {
     ( $($args:tt)* ) => {
         log::trace!( $($args)* )
@@ -61,7 +59,6 @@ macro_rules! log_error {
 }
 
 #[cfg(all(not(feature = "log"), feature = "log_parallelism"))]
-#[cfg_attr(docsrs, doc(cfg(feature = "log_parallelism")))]
 macro_rules! log_info {
     ( $($args:tt)* ) => {
         ()
@@ -69,7 +66,6 @@ macro_rules! log_info {
 }
 
 #[cfg(all(not(feature = "log"), feature = "log_parallelism"))]
-#[cfg_attr(docsrs, doc(cfg(feature = "log_parallelism")))]
 macro_rules! log_trace {
     ( $($args:tt)* ) => {
         ()

@@ -27,7 +27,7 @@
         try_trait_v2
     )
 )]
-#![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, feature(doc_auto_cfg))]
 
 mod core;
 pub mod iter;

@@ -46,7 +46,6 @@ use std::mem::MaybeUninit;
 /// let sum = iter.with_thread_pool(&mut thread_pool).sum::<i32>();
 /// assert_eq!(sum, 5 * 11);
 /// ```
-#[cfg_attr(docsrs, doc(cfg(feature = "nightly")))]
 #[must_use = "iterator adaptors are lazy"]
 pub struct ArrayParallelSource<T, const N: usize> {
     array: [T; N],
