@@ -174,6 +174,7 @@ mod test {
                 test_source_adaptor_skip_exact_too_much => fail("called skip_exact() with more items than this source produces"),
                 test_source_adaptor_step_by,
                 test_source_adaptor_step_by_cleanup,
+                test_source_adaptor_step_by_one,
                 test_source_adaptor_step_by_zero => fail("called step_by() with a step of zero"),
                 test_source_adaptor_step_by_zero_empty => fail("called step_by() with a step of zero"),
                 test_source_adaptor_take,
@@ -200,6 +201,7 @@ mod test {
                 test_adaptor_eq_by_key,
                 test_adaptor_eq_by_keys,
                 test_adaptor_filter,
+                test_adaptor_filter_find_first,
                 test_adaptor_filter_map,
                 test_adaptor_find_any,
                 test_adaptor_find_first,
@@ -210,6 +212,7 @@ mod test {
                 test_adaptor_inspect,
                 test_adaptor_map,
                 test_adaptor_map_init,
+                test_adaptor_map_init_find_first,
                 test_adaptor_max,
                 test_adaptor_max_by,
                 test_adaptor_max_by_key,
@@ -1860,6 +1863,26 @@ mod test {
             .sum::<u64>();
         assert_eq!(sum_by_3, 3 * INPUT_LEN * (INPUT_LEN + 1) / 2);
 
+        let sum_by_3 = input
+            .clone()
+            .into_par_iter()
+            .take(3 * INPUT_LEN as usize)
+            .step_by(3)
+            .with_thread_pool(&mut thread_pool)
+            .map(|x| *x)
+            .sum::<u64>();
+        assert_eq!(sum_by_3, 3 * INPUT_LEN * (INPUT_LEN - 1) / 2);
+
+        let sum_by_3 = input
+            .clone()
+            .into_par_iter()
+            .take(3 * INPUT_LEN as usize - 1)
+            .step_by(3)
+            .with_thread_pool(&mut thread_pool)
+            .map(|x| *x)
+            .sum::<u64>();
+        assert_eq!(sum_by_3, 3 * INPUT_LEN * (INPUT_LEN - 1) / 2);
+
         let needle = input
             .clone()
             .into_par_iter()
@@ -1875,6 +1898,42 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .find_first(|x| **x % 10 == 9);
         assert_eq!(needle, Some(Box::new(49)));
+    }
+
+    fn test_source_adaptor_step_by_one(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
+
+        let sum = input
+            .clone()
+            .into_par_iter()
+            .step_by(1)
+            .with_thread_pool(&mut thread_pool)
+            .map(|x| *x)
+            .sum::<u64>();
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+
+        let needle = input
+            .clone()
+            .into_par_iter()
+            .step_by(1)
+            .with_thread_pool(&mut thread_pool)
+            .find_any(|x| **x % 10 == 9);
+        assert!(needle.is_some());
+        assert_eq!(*needle.unwrap() % 10, 9);
+
+        let needle = input
+            .into_par_iter()
+            .step_by(1)
+            .with_thread_pool(&mut thread_pool)
+            .find_first(|x| **x % 10 == 9);
+        assert_eq!(needle, Some(Box::new(9)));
     }
 
     fn test_source_adaptor_step_by_zero(range_strategy: RangeStrategy) {
@@ -2646,6 +2705,23 @@ mod test {
         assert_eq!(sum, (INPUT_LEN / 2) * (INPUT_LEN / 2 + 1));
     }
 
+    fn test_adaptor_filter_find_first(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let needle = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .filter(|&&x| x % 6 == 5)
+            .find_first(|&x| x % 7 == 6);
+        assert_eq!(needle, Some(&41));
+    }
+
     fn test_adaptor_filter_map(range_strategy: RangeStrategy) {
         let mut thread_pool = ThreadPoolBuilder {
             num_threads: ThreadCount::AvailableParallelism,
@@ -3005,6 +3081,27 @@ mod test {
 
         assert!(sum >= INPUT_LEN * (INPUT_LEN + 1));
         assert!(sum <= 3 * INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_adaptor_map_init_find_first(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let needle = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .map_init(
+                rand::thread_rng,
+                |rng, &x| if rng.gen() { 2 * x } else { 2 * x + 1 },
+            )
+            .find_first(|&x| x >= 10);
+        let needle = needle.unwrap();
+        assert!(needle == 10 || needle == 11);
     }
 
     fn test_adaptor_max(range_strategy: RangeStrategy) {
