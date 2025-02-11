@@ -2227,7 +2227,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// assert_eq!(ordering, Some(Ordering::Greater));
     /// ```
     ///
-    /// This returns [`Some(Ordering::Equal)`] if the iterator is empty.
+    /// This returns [`Some(Ordering::Equal)`](Option::Some) if the iterator is
+    /// empty.
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
