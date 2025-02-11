@@ -2990,8 +2990,8 @@ mod test {
         values
             .par_iter_mut()
             .with_thread_pool(&mut thread_pool)
-            .for_each_init(rand::thread_rng, |rng, x| {
-                if rng.gen() {
+            .for_each_init(rand::rng, |rng, x| {
+                if rng.random() {
                     *x *= 2
                 };
             });
@@ -3074,8 +3074,8 @@ mod test {
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .map_init(
-                rand::thread_rng,
-                |rng, &x| if rng.gen() { x * 2 } else { x * 3 },
+                rand::rng,
+                |rng, &x| if rng.random() { x * 2 } else { x * 3 },
             )
             .sum::<u64>();
 
@@ -3096,8 +3096,8 @@ mod test {
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .map_init(
-                rand::thread_rng,
-                |rng, &x| if rng.gen() { 2 * x } else { 2 * x + 1 },
+                rand::rng,
+                |rng, &x| if rng.random() { 2 * x } else { 2 * x + 1 },
             )
             .find_first(|&x| x >= 10);
         let needle = needle.unwrap();
@@ -3801,8 +3801,8 @@ mod test {
         let result = input
             .par_iter()
             .with_thread_pool(&mut thread_pool)
-            .try_for_each_init(rand::thread_rng, |rng, &x| -> Result<_, ()> {
-                let y = rng.gen_range(0..=x);
+            .try_for_each_init(rand::rng, |rng, &x| -> Result<_, ()> {
+                let y = rng.random_range(0..=x);
                 sum.fetch_add(y, Ordering::Relaxed);
                 Ok(())
             });
@@ -3813,8 +3813,8 @@ mod test {
         let result = input
             .par_iter()
             .with_thread_pool(&mut thread_pool)
-            .try_for_each_init(rand::thread_rng, |rng, &x| {
-                let y = rng.gen_range(0..=INPUT_LEN);
+            .try_for_each_init(rand::rng, |rng, &x| {
+                let y = rng.random_range(0..=INPUT_LEN);
                 if y <= x {
                     sum.fetch_add(y, Ordering::Relaxed);
                     Ok(())
@@ -3828,7 +3828,7 @@ mod test {
         let result = input
             .par_iter()
             .with_thread_pool(&mut thread_pool)
-            .try_for_each_init(rand::thread_rng, |rng, &x| Err(x * rng.gen_range(1..=10)));
+            .try_for_each_init(rand::rng, |rng, &x| Err(x * rng.random_range(1..=10)));
         assert!(result.is_err());
         assert!(result.unwrap_err() <= 10 * INPUT_LEN);
     }
@@ -3850,8 +3850,8 @@ mod test {
         let result = input
             .par_iter()
             .with_thread_pool(&mut thread_pool)
-            .try_for_each_init(rand::thread_rng, |rng, &x| {
-                let y = rng.gen_range(0..=x);
+            .try_for_each_init(rand::rng, |rng, &x| {
+                let y = rng.random_range(0..=x);
                 sum.fetch_add(y, Ordering::Relaxed);
                 Some(())
             });
@@ -3862,8 +3862,8 @@ mod test {
         let result = input
             .par_iter()
             .with_thread_pool(&mut thread_pool)
-            .try_for_each_init(rand::thread_rng, |rng, &x| {
-                let y = rng.gen_range(0..=INPUT_LEN);
+            .try_for_each_init(rand::rng, |rng, &x| {
+                let y = rng.random_range(0..=INPUT_LEN);
                 if y <= x {
                     sum.fetch_add(y, Ordering::Relaxed);
                     Some(())
@@ -3877,7 +3877,7 @@ mod test {
         let result = input
             .par_iter()
             .with_thread_pool(&mut thread_pool)
-            .try_for_each_init(rand::thread_rng, |_, _| None);
+            .try_for_each_init(rand::rng, |_, _| None);
         assert!(result.is_none());
     }
 
