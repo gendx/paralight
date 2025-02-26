@@ -213,10 +213,12 @@ impl Range for FixedRange {
 }
 
 impl SkipIterator for std::ops::Range<usize> {
+    #[inline(always)]
     fn next(&mut self) -> (Option<usize>, Option<std::ops::Range<usize>>) {
         (Iterator::next(self), None)
     }
 
+    #[inline(always)]
     fn remaining_range(&self) -> Option<std::ops::Range<usize>> {
         if self.is_empty() {
             None
@@ -235,6 +237,7 @@ pub struct UpperBoundedRange<'bound> {
 }
 
 impl SkipIterator for UpperBoundedRange<'_> {
+    #[inline(always)]
     fn next(&mut self) -> (Option<usize>, Option<std::ops::Range<usize>>) {
         let start = self.range.start;
         if start != self.range.end && start <= self.bound.load(Ordering::Relaxed) {
@@ -247,6 +250,7 @@ impl SkipIterator for UpperBoundedRange<'_> {
         }
     }
 
+    #[inline(always)]
     fn remaining_range(&self) -> Option<std::ops::Range<usize>> {
         if self.range.is_empty() {
             None
@@ -560,6 +564,7 @@ impl Drop for WorkStealingRangeIterator<'_> {
 }
 
 impl SkipIterator for WorkStealingRangeIterator<'_> {
+    #[inline(always)]
     fn remaining_range(&self) -> Option<std::ops::Range<usize>> {
         let my_atomic_range: &AtomicRange = &self.ranges[self.id];
         let mut my_range: PackedRange = my_atomic_range.load();
@@ -574,6 +579,7 @@ impl SkipIterator for WorkStealingRangeIterator<'_> {
         None
     }
 
+    #[inline(always)]
     fn next(&mut self) -> (Option<usize>, Option<std::ops::Range<usize>>) {
         let my_atomic_range: &AtomicRange = &self.ranges[self.id];
         let mut my_range: PackedRange = my_atomic_range.load();
@@ -624,6 +630,7 @@ impl SkipIterator for WorkStealingRangeIterator<'_> {
 impl WorkStealingRangeIterator<'_> {
     /// Helper function for the iterator implementation, to steal a range from
     /// another thread when this thread's range is empty.
+    #[cold]
     fn steal(
         &mut self,
         #[cfg(feature = "log_parallelism")] my_range: PackedRange,
@@ -746,6 +753,7 @@ impl Drop for UpperBoundedWorkStealingRangeIterator<'_, '_> {
 }
 
 impl SkipIterator for UpperBoundedWorkStealingRangeIterator<'_, '_> {
+    #[inline(always)]
     fn remaining_range(&self) -> Option<std::ops::Range<usize>> {
         let my_atomic_range: &AtomicRange = &self.ranges[self.id];
         let mut my_range: PackedRange = my_atomic_range.load();
@@ -760,6 +768,7 @@ impl SkipIterator for UpperBoundedWorkStealingRangeIterator<'_, '_> {
         None
     }
 
+    #[inline(always)]
     fn next(&mut self) -> (Option<usize>, Option<std::ops::Range<usize>>) {
         let bound = self.bound.load(Ordering::Relaxed);
         #[cfg(feature = "log_parallelism")]
@@ -865,6 +874,7 @@ struct OtherRange {
 impl UpperBoundedWorkStealingRangeIterator<'_, '_> {
     /// Helper function for the iterator implementation, to steal a range from
     /// another thread when this thread's range is empty.
+    #[cold]
     fn steal(
         &mut self,
         bound: usize,

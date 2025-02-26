@@ -271,6 +271,7 @@ impl<Output, Reduce> Accumulator<Output, Output> for IterReducer<Reduce>
 where
     Reduce: Fn(Output, Output) -> Output,
 {
+    #[inline(always)]
     fn accumulate(&self, iter: impl Iterator<Item = Output>) -> Output {
         iter.reduce(&self.reduce).unwrap()
     }
@@ -289,6 +290,7 @@ where
     ProcessItem: Fn(Accum, Item) -> Accum,
     Finalize: Fn(Accum) -> Output,
 {
+    #[inline(always)]
     fn accumulate(&self, iter: impl Iterator<Item = Item>) -> Output {
         let mut accumulator = (self.init)();
         for item in iter {
@@ -312,6 +314,7 @@ where
     ProcessItem: Fn(Accum, Item) -> ControlFlow<Break, Accum>,
     Finalize: Fn(ControlFlow<Break, Accum>) -> Output,
 {
+    #[inline(always)]
     fn accumulate(&self, mut iter: impl Iterator<Item = Item>) -> Output {
         let mut accumulator = (self.init)();
         let result = 'outer: {
@@ -424,6 +427,7 @@ where
     Inner: Accumulator<Item, Output>,
     TransformItem: Fn(InnerItem) -> Option<Item>,
 {
+    #[inline(always)]
     fn accumulate(&self, iter: impl Iterator<Item = InnerItem>) -> Output {
         self.inner.accumulate(iter.filter_map(&self.transform_item))
     }
@@ -2907,6 +2911,7 @@ impl<Item, Output> Accumulator<Item, Output> for SumAccumulator
 where
     Output: Sum<Item>,
 {
+    #[inline(always)]
     fn accumulate(&self, iter: impl Iterator<Item = Item>) -> Output {
         iter.sum()
     }
@@ -2918,6 +2923,7 @@ impl<Item, Output> Accumulator<Item, Output> for ProductAccumulator
 where
     Output: Product<Item>,
 {
+    #[inline(always)]
     fn accumulate(&self, iter: impl Iterator<Item = Item>) -> Output {
         iter.product()
     }
@@ -3201,6 +3207,7 @@ where
     Init: Fn() -> I,
     F: Fn(&mut I, Item) -> T,
 {
+    #[inline(always)]
     fn accumulate(&self, iter: impl Iterator<Item = Item>) -> Output {
         let mut i = (self.init)();
         self.inner

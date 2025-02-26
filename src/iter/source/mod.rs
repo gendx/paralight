@@ -1332,6 +1332,7 @@ where
     Inner: Accumulator<Item, Output>,
     FetchItem: Fn(usize) -> Item,
 {
+    #[inline(always)]
     fn accumulate(&self, iter: impl Iterator<Item = usize>) -> Output {
         self.inner.accumulate(iter.map(&self.fetch_item))
     }

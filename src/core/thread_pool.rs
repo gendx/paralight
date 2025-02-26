@@ -619,6 +619,7 @@ struct SkipIteratorWrapper<'a, I: SkipIterator, Cleanup: SourceCleanup> {
 impl<I: SkipIterator, Cleanup: SourceCleanup> Iterator for SkipIteratorWrapper<'_, I, Cleanup> {
     type Item = usize;
 
+    #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             match self.iter.next() {
