@@ -1526,8 +1526,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///     .par_iter_mut()
     ///     .with_thread_pool(&mut thread_pool)
     ///     .for_each_init(
-    ///         rand::thread_rng,
-    ///         |rng, bit| if rng.gen() { *bit = false; },
+    ///         rand::rng,
+    ///         |rng, bit| if rng.random() { *bit = false; },
     ///     );
     ///
     /// // The probability that these checks fail is negligible.
@@ -1666,8 +1666,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///     .par_iter()
     ///     .with_thread_pool(&mut thread_pool)
     ///     .map_init(
-    ///         rand::thread_rng,
-    ///         |rng, &x| if rng.gen() { x * 2 } else { x * 3 },
+    ///         rand::rng,
+    ///         |rng, &x| if rng.random() { x * 2 } else { x * 3 },
     ///     )
     ///     .sum::<i32>();
     ///
@@ -2190,7 +2190,6 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
     /// # };
     /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
-    /// # use std::cmp::Ordering;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -2797,8 +2796,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let result = (0..257)
     ///     .into_par_iter()
     ///     .with_thread_pool(&mut thread_pool)
-    ///     .try_for_each_init(rand::thread_rng, |rng, _| {
-    ///         let byte: u8 = rng.gen();
+    ///     .try_for_each_init(rand::rng, |rng, _| {
+    ///         let byte: u8 = rng.random();
     ///         if set.lock().unwrap().insert(byte) {
     ///             Ok(())
     ///         } else {
@@ -2865,8 +2864,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let result = (0..257)
     ///     .into_par_iter()
     ///     .with_thread_pool(&mut thread_pool)
-    ///     .try_for_each_init(rand::thread_rng, |rng, _| {
-    ///         let byte: u8 = rng.gen();
+    ///     .try_for_each_init(rand::rng, |rng, _| {
+    ///         let byte: u8 = rng.random();
     ///         if set.lock().unwrap().insert(byte) {
     ///             Ok(())
     ///         } else {

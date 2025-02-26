@@ -206,7 +206,7 @@ pub trait IntoParallelRefMutSource<'data> {
     /// # }
     /// # .build();
     /// let mut values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    /// let sum = values
+    /// values
     ///     .par_iter_mut()
     ///     .with_thread_pool(&mut thread_pool)
     ///     .for_each(|x| {
