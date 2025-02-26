@@ -14,7 +14,7 @@ rust-version = "1.77.0"
 
 [package.metadata.docs.rs]
 features = ["log", "log_parallelism", "nightly"]
-rustdoc-args = ["--cfg", "docsrs"]
+rustdoc-args = ["--cfg", "docsrs", "--generate-link-to-definition"]
 
 [features]
 default = []
