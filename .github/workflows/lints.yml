@@ -37,3 +37,6 @@ jobs:
         run: cargo clippy --verbose --all --benches --all-features
       - name: Check Clippy lints on benchmarks (default features)
         run: cargo clippy --verbose --all --benches
+
+      - name: Check Clippy lints on examples (default features)
+        run: cargo clippy --verbose --all --examples
