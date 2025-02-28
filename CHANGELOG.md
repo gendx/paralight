@@ -6,6 +6,46 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.0.6 - 2025-02-28
+
+### Added
+
+- Support for vectors and boxed slices as parallel sources that drain the items.
+  Additionally, arrays are supported as draining parallel sources under the
+  `nightly` feature.
+- Support for `VecDeque` as a parallel source producing (mutable) references to
+  the items.
+- The `ZipableSource` trait (`zip_eq()`, `zip_max()` and `zip_min()` adaptors)
+  is now implemented on arrays of parallel sources and on 1-element tuples of
+  parallel sources.
+- A new `SourceCleanup` trait to support sources with non-trivial cleanup code,
+  such as draining items from a `Vec`.
+- Stability blockers for APIs under the `nightly` feature are now documented.
+- An example CLI tool to profile micro-benchmarks more conveniently.
+
+### Changed
+
+- The minimum supported Rust version (MSRV) is now 1.77.0.
+- The `IntoParallelRefSource` and `IntoParallelRefMutSource` traits aren't
+  implemented anymore for all `&impl IntoParallelSource` and
+  `&mut impl IntoParallelSource` respectively. Additionally,
+  `IntoParallelSource` isn't implemented anymore on common sources yielding
+  (mutable) references: the `IntoParallelRefSource` trait (or
+  `IntoParallelRefMutSource`) is implemented directly instead. This is to avoid
+  ambiguity when calling `IntoParallelSource::into_par_iter()` on a type that
+  can both be drained or iterated by reference.
+- `SourceDescriptor` is now a trait rather than a struct. The signature of
+  `ParallelSource::descriptor()` has been adjusted accordingly.
+- Updated dependencies.
+
+### Fixes
+
+- The `SourceDescriptor::fetch_item()` method is now `unsafe`, as it is for
+  example unsound to directly invoke it on the same index multiple times.
+  Regular users shouldn't have to manipulate `SourceDescriptor`s directly, and
+  users implementing `SourceDescriptor` on their own types can depend on the now
+  explicit safety pre-conditions.
+
 ## 0.0.5 - 2024-12-11
 
 ### Added

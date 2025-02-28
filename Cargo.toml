@@ -1,7 +1,7 @@
 [package]
 name = "paralight"
 description = "A lightweight parallelism library for indexed structures"
-version = "0.0.5"
+version = "0.0.6"
 authors = ["Guillaume Endignoux <guillaumee@google.com>"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/gendx/paralight"
