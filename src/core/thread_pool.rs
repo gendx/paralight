@@ -9,7 +9,7 @@
 //! A thread pool implementing parallelism at a lightweight cost.
 
 use super::range::{
-    FixedRangeFactory, Range, RangeFactory, RangeOrchestrator, SkipIterator,
+    FixedRangeFactory, Range, RangeFactory, RangeOrchestrator, SkipIterator, TotemRangeFactory,
     WorkStealingRangeFactory,
 };
 use super::sync::{make_lending_group, Borrower, Lender, WorkerState};
@@ -65,6 +65,8 @@ pub enum RangeStrategy {
     Fixed,
     /// Threads can steal work from each other.
     WorkStealing,
+    /// All the threads pull items from a single queue.
+    Totem,
 }
 
 /// Policy to pin worker threads to CPUs.
@@ -197,6 +199,7 @@ impl ThreadPool {
 enum ThreadPoolEnum {
     Fixed(ThreadPoolImpl<FixedRangeFactory>),
     WorkStealing(ThreadPoolImpl<WorkStealingRangeFactory>),
+    Totem(ThreadPoolImpl<TotemRangeFactory>),
 }
 
 impl ThreadPoolEnum {
@@ -219,6 +222,11 @@ impl ThreadPoolEnum {
                 WorkStealingRangeFactory::new(num_threads),
                 builder.cpu_pinning,
             )),
+            RangeStrategy::Totem => ThreadPoolEnum::Totem(ThreadPoolImpl::new(
+                num_threads,
+                TotemRangeFactory::new(num_threads),
+                builder.cpu_pinning,
+            )),
         }
     }
 
@@ -228,6 +236,7 @@ impl ThreadPoolEnum {
         match self {
             ThreadPoolEnum::Fixed(inner) => inner.num_threads(),
             ThreadPoolEnum::WorkStealing(inner) => inner.num_threads(),
+            ThreadPoolEnum::Totem(inner) => inner.num_threads(),
         }
     }
 
@@ -273,6 +282,14 @@ impl ThreadPoolEnum {
                 reduce,
                 cleanup,
             ),
+            ThreadPoolEnum::Totem(inner) => inner.upper_bounded_pipeline(
+                input_len,
+                init,
+                process_item,
+                finalize,
+                reduce,
+                cleanup,
+            ),
         }
     }
 
@@ -300,6 +317,7 @@ impl ThreadPoolEnum {
             ThreadPoolEnum::WorkStealing(inner) => {
                 inner.iter_pipeline(input_len, accum, reduce, cleanup)
             }
+            ThreadPoolEnum::Totem(inner) => inner.iter_pipeline(input_len, accum, reduce, cleanup),
         }
     }
 }
@@ -800,7 +818,11 @@ mod test {
 
     #[test]
     fn test_num_threads() {
-        for range_strategy in [RangeStrategy::Fixed, RangeStrategy::WorkStealing] {
+        for range_strategy in [
+            RangeStrategy::Fixed,
+            RangeStrategy::WorkStealing,
+            RangeStrategy::Totem,
+        ] {
             let thread_pool = ThreadPoolBuilder {
                 num_threads: ThreadCount::AvailableParallelism,
                 range_strategy,

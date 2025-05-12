@@ -1000,6 +1000,181 @@ impl UpperBoundedWorkStealingRangeIterator<'_, '_> {
     }
 }
 
+/// A factory that implements a simple queue from which all the threads pull.
+///
+/// The name comes from the fact that all the threads try to increment the same
+/// atomic variable, which metaphorically looks like a totem they are trying to
+/// grab (for those familiar with a famous board game).
+///
+/// This is a demo, as the performance is terrible.
+pub struct TotemRangeFactory {
+    /// Next index to pull from the current global range.
+    index: Arc<CachePadded<AtomicUsize>>,
+    /// Total number of elements in the current global range.
+    num_elements: Arc<AtomicUsize>,
+}
+
+impl RangeFactory for TotemRangeFactory {
+    type Range = TotemRange;
+    type Orchestrator = TotemRangeOrchestrator;
+
+    fn new(_num_threads: usize) -> Self {
+        Self {
+            index: Arc::new(CachePadded::new(AtomicUsize::new(0))),
+            num_elements: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    fn orchestrator(self) -> TotemRangeOrchestrator {
+        TotemRangeOrchestrator {
+            index: self.index,
+            num_elements: self.num_elements,
+        }
+    }
+
+    fn range(&self, _thread_id: usize) -> TotemRange {
+        TotemRange {
+            index: self.index.clone(),
+            num_elements: self.num_elements.clone(),
+        }
+    }
+}
+
+/// An orchestrator for the [`TotemRangeFactory`].
+pub struct TotemRangeOrchestrator {
+    /// Next index to pull from the current global range.
+    index: Arc<CachePadded<AtomicUsize>>,
+    /// Total number of elements in the current global range.
+    num_elements: Arc<AtomicUsize>,
+}
+
+impl RangeOrchestrator for TotemRangeOrchestrator {
+    fn reset_ranges(&self, num_elements: usize) {
+        self.index.store(0, Ordering::Relaxed);
+        self.num_elements.store(num_elements, Ordering::Relaxed);
+    }
+}
+
+/// A range that implements a simple queue from which all the threads pull.
+pub struct TotemRange {
+    /// Next index to pull from the current global range.
+    index: Arc<CachePadded<AtomicUsize>>,
+    /// Total number of elements in the current global range.
+    num_elements: Arc<AtomicUsize>,
+}
+
+impl Range for TotemRange {
+    type Iter<'a> = TotemRangeIterator<'a>;
+    type UpperBoundedIter<'a, 'bound> = UpperBoundedTotemRangeIterator<'a, 'bound>;
+
+    fn iter(&self) -> Self::Iter<'_> {
+        TotemRangeIterator {
+            index: &self.index,
+            num_elements: self.num_elements.load(Ordering::Relaxed),
+        }
+    }
+
+    fn upper_bounded_iter<'a, 'bound>(
+        &'a self,
+        bound: &'bound AtomicUsize,
+    ) -> Self::UpperBoundedIter<'a, 'bound> {
+        UpperBoundedTotemRangeIterator {
+            index: &self.index,
+            num_elements: self.num_elements.load(Ordering::Relaxed),
+            bound,
+        }
+    }
+}
+
+/// An iterator for a [`TotemRange`].
+pub struct TotemRangeIterator<'a> {
+    /// Next index to pull from the current global range.
+    index: &'a AtomicUsize,
+    /// Total number of elements in the current global range.
+    num_elements: usize,
+}
+
+impl SkipIterator for TotemRangeIterator<'_> {
+    fn next(&mut self) -> (Option<usize>, Option<std::ops::Range<usize>>) {
+        let mut index = self.index.load(Ordering::Relaxed);
+        while index < self.num_elements {
+            match self.index.compare_exchange(
+                index,
+                index + 1,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return (Some(index), None),
+                Err(new_index) => index = new_index,
+            }
+        }
+        (None, None)
+    }
+
+    fn remaining_range(&self) -> Option<std::ops::Range<usize>> {
+        // Grab all the remaining items.
+        let mut index = self.index.load(Ordering::Relaxed);
+        while index < self.num_elements {
+            match self.index.compare_exchange(
+                index,
+                self.num_elements,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return Some(index..self.num_elements),
+                Err(new_index) => index = new_index,
+            }
+        }
+        None
+    }
+}
+
+/// A upper-bounded iterator for a [`TotemRange`].
+pub struct UpperBoundedTotemRangeIterator<'a, 'bound> {
+    /// Next index to pull from the current global range.
+    index: &'a AtomicUsize,
+    /// Total number of elements in the current global range.
+    num_elements: usize,
+    /// Dynamic upper bound.
+    bound: &'bound AtomicUsize,
+}
+
+impl SkipIterator for UpperBoundedTotemRangeIterator<'_, '_> {
+    fn next(&mut self) -> (Option<usize>, Option<std::ops::Range<usize>>) {
+        let mut index = self.index.load(Ordering::Relaxed);
+        let bound = self.bound.load(Ordering::Relaxed);
+        while index < self.num_elements && index <= bound {
+            match self.index.compare_exchange(
+                index,
+                index + 1,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return (Some(index), None),
+                Err(new_index) => index = new_index,
+            }
+        }
+        (None, None)
+    }
+
+    fn remaining_range(&self) -> Option<std::ops::Range<usize>> {
+        // Grab all the remaining items.
+        let mut index = self.index.load(Ordering::Relaxed);
+        while index < self.num_elements {
+            match self.index.compare_exchange(
+                index,
+                self.num_elements,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return Some(index..self.num_elements),
+                Err(new_index) => index = new_index,
+            }
+        }
+        None
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

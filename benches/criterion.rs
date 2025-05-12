@@ -11,7 +11,7 @@ use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Through
 use std::mem::size_of;
 
 const NUM_THREADS: &[usize] = &[1, 2, 4, 8];
-const LENGTHS: &[usize] = &[10_000, 100_000, 1_000_000, 10_000_000];
+const LENGTHS: &[usize] = &[10_000, 100_000, 1_000_000];
 
 fn sum(c: &mut Criterion) {
     let mut group = c.benchmark_group("sum");
@@ -27,6 +27,7 @@ fn sum(c: &mut Criterion) {
             for (range_strategy, range_name) in [
                 (RangeStrategy::Fixed, "fixed"),
                 (RangeStrategy::WorkStealing, "work-stealing"),
+                (RangeStrategy::Totem, "totem"),
             ] {
                 group.bench_with_input(
                     BenchmarkId::new(format!("paralight_{range_name}@{num_threads}"), len),
@@ -53,6 +54,7 @@ fn add(c: &mut Criterion) {
             for (range_strategy, range_name) in [
                 (RangeStrategy::Fixed, "fixed"),
                 (RangeStrategy::WorkStealing, "work-stealing"),
+                (RangeStrategy::Totem, "totem"),
             ] {
                 group.bench_with_input(
                     BenchmarkId::new(format!("paralight_{range_name}@{num_threads}"), len),

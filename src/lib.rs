@@ -242,6 +242,7 @@ mod test {
 
     all_parallelism_tests!(fixed, RangeStrategy::Fixed);
     all_parallelism_tests!(work_stealing, RangeStrategy::WorkStealing);
+    all_parallelism_tests!(totem, RangeStrategy::Totem);
 
     #[cfg(not(miri))]
     const INPUT_LEN: u64 = 100_000;

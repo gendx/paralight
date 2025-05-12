@@ -11,7 +11,7 @@ fn main() {
 }
 
 const NUM_THREADS: &[usize] = &[1, 2, 4, 8];
-const LENGTHS: &[usize] = &[10_000, 100_000, 1_000_000, 10_000_000];
+const LENGTHS: &[usize] = &[10_000, 100_000, 1_000_000];
 
 /// Baseline benchmarks using serial iterators (without any multi-threading
 /// involved).
@@ -129,6 +129,11 @@ mod paralight {
         sum_impl::<NUM_THREADS>(bencher, len, RangeStrategy::WorkStealing)
     }
 
+    #[divan::bench(consts = NUM_THREADS, args = LENGTHS)]
+    fn sum_totem<const NUM_THREADS: usize>(bencher: Bencher, len: usize) {
+        sum_impl::<NUM_THREADS>(bencher, len, RangeStrategy::Totem)
+    }
+
     fn sum_impl<const NUM_THREADS: usize>(
         bencher: Bencher,
         len: usize,
@@ -161,6 +166,11 @@ mod paralight {
     #[divan::bench(consts = NUM_THREADS, args = LENGTHS)]
     fn add_work_stealing<const NUM_THREADS: usize>(bencher: Bencher, len: usize) {
         add_impl::<NUM_THREADS>(bencher, len, RangeStrategy::WorkStealing)
+    }
+
+    #[divan::bench(consts = NUM_THREADS, args = LENGTHS)]
+    fn add_totem<const NUM_THREADS: usize>(bencher: Bencher, len: usize) {
+        add_impl::<NUM_THREADS>(bencher, len, RangeStrategy::Totem)
     }
 
     fn add_impl<const NUM_THREADS: usize>(
