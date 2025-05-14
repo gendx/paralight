@@ -7,8 +7,8 @@
 // except according to those terms.
 
 use super::{
-    IntoParallelRefMutSource, IntoParallelRefSource, ParallelSource, SourceCleanup,
-    SourceDescriptor,
+    IntoParallelRefMutSource, IntoParallelRefSource, ParallelSource, RewindableSource,
+    SourceCleanup, SourceDescriptor,
 };
 use std::marker::PhantomData;
 
@@ -60,6 +60,9 @@ impl<'data, T: Sync> ParallelSource for SliceParallelSource<'data, T> {
         SliceSourceDescriptor { slice: self.slice }
     }
 }
+
+// SAFETY: TODO
+unsafe impl<'data, T: Sync> RewindableSource for SliceParallelSource<'data, T> {}
 
 struct SliceSourceDescriptor<'data, T: Sync> {
     slice: &'data [T],

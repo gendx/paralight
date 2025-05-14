@@ -6,7 +6,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use super::{ParallelSource, SourceCleanup, SourceDescriptor};
+use super::{ParallelSource, RewindableSource, SourceCleanup, SourceDescriptor};
 
 /// A helper trait for zipping together multiple [`ParallelSource`]s into a
 /// single [`ParallelSource`] that produces items grouped from the original
@@ -257,6 +257,10 @@ macro_rules! zipable_tuple {
             }
         }
 
+        // SAFETY: TODO
+        unsafe impl<$($tuple,)+> RewindableSource for ZipEq<($($tuple,)+)>
+        where $($tuple: RewindableSource,)+ {}
+
         impl<$($tuple,)+> ParallelSource for ZipMax<($($tuple,)+)>
         where $($tuple: ParallelSource,)+ {
             type Item = ( $(Option<$tuple::Item>,)+ );
@@ -273,6 +277,10 @@ macro_rules! zipable_tuple {
             }
         }
 
+        // SAFETY: TODO
+        unsafe impl<$($tuple,)+> RewindableSource for ZipMax<($($tuple,)+)>
+        where $($tuple: RewindableSource,)+ {}
+
         impl<$($tuple,)+> ParallelSource for ZipMin<($($tuple,)+)>
         where $($tuple: ParallelSource,)+ {
             type Item = ( $($tuple::Item,)+ );
@@ -288,6 +296,10 @@ macro_rules! zipable_tuple {
                 }
             }
         }
+
+        // SAFETY: TODO
+        unsafe impl<$($tuple,)+> RewindableSource for ZipMin<($($tuple,)+)>
+        where $($tuple: RewindableSource,)+ {}
 
         impl<$($tuple,)+> SourceCleanup for ZipEqSourceDescriptor<($($tuple,)+)>
         where $($tuple: SourceCleanup,)+ {

@@ -17,7 +17,8 @@ pub use source::array::ArrayParallelSource;
 pub use source::ndim::{
     MultiDimParallelSource, MultiDimParallelSourceExt, MultiDimSourceDescriptor, MultiDimZipEq,
     MultiDimZipableSource, MutSlice1dParallelSource, MutSlice2dParallelSource,
-    MutSlice3dParallelSource, Slice1dParallelSource, Slice2dParallelSource, Slice3dParallelSource,
+    MutSlice3dParallelSource, ProductableSource, Slice1dParallelSource, Slice2dParallelSource,
+    Slice3dParallelSource,
 };
 pub use source::range::{RangeInclusiveParallelSource, RangeParallelSource};
 pub use source::slice::{MutSliceParallelSource, SliceParallelSource};
@@ -26,7 +27,7 @@ pub use source::vec_deque::{VecDequeRefMutParallelSource, VecDequeRefParallelSou
 pub use source::zip::{ZipEq, ZipMax, ZipMin, ZipableSource};
 pub use source::{
     IntoParallelRefMutSource, IntoParallelRefSource, IntoParallelSource, ParallelSource,
-    ParallelSourceExt, SourceCleanup, SourceDescriptor,
+    ParallelSourceExt, RewindableSource, SourceCleanup, SourceDescriptor,
 };
 use std::cmp::Ordering;
 use std::iter::{Product, Sum};

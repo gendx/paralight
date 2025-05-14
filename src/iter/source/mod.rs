@@ -123,6 +123,32 @@ pub trait ParallelSource: Sized {
     fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync;
 }
 
+/// Marker trait for [`ParallelSource`]s for which it is safe to fetch any item
+/// multiple times.
+///
+/// This trait typically implies that the corresponding
+/// [`NEEDS_CLEANUP`](SourceCleanup::NEEDS_CLEANUP) is [`false`] (as a necessary
+/// but not sufficient condition).
+///
+/// # Safety
+///
+/// Implementors must guarantee that it is indeed safe for the same item to be
+/// fetched multiple times, possibly in parallel. This typically implies that
+/// the produced [`Item`](ParallelSource::Item) is both [`Send`] and [`Sync`]
+/// (as a necessary but not sufficient condition).
+///
+/// For example, a slice that produces constant references in parallel
+/// implements this trait. So does a [range](std::ops::Range) that yields
+/// integers.
+///
+/// However, a mutable slice that produces mutable
+/// reference doesn't implement this trait, as materializing mutable references
+/// to the same item on several threads at the same time is unsound. Likewise, a
+/// parallel source that moves items from a container (e.g. [`Vec`]) doesn't
+/// implement this trait, as each item can only be moved once from the
+/// container.
+pub unsafe trait RewindableSource {}
+
 /// Trait for converting into a [`ParallelSource`].
 pub trait IntoParallelSource {
     /// The type of items that this parallel source produces.
@@ -645,6 +671,12 @@ impl<T: Send, First: ParallelSource<Item = T>, Second: ParallelSource<Item = T>>
     }
 }
 
+// SAFETY: TODO
+unsafe impl<First: RewindableSource, Second: RewindableSource> RewindableSource
+    for Chain<First, Second>
+{
+}
+
 struct ChainSourceDescriptor<First, Second> {
     descriptor1: First,
     descriptor2: Second,
@@ -761,6 +793,9 @@ impl<Inner: ParallelSource> ParallelSource for Enumerate<Inner> {
     }
 }
 
+// SAFETY: TODO
+unsafe impl<Inner: RewindableSource> RewindableSource for Enumerate<Inner> {}
+
 struct EnumerateSourceDescriptor<Inner> {
     inner: Inner,
 }
@@ -829,6 +864,9 @@ impl<Inner: ParallelSource> ParallelSource for Rev<Inner> {
         }
     }
 }
+
+// SAFETY: TODO
+unsafe impl<Inner: RewindableSource> RewindableSource for Rev<Inner> {}
 
 struct RevSourceDescriptor<Inner> {
     inner: Inner,
@@ -908,6 +946,9 @@ impl<Inner: ParallelSource> ParallelSource for Skip<Inner> {
         }
     }
 }
+
+// SAFETY: TODO
+unsafe impl<Inner: RewindableSource> RewindableSource for Skip<Inner> {}
 
 struct SkipSourceDescriptor<Inner: SourceDescriptor> {
     inner: Inner,
@@ -1011,6 +1052,9 @@ impl<Inner: ParallelSource> ParallelSource for SkipExact<Inner> {
     }
 }
 
+// SAFETY: TODO
+unsafe impl<Inner: RewindableSource> RewindableSource for SkipExact<Inner> {}
+
 /// This struct is created by the
 /// [`step_by()`](ParallelSourceExt::step_by) method on [`ParallelSourceExt`].
 ///
@@ -1039,6 +1083,9 @@ impl<Inner: ParallelSource> ParallelSource for StepBy<Inner> {
         }
     }
 }
+
+// SAFETY: TODO
+unsafe impl<Inner: RewindableSource> RewindableSource for StepBy<Inner> {}
 
 struct StepBySourceDescriptor<Inner: SourceDescriptor> {
     inner: Inner,
@@ -1155,6 +1202,9 @@ impl<Inner: ParallelSource> ParallelSource for Take<Inner> {
     }
 }
 
+// SAFETY: TODO
+unsafe impl<Inner: RewindableSource> RewindableSource for Take<Inner> {}
+
 struct TakeSourceDescriptor<Inner: SourceDescriptor> {
     inner: Inner,
     count: usize,
@@ -1253,6 +1303,9 @@ impl<Inner: ParallelSource> ParallelSource for TakeExact<Inner> {
         }
     }
 }
+
+// SAFETY: TODO
+unsafe impl<Inner: RewindableSource> RewindableSource for TakeExact<Inner> {}
 
 /// This struct is created by the
 /// [`with_thread_pool()`](ParallelSourceExt::with_thread_pool) method on

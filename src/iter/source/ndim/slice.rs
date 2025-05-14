@@ -8,7 +8,7 @@
 
 //! TODO
 
-use super::{MultiDimParallelSource, MultiDimSourceDescriptor, SourceCleanup};
+use super::{MultiDimParallelSource, MultiDimSourceDescriptor, RewindableSource, SourceCleanup};
 use std::marker::PhantomData;
 
 /// TODO
@@ -75,6 +75,24 @@ impl<'data, T: Sync, const A: usize, const B: usize, const C: usize> MultiDimPar
     fn descriptor(self) -> impl MultiDimSourceDescriptor<3, Item = Self::Item> {
         Slice3dSourceDescriptor { slice: self.slice }
     }
+}
+
+// SAFETY: TODO
+unsafe impl<'data, T: Sync, const A: usize> RewindableSource
+    for Slice1dParallelSource<'data, T, A>
+{
+}
+
+// SAFETY: TODO
+unsafe impl<'data, T: Sync, const A: usize, const B: usize> RewindableSource
+    for Slice2dParallelSource<'data, T, A, B>
+{
+}
+
+// SAFETY: TODO
+unsafe impl<'data, T: Sync, const A: usize, const B: usize, const C: usize> RewindableSource
+    for Slice3dParallelSource<'data, T, A, B, C>
+{
 }
 
 struct Slice1dSourceDescriptor<'data, T: Sync, const A: usize> {

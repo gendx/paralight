@@ -37,10 +37,12 @@
 //! assert_eq!(z, from_fn(|i| from_fn(|j| i + j + i * j)));
 //! ```
 
+mod cartesian_product;
 mod slice;
 mod zip;
 
-use super::{ParallelSource, SourceCleanup, SourceDescriptor};
+use super::{ParallelSource, RewindableSource, SourceCleanup, SourceDescriptor};
+pub use cartesian_product::ProductableSource;
 pub use slice::{
     MutSlice1dParallelSource, MutSlice2dParallelSource, MutSlice3dParallelSource,
     Slice1dParallelSource, Slice2dParallelSource, Slice3dParallelSource,
@@ -191,6 +193,12 @@ impl<const DIM: usize, T: MultiDimParallelSource<DIM>> ParallelSource for Flatte
     }
 }
 
+// SAFETY: TODO
+unsafe impl<const DIM: usize, T: MultiDimParallelSource<DIM> + RewindableSource> RewindableSource
+    for Flattened<DIM, T>
+{
+}
+
 struct FlattenedSourceDescriptor<const DIM: usize, Inner: MultiDimSourceDescriptor<DIM>> {
     inner: Inner,
     len: usize,
@@ -255,6 +263,12 @@ impl<const DIM: usize, T: MultiDimParallelSource<DIM>> MultiDimParallelSource<DI
             inv_permutation: self.inv_permutation,
         }
     }
+}
+
+// SAFETY: TODO
+unsafe impl<const DIM: usize, T: MultiDimParallelSource<DIM> + RewindableSource> RewindableSource
+    for Permuted<DIM, T>
+{
 }
 
 struct PermutedSourceDescriptor<const DIM: usize, Inner> {

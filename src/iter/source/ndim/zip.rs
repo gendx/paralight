@@ -8,7 +8,7 @@
 
 //! TODO
 
-use super::{MultiDimParallelSource, MultiDimSourceDescriptor, SourceCleanup};
+use super::{MultiDimParallelSource, MultiDimSourceDescriptor, RewindableSource, SourceCleanup};
 
 /// TODO
 pub trait MultiDimZipableSource<const DIM: usize>: Sized
@@ -66,6 +66,10 @@ macro_rules! ndim_zipable_tuple {
                 }
             }
         }
+
+        // SAFETY: TODO
+        unsafe impl<$($tuple,)+> RewindableSource for MultiDimZipEq<($($tuple,)+)>
+        where $($tuple: RewindableSource,)+ {}
 
         impl<const DIM: usize, $($tuple,)+> SourceCleanup
         for MultiDimZipEqSourceDescriptor<($($tuple,)+), DIM>

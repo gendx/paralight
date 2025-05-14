@@ -22,6 +22,7 @@
     feature = "nightly",
     feature(
         array_ptr_get,
+        associated_const_equality,
         maybe_uninit_uninit_array_transpose,
         step_trait,
         try_trait_v2

@@ -6,7 +6,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use super::{IntoParallelSource, ParallelSource, SourceCleanup, SourceDescriptor};
+use super::{
+    IntoParallelSource, ParallelSource, RewindableSource, SourceCleanup, SourceDescriptor,
+};
 #[cfg(feature = "nightly")]
 use std::iter::Step;
 use std::ops::{Range, RangeInclusive};
@@ -126,6 +128,10 @@ impl<T: Step + Copy + Send + Sync> ParallelSource for RangeParallelSource<T> {
     }
 }
 
+#[cfg(feature = "nightly")]
+// SAFETY: TODO
+unsafe impl<T: Step + Copy + Send + Sync> RewindableSource for RangeParallelSource<T> {}
+
 #[cfg(not(feature = "nightly"))]
 impl IntoParallelSource for Range<usize> {
     type Item = usize;
@@ -152,6 +158,10 @@ impl ParallelSource for RangeParallelSource<usize> {
         }
     }
 }
+
+#[cfg(not(feature = "nightly"))]
+// SAFETY: TODO
+unsafe impl RewindableSource for RangeParallelSource<usize> {}
 
 /// A parallel source over a [`RangeInclusive`]. This struct is created by the
 /// [`into_par_iter()`](IntoParallelSource::into_par_iter) method on
@@ -230,6 +240,10 @@ impl<T: Step + Copy + Send + Sync> ParallelSource for RangeInclusiveParallelSour
     }
 }
 
+#[cfg(feature = "nightly")]
+// SAFETY: TODO
+unsafe impl<T: Step + Copy + Send + Sync> RewindableSource for RangeInclusiveParallelSource<T> {}
+
 #[cfg(not(feature = "nightly"))]
 impl IntoParallelSource for RangeInclusive<usize> {
     type Item = usize;
@@ -258,3 +272,7 @@ impl ParallelSource for RangeInclusiveParallelSource<usize> {
         RangeSourceDescriptor { start, len }
     }
 }
+
+#[cfg(not(feature = "nightly"))]
+// SAFETY: TODO
+unsafe impl RewindableSource for RangeInclusiveParallelSource<usize> {}

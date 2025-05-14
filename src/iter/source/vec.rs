@@ -6,6 +6,9 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[cfg(feature = "nightly")]
+mod nightly;
+
 use super::{IntoParallelSource, ParallelSource, SourceCleanup, SourceDescriptor};
 use std::mem::ManuallyDrop;
 

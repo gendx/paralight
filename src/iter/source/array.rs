@@ -6,6 +6,8 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[cfg(feature = "nightly")]
+use super::RewindableSource;
 use super::{IntoParallelSource, ParallelSource, SourceCleanup, SourceDescriptor};
 use std::cell::UnsafeCell;
 use std::mem::MaybeUninit;
@@ -68,6 +70,17 @@ impl<T: Send, const N: usize> ParallelSource for ArrayParallelSource<T, N> {
             array: ArrayWrapper::new(self.array),
         }
     }
+}
+
+// TODO: This compiles but using it is effectively blocked on
+// https://github.com/rust-lang/rust/issues/137813.
+#[cfg(feature = "nightly")]
+// SAFETY: TODO
+unsafe impl<T: Send, const N: usize> RewindableSource for ArrayParallelSource<T, N> where
+    ArraySourceDescriptor<T, N>: SourceCleanup<NEEDS_CLEANUP = false> /* TODO: Should the
+                                                                       * constraint be stronger
+                                                                       * (e.g. T: Copy)? */
+{
 }
 
 struct ArraySourceDescriptor<T, const N: usize> {
