@@ -13,6 +13,12 @@ mod source;
 use crossbeam_utils::CachePadded;
 #[cfg(feature = "nightly")]
 pub use source::array::ArrayParallelSource;
+#[cfg(feature = "ndim")]
+pub use source::ndim::{
+    MultiDimParallelSource, MultiDimParallelSourceExt, MultiDimSourceDescriptor, MultiDimZipEq,
+    MultiDimZipableSource, MutSlice1dParallelSource, MutSlice2dParallelSource,
+    MutSlice3dParallelSource, Slice1dParallelSource, Slice2dParallelSource, Slice3dParallelSource,
+};
 pub use source::range::{RangeInclusiveParallelSource, RangeParallelSource};
 pub use source::slice::{MutSliceParallelSource, SliceParallelSource};
 pub use source::vec::VecParallelSource;

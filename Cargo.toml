@@ -17,9 +17,10 @@ features = ["log", "log_parallelism", "nightly"]
 rustdoc-args = ["--cfg", "docsrs", "--generate-link-to-definition"]
 
 [features]
-default = []
+default = ["ndim"]
 log = ["dep:log"]
 log_parallelism = ["log"]
+ndim = []
 nightly = []
 nightly_tests = []
 

@@ -10,6 +10,8 @@
 
 #[cfg(feature = "nightly")]
 pub mod array;
+#[cfg(feature = "ndim")]
+pub mod ndim;
 pub mod range;
 pub mod slice;
 pub mod vec;
