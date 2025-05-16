@@ -18,8 +18,8 @@ use std::marker::PhantomData;
 ///
 /// You most likely won't need to interact with this struct directly, as it
 /// implements the [`ParallelSource`] and
-/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it
-/// is nonetheless public because of the `must_use` annotation.
+/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it is
+/// nonetheless public because of the `must_use` annotation.
 ///
 /// See also [`MutSliceParallelSource`].
 ///
@@ -91,8 +91,8 @@ impl<'data, T: Sync> SourceDescriptor for SliceSourceDescriptor<'data, T> {
 ///
 /// You most likely won't need to interact with this struct directly, as it
 /// implements the [`ParallelSource`] and
-/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it
-/// is nonetheless public because of the `must_use` annotation.
+/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it is
+/// nonetheless public because of the `must_use` annotation.
 ///
 /// See also [`SliceParallelSource`].
 ///

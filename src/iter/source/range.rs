@@ -58,8 +58,8 @@ impl SourceDescriptor for RangeSourceDescriptor<usize> {
 ///
 /// You most likely won't need to interact with this struct directly, as it
 /// implements the [`ParallelSource`] and
-/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it
-/// is nonetheless public because of the `must_use` annotation.
+/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it is
+/// nonetheless public because of the `must_use` annotation.
 ///
 /// See also [`RangeInclusiveParallelSource`].
 ///
@@ -159,8 +159,8 @@ impl ParallelSource for RangeParallelSource<usize> {
 ///
 /// You most likely won't need to interact with this struct directly, as it
 /// implements the [`ParallelSource`] and
-/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it
-/// is nonetheless public because of the `must_use` annotation.
+/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it is
+/// nonetheless public because of the `must_use` annotation.
 ///
 /// See also [`RangeParallelSource`].
 ///

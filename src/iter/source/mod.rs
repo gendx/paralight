@@ -139,9 +139,6 @@ pub trait IntoParallelSource {
 }
 
 /// Trait for converting into a [`ParallelSource`] that produces references.
-///
-/// This trait is automatically implemented for `T` where [`&T`](reference)
-/// implements [`IntoParallelSource`].
 pub trait IntoParallelRefSource<'data> {
     /// The type of items that this parallel source produces.
     ///
@@ -154,8 +151,7 @@ pub trait IntoParallelRefSource<'data> {
     /// Target parallel source type.
     type Source: ParallelSource<Item = Self::Item>;
 
-    /// Converts `&self` into a parallel source to be processed on the given
-    /// thread pool.
+    /// Converts `&self` into a parallel source.
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
@@ -178,9 +174,6 @@ pub trait IntoParallelRefSource<'data> {
 
 /// Trait for converting into a [`ParallelSource`] that produces mutable
 /// references.
-///
-/// This trait is automatically implemented for `T` where [`&mut T`](reference)
-/// implements [`IntoParallelSource`].
 pub trait IntoParallelRefMutSource<'data> {
     /// The type of items that this parallel source produces.
     ///
@@ -193,8 +186,7 @@ pub trait IntoParallelRefMutSource<'data> {
     /// Target parallel source type.
     type Source: ParallelSource<Item = Self::Item>;
 
-    /// Converts `&mut self` into a parallel source to be processed on the given
-    /// thread pool.
+    /// Converts `&mut self` into a parallel source.
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelRefMutSource, ParallelIteratorExt, ParallelSourceExt};

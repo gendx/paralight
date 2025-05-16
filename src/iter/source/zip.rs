@@ -173,8 +173,8 @@ where
 ///
 /// You most likely won't need to interact with this struct directly, as it
 /// implements the [`ParallelSource`] and
-/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it
-/// is nonetheless public because of the `must_use` annotation.
+/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it is
+/// nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct ZipEq<T>(T);
 
@@ -183,8 +183,8 @@ pub struct ZipEq<T>(T);
 ///
 /// You most likely won't need to interact with this struct directly, as it
 /// implements the [`ParallelSource`] and
-/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it
-/// is nonetheless public because of the `must_use` annotation.
+/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it is
+/// nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct ZipMax<T>(T);
 
@@ -193,8 +193,8 @@ pub struct ZipMax<T>(T);
 ///
 /// You most likely won't need to interact with this struct directly, as it
 /// implements the [`ParallelSource`] and
-/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it
-/// is nonetheless public because of the `must_use` annotation.
+/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it is
+/// nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct ZipMin<T>(T);
 

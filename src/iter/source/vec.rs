@@ -15,8 +15,8 @@ use std::mem::ManuallyDrop;
 ///
 /// You most likely won't need to interact with this struct directly, as it
 /// implements the [`ParallelSource`] and
-/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it
-/// is nonetheless public because of the `must_use` annotation.
+/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it is
+/// nonetheless public because of the `must_use` annotation.
 ///
 /// See also [`SliceParallelSource`](super::slice::SliceParallelSource) and
 /// [`MutSliceParallelSource`](super::slice::MutSliceParallelSource).
