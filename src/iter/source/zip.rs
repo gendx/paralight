@@ -199,30 +199,33 @@ pub struct ZipMax<T>(T);
 pub struct ZipMin<T>(T);
 
 macro_rules! assert_all_eq {
-    ( $lens:expr, $zero:tt $(, $i:tt)* ) => {
-        $( assert_eq!(
-            $lens.0,
-            $lens.$i,
-            "called zip_eq() with sources of different lengths"
-        ); )*
+    ( $len0:expr $(, $leni:expr)* ) => {
+        {
+            $( assert_eq!(
+                $len0,
+                $leni,
+                "called zip_eq() with sources of different lengths"
+            ); )*
+            $len0
+        }
     }
 }
 
 macro_rules! min_of {
-    ( $lens:expr, $zero:tt $(, $i:tt)* ) => {
-        $lens.0 $( .min($lens.$i) )*
+    ( $x0:expr $(, $xi:expr)* ) => {
+        $x0 $( .min($xi) )*
     }
 }
 
 macro_rules! max_of {
-    ( $lens:expr, $zero:tt $(, $i:tt)* ) => {
-        $lens.0 $( .max($lens.$i) )*
+    ( $x0:expr $(, $xi:expr)* ) => {
+        $x0 $( .max($xi) )*
     }
 }
 
 macro_rules! or_bools {
-    ( $tuple:expr, $zero:tt $(, $i:tt)* ) => {
-        $tuple.0 $( || $tuple.$i )*
+    ( $x0:expr $(, $xi:expr)* ) => {
+        $x0 $( || $xi )*
     }
 }
 
@@ -248,11 +251,10 @@ macro_rules! zipable_tuple {
             fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
                 let tuple = self.0;
                 let descriptors = ( $(tuple.$i.descriptor(),)+ );
-                let lens = ( $(descriptors.$i.len(),)+ );
-                assert_all_eq!(lens, $($i),+);
+                let len = assert_all_eq!( $(descriptors.$i.len()),+ );
                 ZipEqSourceDescriptor {
                     descriptors,
-                    len: lens.0,
+                    len,
                 }
             }
         }
@@ -264,8 +266,7 @@ macro_rules! zipable_tuple {
             fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
                 let tuple = self.0;
                 let descriptors = ( $(tuple.$i.descriptor(),)+ );
-                let lens = ( $(descriptors.$i.len(),)+ );
-                let len = max_of!(lens, $($i),+);
+                let len = max_of!( $(descriptors.$i.len()),+ );
                 ZipMaxSourceDescriptor {
                     descriptors,
                     len,
@@ -280,8 +281,7 @@ macro_rules! zipable_tuple {
             fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
                 let tuple = self.0;
                 let descriptors = ( $(tuple.$i.descriptor(),)+ );
-                let lens = ( $(descriptors.$i.len(),)+ );
-                let len = min_of!(lens, $($i),+);
+                let len = min_of!( $(descriptors.$i.len()),+ );
                 $detail::ZipMinSourceDescriptor {
                     descriptors,
                     len,
@@ -291,10 +291,7 @@ macro_rules! zipable_tuple {
 
         impl<$($tuple,)+> SourceCleanup for ZipEqSourceDescriptor<($($tuple,)+)>
         where $($tuple: SourceCleanup,)+ {
-            const NEEDS_CLEANUP: bool = {
-                let need_cleanups = ( $($tuple::NEEDS_CLEANUP,)+ );
-                or_bools!(need_cleanups, $($i),+)
-            };
+            const NEEDS_CLEANUP: bool = or_bools!( $($tuple::NEEDS_CLEANUP),+ );
 
             unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
                 if Self::NEEDS_CLEANUP {
@@ -345,10 +342,7 @@ macro_rules! zipable_tuple {
 
         impl<$($tuple,)+> SourceCleanup for ZipMaxSourceDescriptor<($($tuple,)+)>
         where $($tuple: SourceDescriptor,)+ {
-            const NEEDS_CLEANUP: bool = {
-                let need_cleanups = ( $($tuple::NEEDS_CLEANUP,)+ );
-                or_bools!(need_cleanups, $($i),+)
-            };
+            const NEEDS_CLEANUP: bool = or_bools!( $($tuple::NEEDS_CLEANUP),+ );
 
             unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
                 if Self::NEEDS_CLEANUP {
@@ -425,10 +419,7 @@ macro_rules! zipable_tuple {
 
             impl<$($tuple,)+> SourceCleanup for ZipMinSourceDescriptor<$($tuple,)+>
             where $($tuple: SourceDescriptor,)+ {
-                const NEEDS_CLEANUP: bool = {
-                    let need_cleanups = ( $($tuple::NEEDS_CLEANUP,)+ );
-                    or_bools!(need_cleanups, $($i),+)
-                };
+                const NEEDS_CLEANUP: bool = or_bools!( $($tuple::NEEDS_CLEANUP),+ );
 
                 unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
                     if Self::NEEDS_CLEANUP {
@@ -788,46 +779,74 @@ where
 mod test {
     #[test]
     fn assert_all_eq() {
-        assert_all_eq!((1, 1), 0, 1);
-        assert_all_eq!((1, 1, 1), 0, 1, 2);
-        assert_all_eq!((1, 1, 1, 1), 0, 1, 2, 3);
+        let len = assert_all_eq!(1, 1);
+        assert_eq!(len, 1);
+        let len = assert_all_eq!(1, 1, 1);
+        assert_eq!(len, 1);
+        let len = assert_all_eq!(1, 1, 1, 1);
+        assert_eq!(len, 1);
     }
 
     #[test]
     #[should_panic(expected = "called zip_eq() with sources of different lengths")]
     fn assert_all_eq_unequal_2() {
-        assert_all_eq!((1, 2), 0, 1);
+        assert_all_eq!(1, 2);
     }
 
     #[test]
     #[should_panic(expected = "called zip_eq() with sources of different lengths")]
     fn assert_all_eq_unequal_3() {
-        assert_all_eq!((1, 1, 2), 0, 1, 2);
+        assert_all_eq!(1, 1, 2);
     }
 
     #[test]
     fn min_of() {
-        assert_eq!(min_of!((1, 2), 0, 1), 1);
-        assert_eq!(min_of!((2, 1), 0, 1), 1);
+        assert_eq!(min_of!(1), 1);
 
-        assert_eq!(min_of!((1, 2, 3), 0, 1, 2), 1);
-        assert_eq!(min_of!((1, 3, 2), 0, 1, 2), 1);
-        assert_eq!(min_of!((2, 1, 3), 0, 1, 2), 1);
-        assert_eq!(min_of!((2, 3, 1), 0, 1, 2), 1);
-        assert_eq!(min_of!((3, 1, 2), 0, 1, 2), 1);
-        assert_eq!(min_of!((3, 2, 1), 0, 1, 2), 1);
+        assert_eq!(min_of!(1, 2), 1);
+        assert_eq!(min_of!(2, 1), 1);
+
+        assert_eq!(min_of!(1, 2, 3), 1);
+        assert_eq!(min_of!(1, 3, 2), 1);
+        assert_eq!(min_of!(2, 1, 3), 1);
+        assert_eq!(min_of!(2, 3, 1), 1);
+        assert_eq!(min_of!(3, 1, 2), 1);
+        assert_eq!(min_of!(3, 2, 1), 1);
     }
 
     #[test]
     fn max_of() {
-        assert_eq!(max_of!((1, 2), 0, 1), 2);
-        assert_eq!(max_of!((2, 1), 0, 1), 2);
+        assert_eq!(max_of!(1), 1);
 
-        assert_eq!(max_of!((1, 2, 3), 0, 1, 2), 3);
-        assert_eq!(max_of!((1, 3, 2), 0, 1, 2), 3);
-        assert_eq!(max_of!((2, 1, 3), 0, 1, 2), 3);
-        assert_eq!(max_of!((2, 3, 1), 0, 1, 2), 3);
-        assert_eq!(max_of!((3, 1, 2), 0, 1, 2), 3);
-        assert_eq!(max_of!((3, 2, 1), 0, 1, 2), 3);
+        assert_eq!(max_of!(1, 2), 2);
+        assert_eq!(max_of!(2, 1), 2);
+
+        assert_eq!(max_of!(1, 2, 3), 3);
+        assert_eq!(max_of!(1, 3, 2), 3);
+        assert_eq!(max_of!(2, 1, 3), 3);
+        assert_eq!(max_of!(2, 3, 1), 3);
+        assert_eq!(max_of!(3, 1, 2), 3);
+        assert_eq!(max_of!(3, 2, 1), 3);
+    }
+
+    #[allow(clippy::bool_assert_comparison)]
+    #[test]
+    fn or_bools() {
+        assert_eq!(or_bools!(true), true);
+        assert_eq!(or_bools!(false), false);
+
+        assert_eq!(or_bools!(true, true), true);
+        assert_eq!(or_bools!(true, false), true);
+        assert_eq!(or_bools!(false, true), true);
+        assert_eq!(or_bools!(false, false), false);
+
+        assert_eq!(or_bools!(true, true, true), true);
+        assert_eq!(or_bools!(true, true, false), true);
+        assert_eq!(or_bools!(true, false, true), true);
+        assert_eq!(or_bools!(true, false, false), true);
+        assert_eq!(or_bools!(false, true, true), true);
+        assert_eq!(or_bools!(false, true, false), true);
+        assert_eq!(or_bools!(false, false, true), true);
+        assert_eq!(or_bools!(false, false, false), false);
     }
 }

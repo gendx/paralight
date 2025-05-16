@@ -55,39 +55,25 @@ mod test {
     #[cfg(all(not(miri), feature = "log"))]
     static ENV_LOGGER_INIT: LazyLock<()> = LazyLock::new(env_logger::init);
 
-    macro_rules! expand_tests {
-        ( $range_strategy:expr, ) => {};
-        ( $range_strategy:expr, $( #[ $attrs:meta ] )* $case:ident, $( $others:tt )* ) => {
-            $( #[$attrs] )*
-            #[test]
-            fn $case() {
-                #[cfg(all(not(miri), feature = "log"))]
-                LazyLock::force(&ENV_LOGGER_INIT);
-                $crate::test::$case($range_strategy);
-            }
-
-            expand_tests!($range_strategy, $($others)*);
-        };
-        ( $range_strategy:expr, $( #[ $attrs:meta ] )* $case:ident => fail($msg:expr), $( $others:tt )* ) => {
-            $( #[$attrs] )*
-            #[test]
-            #[should_panic(expected = $msg)]
-            fn $case() {
-                #[cfg(all(not(miri), feature = "log"))]
-                LazyLock::force(&ENV_LOGGER_INIT);
-                $crate::test::$case($range_strategy);
-            }
-
-            expand_tests!($range_strategy, $($others)*);
-        };
-    }
-
     macro_rules! parallelism_tests {
-        ( $mod:ident, $range_strategy:expr, $( $tests:tt )* ) => {
+        (
+            $mod:ident,
+            $range_strategy:expr,
+            $( $( #[ $attrs:meta ] )* $case:ident $( => fail($msg:expr) )? ,)*
+        ) => {
             mod $mod {
                 use super::*;
 
-                expand_tests!($range_strategy, $($tests)*);
+                $(
+                    $( #[$attrs] )*
+                    #[test]
+                    $( #[should_panic(expected = $msg)] )?
+                    fn $case() {
+                        #[cfg(all(not(miri), feature = "log"))]
+                        LazyLock::force(&ENV_LOGGER_INIT);
+                        $crate::test::$case($range_strategy);
+                    }
+                )*
             }
         };
     }
