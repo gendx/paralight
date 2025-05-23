@@ -578,7 +578,7 @@ where
 
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
-            self.descriptors.each_ref().map(|desc| {
+            for desc in &self.descriptors {
                 // SAFETY: Given descriptors of equal lengths `len`, the `ZipEqSourceDescriptor`
                 // implements a pass-through of indices in `0..len` to all of them.
                 //
@@ -590,7 +590,7 @@ where
                 //   and `fetch_item()`, the zip-eq adaptor doesn't repeat indices passed to the
                 //   downstream descriptors.
                 unsafe { desc.cleanup_item_range(range.clone()) }
-            });
+            }
         }
     }
 }
@@ -629,7 +629,7 @@ where
 
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
-            self.descriptors.each_ref().map(|desc| {
+            for desc in &self.descriptors {
                 let this_len = desc.len();
                 let this_range = range.start.min(this_len)..range.end.min(this_len);
                 // SAFETY: Given descriptors of maximal length `len`, the
@@ -648,7 +648,7 @@ where
                 unsafe {
                     desc.cleanup_item_range(this_range);
                 }
-            });
+            }
         }
     }
 }
@@ -703,7 +703,7 @@ where
 
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
-            self.descriptors.each_ref().map(|desc| {
+            for desc in &self.descriptors {
                 // SAFETY: Given descriptors of minimal length `len`, the
                 // `ZipMinSourceDescriptor` implements a pass-through of indices in `0..len`
                 // to all of them.
@@ -719,7 +719,7 @@ where
                 unsafe {
                     desc.cleanup_item_range(range.clone());
                 }
-            });
+            }
         }
     }
 }
@@ -758,7 +758,7 @@ where
 {
     fn drop(&mut self) {
         if Self::NEEDS_CLEANUP {
-            self.descriptors.each_ref().map(|desc| {
+            for desc in &self.descriptors {
                 // SAFETY: Given descriptors of minimal length `len`, the
                 // `ZipMinSourceDescriptor` implements a pass-through of indices in `0..len`
                 // to all of them.
@@ -770,7 +770,7 @@ where
                 unsafe {
                     desc.cleanup_item_range(self.len..desc.len());
                 }
-            });
+            }
         }
     }
 }
