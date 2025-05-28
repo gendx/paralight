@@ -40,8 +40,9 @@ pub use core::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPool, ThreadP
 mod test {
     use super::*;
     use crate::iter::{
-        IntoParallelRefMutSource, IntoParallelRefSource, IntoParallelSource, ParallelIterator,
-        ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+        IntoParallelArrayChunks, IntoParallelRefMutSource, IntoParallelRefSource,
+        IntoParallelSource, ParallelIterator, ParallelIteratorExt, ParallelSourceExt,
+        ZipableSource,
     };
     use rand::Rng;
     use std::cell::Cell;
@@ -117,6 +118,16 @@ mod test {
                 test_source_array_find_any_panic => fail("worker thread(s) panicked!"),
                 #[cfg(feature = "nightly")]
                 test_source_array_find_first_panic => fail("worker thread(s) panicked!"),
+                #[cfg(feature = "nightly")]
+                test_source_array_array_chunks_exact,
+                #[cfg(feature = "nightly")]
+                test_source_array_array_chunks_exact_boxed,
+                #[cfg(feature = "nightly")]
+                test_source_array_array_chunks_exact_panic => fail("worker thread(s) panicked!"),
+                #[cfg(feature = "nightly")]
+                test_source_array_array_chunks_exact_find_any_panic => fail("worker thread(s) panicked!"),
+                #[cfg(feature = "nightly")]
+                test_source_array_array_chunks_exact_find_first_panic => fail("worker thread(s) panicked!"),
                 test_source_boxed_slice,
                 test_source_slice,
                 #[cfg(feature = "nightly_tests")]
@@ -145,6 +156,13 @@ mod test {
                 test_source_vec_panic => fail("worker thread(s) panicked!"),
                 test_source_vec_find_any_panic => fail("worker thread(s) panicked!"),
                 test_source_vec_find_first_panic => fail("worker thread(s) panicked!"),
+                test_source_vec_array_chunks_exact,
+                test_source_vec_array_chunks_exact_zero_chunk => fail("called into_par_array_chunks_exact() with a chunk size of zero"),
+                test_source_vec_array_chunks_exact_inexact_chunk => fail("called into_par_array_chunks_exact() with a chunk size that doesn't divide the vector length"),
+                test_source_vec_array_chunks_exact_boxed,
+                test_source_vec_array_chunks_exact_panic => fail("worker thread(s) panicked!"),
+                test_source_vec_array_chunks_exact_find_any_panic => fail("worker thread(s) panicked!"),
+                test_source_vec_array_chunks_exact_find_first_panic => fail("worker thread(s) panicked!"),
                 test_source_vec_deque_ref,
                 test_source_vec_deque_ref_mut,
                 test_source_adaptor_chain,
@@ -237,11 +255,7 @@ mod test {
     // TSAN reports segmentation faults when creating too large arrays on the stack,
     // so we cap the input size accordingly.
     #[cfg(feature = "nightly")]
-    const ARRAY_LEN: u64 = if INPUT_LEN < 10_000 {
-        INPUT_LEN
-    } else {
-        10_000
-    };
+    const ARRAY_LEN: u64 = if INPUT_LEN < 5_000 { INPUT_LEN } else { 5_000 };
 
     fn test_pipeline_sum_integers(range_strategy: RangeStrategy) {
         let mut thread_pool = ThreadPoolBuilder {
@@ -992,6 +1006,168 @@ mod test {
             });
     }
 
+    #[cfg(feature = "nightly")]
+    fn test_source_array_array_chunks_exact(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input: [u64; ARRAY_LEN as usize * 4] = std::array::from_fn(|i| i as u64);
+        let sum = input
+            .into_par_array_chunks_exact()
+            .with_thread_pool(&mut thread_pool)
+            .reduce(
+                || [0; 4],
+                |[a, b, c, d], [e, f, g, h]| [a + e, b + f, c + g, d + h],
+            );
+        assert_eq!(
+            sum,
+            [
+                2 * (ARRAY_LEN - 1) * ARRAY_LEN,
+                (2 * ARRAY_LEN - 1) * ARRAY_LEN,
+                2 * ARRAY_LEN * ARRAY_LEN,
+                (2 * ARRAY_LEN + 1) * ARRAY_LEN,
+            ]
+        );
+
+        let input: [u64; ARRAY_LEN as usize * 4] = std::array::from_fn(|i| i as u64);
+        let needle = input
+            .into_par_array_chunks_exact()
+            .with_thread_pool(&mut thread_pool)
+            .find_any(|x: &[_; 4]| x[1] % 10 == 9);
+        assert!(needle.is_some());
+        let needle = needle.unwrap();
+        assert_eq!(needle[1] % 10, 9);
+        assert_eq!(needle[1], needle[0] + 1);
+        assert_eq!(needle[2], needle[0] + 2);
+        assert_eq!(needle[3], needle[0] + 3);
+
+        let input: [u64; ARRAY_LEN as usize * 4] = std::array::from_fn(|i| i as u64);
+        let needle = input
+            .into_par_array_chunks_exact()
+            .with_thread_pool(&mut thread_pool)
+            .find_first(|x: &[_; 4]| x[1] % 10 == 9);
+        assert_eq!(needle, Some([8, 9, 10, 11]));
+    }
+
+    #[cfg(feature = "nightly")]
+    fn test_source_array_array_chunks_exact_boxed(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input: [Box<u64>; ARRAY_LEN as usize * 4] = std::array::from_fn(|i| Box::new(i as u64));
+        let sum = input
+            .into_par_array_chunks_exact()
+            .with_thread_pool(&mut thread_pool)
+            .map(|[a, b, c, d]| [*a, *b, *c, *d])
+            .reduce(
+                || [0; 4],
+                |[a, b, c, d], [e, f, g, h]| [a + e, b + f, c + g, d + h],
+            );
+        assert_eq!(
+            sum,
+            [
+                2 * (ARRAY_LEN - 1) * ARRAY_LEN,
+                (2 * ARRAY_LEN - 1) * ARRAY_LEN,
+                2 * ARRAY_LEN * ARRAY_LEN,
+                (2 * ARRAY_LEN + 1) * ARRAY_LEN,
+            ]
+        );
+
+        let input: [Box<u64>; ARRAY_LEN as usize * 4] = std::array::from_fn(|i| Box::new(i as u64));
+        let needle = input
+            .into_par_array_chunks_exact()
+            .with_thread_pool(&mut thread_pool)
+            .find_any(|x: &[_; 4]| *x[1] % 10 == 9);
+        assert!(needle.is_some());
+        let needle = needle.unwrap();
+        assert_eq!(*needle[1] % 10, 9);
+        assert_eq!(*needle[1], *needle[0] + 1);
+        assert_eq!(*needle[2], *needle[0] + 2);
+        assert_eq!(*needle[3], *needle[0] + 3);
+
+        let input: [Box<u64>; ARRAY_LEN as usize * 4] = std::array::from_fn(|i| Box::new(i as u64));
+        let needle = input
+            .into_par_array_chunks_exact()
+            .with_thread_pool(&mut thread_pool)
+            .find_first(|x: &[_; 4]| *x[1] % 10 == 9);
+        assert_eq!(
+            needle,
+            Some([Box::new(8), Box::new(9), Box::new(10), Box::new(11)])
+        );
+    }
+
+    #[cfg(feature = "nightly")]
+    fn test_source_array_array_chunks_exact_panic(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input: [Box<u64>; ARRAY_LEN as usize * 4] = std::array::from_fn(|i| Box::new(i as u64));
+        input
+            .into_par_array_chunks_exact()
+            .with_thread_pool(&mut thread_pool)
+            .for_each(|x: [_; 4]| {
+                if *x[0] % 3 == 1 {
+                    panic!("arithmetic panic");
+                }
+            });
+    }
+
+    #[cfg(feature = "nightly")]
+    fn test_source_array_array_chunks_exact_find_any_panic(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input: [Box<u64>; ARRAY_LEN as usize * 4] = std::array::from_fn(|i| Box::new(i as u64));
+        input
+            .into_par_array_chunks_exact()
+            .with_thread_pool(&mut thread_pool)
+            .find_any(|x: &[_; 4]| {
+                if *x[0] % 3 == 0 {
+                    false
+                } else {
+                    panic!("arithmetic panic");
+                }
+            });
+    }
+
+    #[cfg(feature = "nightly")]
+    fn test_source_array_array_chunks_exact_find_first_panic(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input: [Box<u64>; ARRAY_LEN as usize * 4] = std::array::from_fn(|i| Box::new(i as u64));
+        input
+            .into_par_array_chunks_exact()
+            .with_thread_pool(&mut thread_pool)
+            .find_any(|x: &[_; 4]| {
+                if *x[0] % 3 == 0 {
+                    false
+                } else {
+                    panic!("arithmetic panic");
+                }
+            });
+    }
+
     fn test_source_boxed_slice(range_strategy: RangeStrategy) {
         let mut thread_pool = ThreadPoolBuilder {
             num_threads: ThreadCount::AvailableParallelism,
@@ -1365,6 +1541,191 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .find_first(|x| {
                 if **x % 2 == 0 {
+                    false
+                } else {
+                    panic!("arithmetic panic");
+                }
+            });
+    }
+
+    fn test_source_vec_array_chunks_exact(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..INPUT_LEN * 4).collect::<Vec<u64>>();
+        let sum = input
+            .into_par_array_chunks_exact()
+            .with_thread_pool(&mut thread_pool)
+            .reduce(
+                || [0; 4],
+                |[a, b, c, d], [e, f, g, h]| [a + e, b + f, c + g, d + h],
+            );
+        assert_eq!(
+            sum,
+            [
+                2 * (INPUT_LEN - 1) * INPUT_LEN,
+                (2 * INPUT_LEN - 1) * INPUT_LEN,
+                2 * INPUT_LEN * INPUT_LEN,
+                (2 * INPUT_LEN + 1) * INPUT_LEN,
+            ]
+        );
+
+        let input = (0..INPUT_LEN * 4).collect::<Vec<u64>>();
+        let needle = input
+            .into_par_array_chunks_exact()
+            .with_thread_pool(&mut thread_pool)
+            .find_any(|x: &[_; 4]| x[1] % 10 == 9);
+        assert!(needle.is_some());
+        let needle = needle.unwrap();
+        assert_eq!(needle[1] % 10, 9);
+        assert_eq!(needle[1], needle[0] + 1);
+        assert_eq!(needle[2], needle[0] + 2);
+        assert_eq!(needle[3], needle[0] + 3);
+
+        let input = (0..INPUT_LEN * 4).collect::<Vec<u64>>();
+        let needle = input
+            .into_par_array_chunks_exact()
+            .with_thread_pool(&mut thread_pool)
+            .find_first(|x: &[_; 4]| x[1] % 10 == 9);
+        assert_eq!(needle, Some([8, 9, 10, 11]));
+    }
+
+    fn test_source_vec_array_chunks_exact_zero_chunk(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..10).collect::<Vec<u64>>();
+        let _ = input
+            .into_par_array_chunks_exact::<0>()
+            .with_thread_pool(&mut thread_pool);
+    }
+
+    fn test_source_vec_array_chunks_exact_inexact_chunk(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..10).collect::<Vec<u64>>();
+        let _ = input
+            .into_par_array_chunks_exact::<3>()
+            .with_thread_pool(&mut thread_pool);
+    }
+
+    fn test_source_vec_array_chunks_exact_boxed(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..INPUT_LEN * 4).map(Box::new).collect::<Vec<Box<u64>>>();
+        let sum = input
+            .into_par_array_chunks_exact()
+            .with_thread_pool(&mut thread_pool)
+            .map(|[a, b, c, d]| [*a, *b, *c, *d])
+            .reduce(
+                || [0; 4],
+                |[a, b, c, d], [e, f, g, h]| [a + e, b + f, c + g, d + h],
+            );
+        assert_eq!(
+            sum,
+            [
+                2 * (INPUT_LEN - 1) * INPUT_LEN,
+                (2 * INPUT_LEN - 1) * INPUT_LEN,
+                2 * INPUT_LEN * INPUT_LEN,
+                (2 * INPUT_LEN + 1) * INPUT_LEN,
+            ]
+        );
+
+        let input = (0..INPUT_LEN * 4).map(Box::new).collect::<Vec<Box<u64>>>();
+        let needle = input
+            .into_par_array_chunks_exact()
+            .with_thread_pool(&mut thread_pool)
+            .find_any(|x: &[_; 4]| *x[1] % 10 == 9);
+        assert!(needle.is_some());
+        let needle = needle.unwrap();
+        assert_eq!(*needle[1] % 10, 9);
+        assert_eq!(*needle[1], *needle[0] + 1);
+        assert_eq!(*needle[2], *needle[0] + 2);
+        assert_eq!(*needle[3], *needle[0] + 3);
+
+        let input = (0..INPUT_LEN * 4).map(Box::new).collect::<Vec<Box<u64>>>();
+        let needle = input
+            .into_par_array_chunks_exact()
+            .with_thread_pool(&mut thread_pool)
+            .find_first(|x: &[_; 4]| *x[1] % 10 == 9);
+        assert_eq!(
+            needle,
+            Some([Box::new(8), Box::new(9), Box::new(10), Box::new(11)])
+        );
+    }
+
+    fn test_source_vec_array_chunks_exact_panic(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..INPUT_LEN * 4).map(Box::new).collect::<Vec<Box<u64>>>();
+        input
+            .into_par_array_chunks_exact()
+            .with_thread_pool(&mut thread_pool)
+            .for_each(|x: [_; 4]| {
+                if *x[0] % 3 == 1 {
+                    panic!("arithmetic panic");
+                }
+            });
+    }
+
+    fn test_source_vec_array_chunks_exact_find_any_panic(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..INPUT_LEN * 4).map(Box::new).collect::<Vec<Box<u64>>>();
+        input
+            .into_par_array_chunks_exact()
+            .with_thread_pool(&mut thread_pool)
+            .find_any(|x: &[_; 4]| {
+                if *x[0] % 3 == 0 {
+                    false
+                } else {
+                    panic!("arithmetic panic");
+                }
+            });
+    }
+
+    fn test_source_vec_array_chunks_exact_find_first_panic(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..INPUT_LEN * 4).map(Box::new).collect::<Vec<Box<u64>>>();
+        input
+            .into_par_array_chunks_exact()
+            .with_thread_pool(&mut thread_pool)
+            .find_first(|x: &[_; 4]| {
+                if *x[0] % 3 == 0 {
                     false
                 } else {
                     panic!("arithmetic panic");

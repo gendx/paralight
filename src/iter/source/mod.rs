@@ -209,6 +209,123 @@ pub trait IntoParallelRefMutSource<'data> {
     fn par_iter_mut(&'data mut self) -> Self::Source;
 }
 
+/// Trait for converting into a [`ParallelSource`] that produces chunks of
+/// items.
+pub trait IntoParallelArrayChunks {
+    /// The type of chunks that this parallel source produces, parameterized by
+    /// the chunk size.
+    ///
+    /// Like for [`IntoParallelSource`], chunks are sent to worker threads
+    /// (where they are then consumed by the `process_item` function
+    /// parameter of the
+    /// [`ParallelIterator::pipeline()`](super::ParallelIterator::pipeline)),
+    /// hence the required [`Send`] bound.
+    type ArrayChunk<const N: usize>: Send;
+
+    /// Target parallel source type, parameterized by the chunk size.
+    type Source<const N: usize>: ParallelSource<Item = Self::ArrayChunk<N>>;
+
+    /// Converts `self` into a parallel source producing chunks of the given
+    /// size.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if the chunk size is zero or doesn't divide the
+    /// input length.
+    fn into_par_array_chunks_exact<const N: usize>(self) -> Self::Source<N>;
+}
+
+/// Trait for converting into a [`ParallelSource`] that produces chunks of items
+/// by reference.
+pub trait IntoParallelRefArrayChunks<'data>: 'data {
+    /// The type of chunks that this parallel source produces, parameterized by
+    /// the chunk size.
+    ///
+    /// Like for [`IntoParallelSource`], chunks are sent to worker threads
+    /// (where they are then consumed by the `process_item` function
+    /// parameter of the
+    /// [`ParallelIterator::pipeline()`](super::ParallelIterator::pipeline)),
+    /// hence the required [`Send`] bound.
+    type ArrayChunk<const N: usize>: Send;
+
+    /// Target parallel source type, parameterized by the chunk size.
+    type Source<const N: usize>: ParallelSource<Item = Self::ArrayChunk<N>>;
+
+    /// Converts `&self` into a parallel source producing chunks of the given
+    /// size.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if the chunk size is zero or doesn't divide the
+    /// input length.
+    ///
+    /// ```
+    /// use paralight::iter::{IntoParallelRefArrayChunks, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let [sum_odd, sum_even] = input
+    ///     .par_array_chunks_exact::<2>()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .reduce(|| [0, 0], |[a0, a1], [b0, b1]| [a0 + b0, a1 + b1]);
+    /// assert_eq!(sum_odd, 5 * 5);
+    /// assert_eq!(sum_even, 5 * 6);
+    /// ```
+    fn par_array_chunks_exact<const N: usize>(&'data self) -> Self::Source<N>;
+}
+
+/// Trait for converting into a [`ParallelSource`] that produces chunks of items
+/// by mutable reference.
+pub trait IntoParallelRefMutArrayChunks<'data>: 'data {
+    /// The type of chunks that this parallel source produces, parameterized by
+    /// the chunk size.
+    ///
+    /// Like for [`IntoParallelSource`], chunks are sent to worker threads
+    /// (where they are then consumed by the `process_item` function
+    /// parameter of the
+    /// [`ParallelIterator::pipeline()`](super::ParallelIterator::pipeline)),
+    /// hence the required [`Send`] bound.
+    type ArrayChunk<const N: usize>: Send;
+
+    /// Target parallel source type, parameterized by the chunk size.
+    type Source<const N: usize>: ParallelSource<Item = Self::ArrayChunk<N>>;
+
+    /// Converts `&mut self` into a parallel source producing chunks of the
+    /// given size.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if the chunk size is zero or doesn't divide the
+    /// input length.
+    ///
+    /// ```
+    /// # use paralight::iter::{IntoParallelRefMutArrayChunks, ParallelIteratorExt, ParallelSourceExt};
+    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let mut values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// values
+    ///     .par_array_chunks_exact_mut::<2>()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .for_each(|[x, y]| {
+    ///         *x *= 2;
+    ///         *y *= 2;
+    ///     });
+    /// assert_eq!(values, [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]);
+    /// ```
+    fn par_array_chunks_exact_mut<const N: usize>(&'data mut self) -> Self::Source<N>;
+}
+
 /// Additional methods provided for types that implement [`ParallelSource`].
 pub trait ParallelSourceExt: ParallelSource {
     /// Returns a parallel source that produces items from this source followed

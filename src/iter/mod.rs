@@ -12,13 +12,17 @@ mod source;
 
 use crossbeam_utils::CachePadded;
 #[cfg(feature = "nightly")]
-pub use source::array::ArrayParallelSource;
+pub use source::array::{ArrayChunkedArrayParallelSource, ArrayParallelSource};
 pub use source::range::{RangeInclusiveParallelSource, RangeParallelSource};
-pub use source::slice::{MutSliceParallelSource, SliceParallelSource};
-pub use source::vec::VecParallelSource;
+pub use source::slice::{
+    MutSliceArrayChunkParallelSource, MutSliceParallelSource, SliceArrayChunkParallelSource,
+    SliceParallelSource,
+};
+pub use source::vec::{VecArrayChunkParallelSource, VecParallelSource};
 pub use source::vec_deque::{VecDequeRefMutParallelSource, VecDequeRefParallelSource};
 pub use source::zip::{ZipEq, ZipMax, ZipMin, ZipableSource};
 pub use source::{
+    IntoParallelArrayChunks, IntoParallelRefArrayChunks, IntoParallelRefMutArrayChunks,
     IntoParallelRefMutSource, IntoParallelRefSource, IntoParallelSource, ParallelSource,
     ParallelSourceExt, SourceCleanup, SourceDescriptor,
 };

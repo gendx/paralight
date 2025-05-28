@@ -6,8 +6,11 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use super::{IntoParallelSource, ParallelSource, SourceCleanup, SourceDescriptor};
+use super::{
+    IntoParallelArrayChunks, IntoParallelSource, ParallelSource, SourceCleanup, SourceDescriptor,
+};
 use std::cell::UnsafeCell;
+use std::marker::PhantomData;
 use std::mem::MaybeUninit;
 
 /// A parallel source over an [array](array). This struct is created by the
@@ -145,6 +148,176 @@ impl<T: Send, const N: usize> SourceDescriptor for ArraySourceDescriptor<T, N> {
         //   yet. Additionally, there are no concurrent writes to this slot in the
         //   array.
         let item: T = unsafe { std::ptr::read(item_ptr) };
+        item
+    }
+}
+
+/// A parallel source over an [array](array) producing array chunks. This struct
+/// is created by the
+/// [`into_par_array_chunks_exact()`](IntoParallelArrayChunks::into_par_array_chunks_exact)
+/// method on [`IntoParallelArrayChunks`].
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelSource`] and
+/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it is
+/// nonetheless public because of the `must_use` annotation.
+///
+/// See also
+/// [`SliceArrayChunkParallelSource`](super::slice::SliceArrayChunkParallelSource)
+/// and
+/// [`MutSliceArrayChunkParallelSource`](super::slice::MutSliceArrayChunkParallelSource).
+///
+/// ### Stability blockers
+///
+/// This struct is currently only available on Rust nightly with the `nightly`
+/// feature of Paralight enabled. This is because the implementation depends on
+/// the following nightly Rust features:
+/// - [`array_ptr_get`](https://github.com/rust-lang/rust/issues/119834),
+/// - [`maybe_uninit_uninit_array_transpose`](https://github.com/rust-lang/rust/issues/96097).
+///
+/// ```
+/// # use paralight::iter::{
+/// #     ArrayChunkedArrayParallelSource, IntoParallelArrayChunks, ParallelIteratorExt,
+/// #     ParallelSourceExt,
+/// # };
+/// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+/// # let mut thread_pool = ThreadPoolBuilder {
+/// #     num_threads: ThreadCount::AvailableParallelism,
+/// #     range_strategy: RangeStrategy::WorkStealing,
+/// #     cpu_pinning: CpuPinningPolicy::No,
+/// # }
+/// # .build();
+/// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+/// let iter: ArrayChunkedArrayParallelSource<_, 10, 2> = input.into_par_array_chunks_exact::<2>();
+/// let [sum_odd, sum_even] = iter
+///     .with_thread_pool(&mut thread_pool)
+///     .reduce(|| [0, 0], |[a0, a1], [b0, b1]| [a0 + b0, a1 + b1]);
+/// assert_eq!(sum_odd, 5 * 5);
+/// assert_eq!(sum_even, 5 * 6);
+/// ```
+#[must_use = "iterator adaptors are lazy"]
+pub struct ArrayChunkedArrayParallelSource<T, const N: usize, const M: usize> {
+    array: [T; N],
+    _phantom: PhantomData<[(); M]>,
+}
+
+impl<T: Send, const N: usize> IntoParallelArrayChunks for [T; N] {
+    type ArrayChunk<const M: usize> = [T; M];
+    type Source<const M: usize> = ArrayChunkedArrayParallelSource<T, N, M>;
+
+    fn into_par_array_chunks_exact<const M: usize>(self) -> Self::Source<M> {
+        assert_ne!(
+            M, 0,
+            "called into_par_array_chunks_exact() with a chunk size of zero"
+        );
+        assert_eq!(
+            N % M, 0,
+            "called into_par_array_chunks_exact() with a chunk size that doesn't divide the array length"
+        );
+        ArrayChunkedArrayParallelSource {
+            array: self,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<T: Send, const N: usize, const M: usize> ParallelSource
+    for ArrayChunkedArrayParallelSource<T, N, M>
+{
+    type Item = [T; M];
+
+    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
+        ArrayChunkedArraySourceDescriptor {
+            array: ArrayWrapper::new(self.array),
+            _phantom: PhantomData,
+        }
+    }
+}
+
+struct ArrayChunkedArraySourceDescriptor<T, const N: usize, const M: usize> {
+    array: ArrayWrapper<T, N>,
+    _phantom: PhantomData<[(); M]>,
+}
+
+impl<T: Send, const N: usize, const M: usize> SourceCleanup
+    for ArrayChunkedArraySourceDescriptor<T, N, M>
+{
+    const NEEDS_CLEANUP: bool = std::mem::needs_drop::<T>();
+
+    unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
+        if Self::NEEDS_CLEANUP {
+            let base_ptr: *mut T = self.array.start();
+            // SAFETY:
+            // - The offset in bytes `range.start * M * size_of::<T>()` fits in an `isize`,
+            //   because the range is included in `0..N / M` where `N` is the length of the
+            //   (well-formed) wrapped array. This is ensured by the safety pre-conditions
+            //   of the `cleanup_item_range()` function (the `range` must be included in
+            //   `0..self.len()`).
+            // - The `base_ptr` is derived from an allocated object (the wrapped array), and
+            //   the entire range between `base_ptr` and the resulting `start_ptr` is in
+            //   bounds of that allocated object. This is because the range start is smaller
+            //   than `N / M`.
+            let start_ptr: *mut T = unsafe { base_ptr.add(range.start * M) };
+            let slice: *mut [T] =
+                std::ptr::slice_from_raw_parts_mut(start_ptr, (range.end - range.start) * M);
+            // SAFETY:
+            // - The `slice` is properly aligned, as it is constructed by calling `add()` on
+            //   the aligned `base_ptr`.
+            // - The `slice` isn't null, as it is constructed by calling `add()` on the
+            //   non-null `base_ptr`.
+            // - The `slice` is valid for reads and writes. This is ensured by the safety
+            //   pre-conditions of the `cleanup_item_range()` function (each index appears
+            //   at most once in calls to `fetch_item()` and `cleanup_item_range()`), i.e.
+            //   the range of items in this slice isn't accessed by anything else.
+            // - The `slice` is valid for dropping, as it is a part of the wrapped array
+            //   that nothing else accesses.
+            // - Nothing else is accessing the `slice` while `drop_in_place` is executing.
+            //
+            // The above properties (aligned, non-null, etc.) still hold if the `slice` is
+            // empty.
+            unsafe { std::ptr::drop_in_place(slice) };
+        }
+    }
+}
+
+impl<T: Send, const N: usize, const M: usize> SourceDescriptor
+    for ArrayChunkedArraySourceDescriptor<T, N, M>
+{
+    type Item = [T; M];
+
+    fn len(&self) -> usize {
+        N / M
+    }
+
+    unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+        assert!(index < N / M);
+        let base_ptr: *const T = self.array.start();
+        // SAFETY:
+        // - The offset in bytes `index * M * size_of::<T>()` fits in an `isize`,
+        //   because the index is smaller than `N / M` where `N` is the length of the
+        //   (well-formed) wrapped array. This is ensured by the safety pre-conditions
+        //   of the `fetch_item()` function (the `index` must be in the range
+        //   `0..self.len()`), and further confirmed by the assertion.
+        // - The `base_ptr` is derived from an allocated object (the wrapped array), and
+        //   the entire range between `base_ptr` and the resulting `start_ptr` is in
+        //   bounds of that allocated object. This is because the index is smaller than
+        //   the length of the wrapped array divided by `M`.
+        let start_ptr: *const T = unsafe { base_ptr.add(index * M) };
+        let item_ptr: *const [T; M] = start_ptr as _;
+        // SAFETY:
+        // - The `item_ptr` is properly aligned for `[T; M]` because it is obtained from
+        //   `start_ptr` which is properly aligned for `T`. In turn, the `start_ptr` is
+        //   properly aligned, as it is constructed by calling `add()` on the aligned
+        //   `base_ptr`.
+        // - The `item_ptr` points to a properly initialized value of type `[T; M]`, the
+        //   aggregate of `M` elements from the wrapped array starting at position
+        //   `index * M`.
+        // - The `item_ptr` is valid for reads. This is ensured by the safety
+        //   pre-conditions of the `fetch_item()` function (each index must be passed at
+        //   most once), i.e. this item hasn't been read (and moved out of the array)
+        //   yet. Additionally, there are no concurrent writes to this slot in the
+        //   array.
+        let item: [T; M] = unsafe { std::ptr::read(item_ptr) };
         item
     }
 }

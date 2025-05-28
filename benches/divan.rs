@@ -157,8 +157,8 @@ mod paralight {
     use divan::counter::BytesCount;
     use divan::{black_box, Bencher};
     use paralight::iter::{
-        IntoParallelRefMutSource, IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt,
-        ZipableSource,
+        IntoParallelRefArrayChunks, IntoParallelRefMutArrayChunks, IntoParallelRefSource,
+        ParallelIteratorExt, ParallelSourceExt, ZipableSource,
     };
     use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
 
@@ -190,8 +190,9 @@ mod paralight {
             .counter(BytesCount::of_many::<u64>(len))
             .bench_local(|| {
                 black_box(input_slice)
-                    .par_iter()
+                    .par_array_chunks_exact::<16>()
                     .with_thread_pool(&mut thread_pool)
+                    .map(|slice| slice.iter().sum::<u64>())
                     .sum::<u64>()
             });
     }
@@ -230,13 +231,17 @@ mod paralight {
             .counter(BytesCount::of_many::<u64>(len * 2))
             .bench_local(|| {
                 (
-                    black_box(output_slice.par_iter_mut()),
-                    black_box(left_slice).par_iter(),
-                    black_box(right_slice).par_iter(),
+                    black_box(output_slice.par_array_chunks_exact_mut::<16>()),
+                    black_box(left_slice).par_array_chunks_exact::<16>(),
+                    black_box(right_slice).par_array_chunks_exact::<16>(),
                 )
                     .zip_eq()
                     .with_thread_pool(&mut thread_pool)
-                    .for_each(|(out, &a, &b)| *out = a + b)
+                    .for_each(|(out, a, b)| {
+                        for i in 0..16 {
+                            out[i] = a[i] + b[i];
+                        }
+                    })
             });
     }
 
