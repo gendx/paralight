@@ -1,4 +1,4 @@
-// Copyright 2024 Google LLC
+// Copyright 2024-2025 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -48,6 +48,23 @@ mod serial {
                     .zip(black_box(output_slice.iter_mut()))
                     .for_each(|((&a, &b), out)| *out = a + b)
             })
+    }
+
+    #[divan::bench(args = LENGTHS)]
+    fn cmp(bencher: Bencher, len: usize) {
+        let left = (0..len as u64).collect::<Vec<u64>>();
+        let mut right = (0..len as u64).collect::<Vec<u64>>();
+        let jitter_start = len * 42 / 100;
+        for x in &mut right[jitter_start..len] {
+            *x += 1;
+        }
+
+        let left_slice = left.as_slice();
+        let right_slice = right.as_slice();
+
+        bencher
+            .counter(BytesCount::of_many::<u64>(len * 2))
+            .bench_local(|| black_box(left_slice).iter().cmp(black_box(right_slice)))
     }
 }
 
@@ -104,6 +121,32 @@ mod rayon {
                         .zip(black_box(output_slice.par_iter_mut()))
                         .for_each(|((&a, &b), out)| *out = a + b)
                 })
+            });
+    }
+
+    #[divan::bench(consts = NUM_THREADS, args = LENGTHS)]
+    fn cmp_rayon<const NUM_THREADS: usize>(bencher: Bencher, len: usize) {
+        let left = (0..len as u64).collect::<Vec<u64>>();
+        let mut right = (0..len as u64).collect::<Vec<u64>>();
+        let jitter_start = len * 42 / 100;
+        for x in &mut right[jitter_start..len] {
+            *x += 1;
+        }
+
+        let left_slice = left.as_slice();
+        let right_slice = right.as_slice();
+
+        let thread_pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(NUM_THREADS)
+            .build()
+            .unwrap();
+        // Ideally we'd prefer to run bench_local() inside the Rayon thread pool, but
+        // that doesn't work because divan::Bencher isn't Send (and bench_local()
+        // consumes it).
+        bencher
+            .counter(BytesCount::of_many::<u64>(len * 2))
+            .bench_local(|| {
+                thread_pool.install(|| black_box(left_slice).par_iter().cmp(black_box(right_slice)))
             });
     }
 }
@@ -194,6 +237,51 @@ mod paralight {
                     .zip_eq()
                     .with_thread_pool(&mut thread_pool)
                     .for_each(|(out, &a, &b)| *out = a + b)
+            });
+    }
+
+    #[divan::bench(consts = NUM_THREADS, args = LENGTHS)]
+    fn cmp_fixed<const NUM_THREADS: usize>(bencher: Bencher, len: usize) {
+        cmp_impl::<NUM_THREADS>(bencher, len, RangeStrategy::Fixed)
+    }
+
+    #[divan::bench(consts = NUM_THREADS, args = LENGTHS)]
+    fn cmp_work_stealing<const NUM_THREADS: usize>(bencher: Bencher, len: usize) {
+        cmp_impl::<NUM_THREADS>(bencher, len, RangeStrategy::WorkStealing)
+    }
+
+    fn cmp_impl<const NUM_THREADS: usize>(
+        bencher: Bencher,
+        len: usize,
+        range_strategy: RangeStrategy,
+    ) {
+        let left = (0..len as u64).collect::<Vec<u64>>();
+        let mut right = (0..len as u64).collect::<Vec<u64>>();
+        let jitter_start = len * 42 / 100;
+        for x in &mut right[jitter_start..len] {
+            *x += 1;
+        }
+
+        let left_slice = left.as_slice();
+        let right_slice = right.as_slice();
+
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::try_from(NUM_THREADS).unwrap(),
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::IfSupported,
+        }
+        .build();
+
+        bencher
+            .counter(BytesCount::of_many::<u64>(len * 2))
+            .bench_local(|| {
+                (
+                    black_box(left_slice).par_iter(),
+                    black_box(right_slice).par_iter(),
+                )
+                    .zip_eq()
+                    .with_thread_pool(&mut thread_pool)
+                    .cmp()
             });
     }
 }
