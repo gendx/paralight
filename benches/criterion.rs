@@ -68,7 +68,8 @@ fn add(c: &mut Criterion) {
 /// Baseline benchmarks using serial iterators (without any multi-threading
 /// involved).
 mod serial {
-    use criterion::{black_box, Bencher};
+    use criterion::Bencher;
+    use std::hint::black_box;
 
     pub fn sum(bencher: &mut Bencher, len: &usize) {
         let input = (0..*len as u64).collect::<Vec<u64>>();
@@ -97,11 +98,12 @@ mod serial {
 
 /// Benchmarks using Rayon.
 mod rayon {
-    use criterion::{black_box, Bencher};
+    use criterion::Bencher;
     use rayon::iter::{
         IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator,
         ParallelIterator,
     };
+    use std::hint::black_box;
 
     pub fn sum(bencher: &mut Bencher, num_threads: usize, len: &usize) {
         let input = (0..*len as u64).collect::<Vec<u64>>();
@@ -140,12 +142,13 @@ mod rayon {
 
 /// Benchmarks using Paralight.
 mod paralight {
-    use criterion::{black_box, Bencher};
+    use criterion::Bencher;
     use paralight::iter::{
         IntoParallelRefMutSource, IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt,
         ZipableSource,
     };
     use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    use std::hint::black_box;
 
     pub fn sum(
         bencher: &mut Bencher,
