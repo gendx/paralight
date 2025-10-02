@@ -1,4 +1,4 @@
-// Copyright 2024 Google LLC
+// Copyright 2024-2025 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -44,7 +44,7 @@ impl<T> Status<T> {
     ///
     /// This returns a [`MutexGuard`], allowing to further inspect or modify the
     /// status.
-    pub fn wait_while(&self, predicate: impl FnMut(&mut T) -> bool) -> MutexGuard<T> {
+    pub fn wait_while(&self, predicate: impl FnMut(&mut T) -> bool) -> MutexGuard<'_, T> {
         self.condvar
             .wait_while(self.mutex.lock().unwrap(), predicate)
             .unwrap()
