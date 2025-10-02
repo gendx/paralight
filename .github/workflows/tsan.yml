@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       RUSTFLAGS: "-D warnings -Zsanitizer=thread"
-      RUSTDOCFLAGS: "-Zsanitizer=thread"
+      RUSTDOCFLAGS: "-D warnings -Zsanitizer=thread -Cunsafe-allow-abi-mismatch=sanitizer"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
