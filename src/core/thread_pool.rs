@@ -14,7 +14,7 @@ use super::range::{
 };
 use super::sync::{make_lending_group, Borrower, Lender, WorkerState};
 use super::util::LifetimeParameterized;
-use crate::iter::{Accumulator, SourceCleanup};
+use crate::iter::{Accumulator, GenericThreadPool, SourceCleanup};
 use crate::macros::{log_debug, log_error, log_warn};
 use crossbeam_utils::CachePadded;
 // Platforms that support `libc::sched_setaffinity()`.
@@ -139,7 +139,9 @@ impl ThreadPool {
     pub fn num_threads(&self) -> NonZeroUsize {
         self.inner.num_threads()
     }
+}
 
+impl GenericThreadPool for &mut ThreadPool {
     /// Processes an input of the given length in parallel and returns the
     /// aggregated output.
     ///
@@ -155,8 +157,8 @@ impl ThreadPool {
     ///   `0..input_len`,
     /// - each index in `0..inner_len` is passed exactly once in calls to
     ///   `process_item()` and `cleanup.cleanup_item_range()`.
-    pub(crate) fn upper_bounded_pipeline<Output: Send, Accum>(
-        &mut self,
+    fn upper_bounded_pipeline<Output: Send, Accum>(
+        self,
         input_len: usize,
         init: impl Fn() -> Accum + Sync,
         process_item: impl Fn(Accum, usize) -> ControlFlow<Accum, Accum> + Sync,
@@ -180,8 +182,8 @@ impl ThreadPool {
     ///   `0..input_len`,
     /// - each index in `0..inner_len` is passed exactly once in calls to
     ///   `accum.accumulate()` and `cleanup.cleanup_item_range()`.
-    pub(crate) fn iter_pipeline<Output: Send>(
-        &mut self,
+    fn iter_pipeline<Output: Send>(
+        self,
         input_len: usize,
         accum: impl Accumulator<usize, Output> + Sync,
         reduce: impl Accumulator<Output, Output>,

@@ -19,7 +19,7 @@ pub use source::vec::VecParallelSource;
 pub use source::vec_deque::{VecDequeRefMutParallelSource, VecDequeRefParallelSource};
 pub use source::zip::{ZipEq, ZipMax, ZipMin, ZipableSource};
 pub use source::{
-    IntoParallelRefMutSource, IntoParallelRefSource, IntoParallelSource, ParallelSource,
+    BaseParallelIterator, IntoParallelRefMutSource, IntoParallelRefSource, IntoParallelSource, ParallelSource,
     ParallelSourceExt, SourceCleanup, SourceDescriptor,
 };
 use std::cmp::Ordering;
@@ -2903,6 +2903,53 @@ pub trait ParallelIteratorExt: ParallelIterator {
             },
         )
     }
+}
+
+/// A thread pool backend that can process parallel iterators.
+pub trait GenericThreadPool {
+    /// Processes an input of the given length in parallel and returns the
+    /// aggregated output.
+    ///
+    /// With this variant, the pipeline may skip processing items at larger
+    /// indices whenever a call to `process_item` returns
+    /// [`ControlFlow::Break`].
+    ///
+    /// # Safety guarantees
+    ///
+    /// This function guarantees that:
+    /// - the indices passed to `process_item()` are in `0..input_len`,
+    /// - the ranges passed to `cleanup.cleanup_item_range()` are included in
+    ///   `0..input_len`,
+    /// - each index in `0..inner_len` is passed exactly once in calls to
+    ///   `process_item()` and `cleanup.cleanup_item_range()`.
+    fn upper_bounded_pipeline<Output: Send, Accum>(
+        self,
+        input_len: usize,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(Accum, usize) -> ControlFlow<Accum, Accum> + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+        cleanup: &(impl SourceCleanup + Sync),
+    ) -> Output;
+
+    /// Processes an input of the given length in parallel and returns the
+    /// aggregated output.
+    ///
+    /// # Safety guarantees
+    ///
+    /// This function guarantees that:
+    /// - the indices passed to `accum.accumulate()` are in `0..input_len`,
+    /// - the ranges passed to `cleanup.cleanup_item_range()` are included in
+    ///   `0..input_len`,
+    /// - each index in `0..inner_len` is passed exactly once in calls to
+    ///   `accum.accumulate()` and `cleanup.cleanup_item_range()`.
+    fn iter_pipeline<Output: Send>(
+        self,
+        input_len: usize,
+        accum: impl Accumulator<usize, Output> + Sync,
+        reduce: impl Accumulator<Output, Output>,
+        cleanup: &(impl SourceCleanup + Sync),
+    ) -> Output;
 }
 
 struct SumAccumulator;
