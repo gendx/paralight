@@ -396,6 +396,11 @@ list of places where `unsafe` is needed.
   the `'static` lifetime to a local `'a` as needed. [`Send`](Send) and
   [`Sync`](Sync) implementations are also provided (when sound) on this wrapper
   type.
+- The [`SliceParallelSource`](iter::SliceParallelSource) API in
+  [iter/source/slice.rs](https://github.com/gendx/paralight/blob/main/src/iter/source/slice.rs)
+  uses [`slice::get_unchecked()`](slice::get_unchecked) as it guides the
+  compiler to better optimize the code. In particular, missed vectorized loops
+  [were observed](https://github.com/gendx/paralight/issues/12) without it.
 - The [`MutSliceParallelSource`](iter::MutSliceParallelSource) API in
   [iter/source/slice.rs](https://github.com/gendx/paralight/blob/main/src/iter/source/slice.rs).
   The goal is to provide parallel iterators that produce mutable references

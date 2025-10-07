@@ -81,7 +81,9 @@ impl<'data, T: Sync> SourceDescriptor for SliceSourceDescriptor<'data, T> {
     }
 
     unsafe fn fetch_item(&self, index: usize) -> Self::Item {
-        &self.slice[index]
+        // SAFETY: The index is smaller than the length of the input slice, due to the
+        // safety pre-conditions of the `fetch_item()` function.
+        unsafe { self.slice.get_unchecked(index) }
     }
 }
 
