@@ -21,7 +21,7 @@ fn main() {
     }
     .build();
 
-    let input_size = 1_000_000;
+    let input_size = 100_000_000;
 
     let input = (0..input_size).collect::<Vec<u64>>();
     let sum = black_box(input)

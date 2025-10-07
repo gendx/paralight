@@ -24,7 +24,7 @@ fn main() {
     }
     .build();
 
-    let input_size = 1_000_000;
+    let input_size = 100_000_000;
 
     let mut output = vec![0; input_size as usize];
     let left = (0..input_size).collect::<Vec<u64>>();
