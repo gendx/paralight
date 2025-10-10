@@ -141,7 +141,8 @@ impl ThreadPool {
     }
 }
 
-impl GenericThreadPool for &mut ThreadPool {
+// Safety: proof of the safety guarantees is deferred to the inner calls.
+unsafe impl GenericThreadPool for &mut ThreadPool {
     /// Processes an input of the given length in parallel and returns the
     /// aggregated output.
     ///

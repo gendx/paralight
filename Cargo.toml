@@ -13,12 +13,11 @@ edition = "2021"
 rust-version = "1.77.0"
 
 [package.metadata.docs.rs]
-features = ["core", "log", "log_parallelism", "nightly"]
+features = ["log", "log_parallelism", "nightly"]
 rustdoc-args = ["--cfg", "docsrs", "--generate-link-to-definition"]
 
 [features]
-core = [ "dep:nix" ]
-default = [ "core" ]
+default = []
 log = ["dep:log"]
 log_parallelism = ["log"]
 nightly = []
@@ -30,7 +29,7 @@ log = { optional = true, version = "0.4" }
 
 # Platforms that support `libc::sched_setaffinity()`.
 [target.'cfg(any(target_os = "android", target_os = "dragonfly", target_os = "freebsd", target_os = "linux"))'.dependencies]
-nix = { version = "0.30", features = ["sched"], optional = true }
+nix = { version = "0.30", features = ["sched"] }
 
 [dev-dependencies]
 clap = { version = "4.5.31", features = ["derive"] }

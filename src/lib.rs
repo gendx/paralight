@@ -30,15 +30,12 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc(test(attr(deny(warnings))))]
 
-#[cfg(feature = "core")]
 mod core;
 
 pub mod iter;
 
-#[allow(unused)]
 mod macros;
 
-#[cfg(feature = "core")]
 pub use core::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPool, ThreadPoolBuilder};
 
 #[cfg(test)]

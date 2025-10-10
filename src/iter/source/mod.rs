@@ -17,7 +17,7 @@ pub mod vec_deque;
 pub mod zip;
 
 use super::{Accumulator, ParallelIterator};
-use crate::{iter::GenericThreadPool};
+use crate::iter::GenericThreadPool;
 use std::ops::ControlFlow;
 
 /// An interface describing how to fetch items from a [`ParallelSource`].
@@ -586,7 +586,10 @@ pub trait ParallelSourceExt: ParallelSource {
     ///     .sum::<i32>();
     /// assert_eq!(sum, 5 * 11);
     /// ```
-    fn with_thread_pool<T: GenericThreadPool>(self, thread_pool: T) -> BaseParallelIterator<Self, T> {
+    fn with_thread_pool<T: GenericThreadPool>(
+        self,
+        thread_pool: T,
+    ) -> BaseParallelIterator<Self, T> {
         BaseParallelIterator {
             thread_pool,
             source: self,

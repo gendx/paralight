@@ -19,8 +19,8 @@ pub use source::vec::VecParallelSource;
 pub use source::vec_deque::{VecDequeRefMutParallelSource, VecDequeRefParallelSource};
 pub use source::zip::{ZipEq, ZipMax, ZipMin, ZipableSource};
 pub use source::{
-    BaseParallelIterator, IntoParallelRefMutSource, IntoParallelRefSource, IntoParallelSource, ParallelSource,
-    ParallelSourceExt, SourceCleanup, SourceDescriptor,
+    BaseParallelIterator, IntoParallelRefMutSource, IntoParallelRefSource, IntoParallelSource,
+    ParallelSource, ParallelSourceExt, SourceCleanup, SourceDescriptor,
 };
 use std::cmp::Ordering;
 use std::iter::{Product, Sum};
@@ -2906,7 +2906,14 @@ pub trait ParallelIteratorExt: ParallelIterator {
 }
 
 /// A thread pool backend that can process parallel iterators.
-pub trait GenericThreadPool {
+///
+/// # Safety
+///
+/// This trait is marked as `unsafe`, because implementers **must**
+/// ensure the safety guarantees of
+/// [`GenericThreadPool::upper_bounded_pipeline`]
+/// and [`GenericThreadPool::iter_pipeline`].
+pub unsafe trait GenericThreadPool {
     /// Processes an input of the given length in parallel and returns the
     /// aggregated output.
     ///
