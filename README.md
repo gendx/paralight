@@ -12,7 +12,8 @@
 
 This library allows you to distribute computation over *indexed* sources
 ([slices](slice), [ranges](std::ops::Range), [`Vec`](std::vec::Vec), etc.) among
-multiple threads.
+multiple threads. It aims to uphold the highest standards of documentation,
+testing and safety, see the [FAQ](#faq) below.
 
 ```rust
 use paralight::iter::{
@@ -328,6 +329,126 @@ Rust toolchain. As the underlying implementation is based on
 [experimental features](https://doc.rust-lang.org/unstable-book/) of the Rust
 language, these APIs are provided without guarantee and may break at any time
 when a new nightly toolchain is released.
+
+## FAQ
+
+### Documentation
+
+All public APIs of Paralight are documented, which is enforced by the
+`forbid(missing_docs)` lint. The aim is to have at least one example per API,
+naturally
+[tested via `rustdoc`](https://doc.rust-lang.org/rustdoc/write-documentation/documentation-tests.html).
+
+### Testing
+
+Paralight is thoroughly tested, with
+[code coverage](https://app.codecov.io/gh/gendx/paralight/) as close to 100% as
+possible.
+
+The testing strategy combines
+[`rustdoc` examples](https://doc.rust-lang.org/rustdoc/write-documentation/documentation-tests.html),
+top-level stress tests and unit tests on the most critical components.
+
+### Safety
+
+Paralight aims to use as little `unsafe` code as possible. As a first measure,
+the following lints are enabled throughout the code base, to make sure each use
+of an `unsafe` API is explained and each new `unsafe` function documents its
+pre- and post-conditions.
+
+```rust
+#![forbid(
+    missing_docs,
+    unsafe_op_in_unsafe_fn,
+    clippy::missing_safety_doc,
+    clippy::multiple_unsafe_ops_per_block,
+    clippy::undocumented_unsafe_blocks,
+)]
+# //! Here are some docs
+```
+
+Additionally, [extensive testing](#testing) is conducted with
+[ThreadSanitizer](https://doc.rust-lang.org/beta/unstable-book/compiler-flags/sanitizer.html#threadsanitizer)
+and [Miri](https://github.com/rust-lang/miri).
+
+This multi-layered approach to safety is crucial given how complex mixing memory
+safety with multi-threading is, and it has indeed
+[caught a bug](https://github.com/gendx/paralight/commit/59c995672634aead96a4d977fe1fcab1e0faa9a5)
+during development.
+
+### Use of `unsafe` code
+
+As mentioned, Paralight uses as little `unsafe` code as possible. Here is the
+list of places where `unsafe` is needed.
+
+- Lifetime-erasure in
+  [core/util.rs](https://github.com/gendx/paralight/blob/main/src/core/util.rs).
+  The goal is essentially to share an `Arc<Mutex<&'a T>>` between the main
+  threads and worker threads where `T` contains a description of a parallel
+  pipeline. The difficulty is that the lifetime `'a` is only valid for a limited
+  scope (for example, a parallel iterator may capture local variables by
+  reference). Even though synchronization is in place to make sure the worker
+  threads only access this pipeline during `'a`, there is no way to write a safe
+  Rust type for `Arc<Mutex<&'a T>>` where the lifetime `'a` changes over time
+  (the same mutex is reused for successive pipelines sent to Paralight).
+  Glossing over the details, a type akin to `Arc<Mutex<&'static T>>` is used
+  instead (i.e. the lifetime is marked `'static`), with `unsafe` code to rescope
+  the `'static` lifetime to a local `'a` as needed. [`Send`](Send) and
+  [`Sync`](Sync) implementations are also provided (when sound) on this wrapper
+  type.
+- The [`SliceParallelSource`](iter::SliceParallelSource) API in
+  [iter/source/slice.rs](https://github.com/gendx/paralight/blob/main/src/iter/source/slice.rs)
+  uses [`slice::get_unchecked()`](slice::get_unchecked) as it guides the
+  compiler to better optimize the code. In particular, missed vectorized loops
+  [were observed](https://github.com/gendx/paralight/issues/12) without it.
+- The [`MutSliceParallelSource`](iter::MutSliceParallelSource) API in
+  [iter/source/slice.rs](https://github.com/gendx/paralight/blob/main/src/iter/source/slice.rs).
+  The goal is to provide parallel iterators that produce mutable references
+  `&mut T` to items of a mutable slice `&mut [T]`. Sharing a `&mut [T]` with all
+  the threads wouldn't work as it would violate Rust's aliasing rules. Using the
+  [`slice::split_at_mut()`](slice::split_at_mut) API would not work either, as
+  it isn't known in advance where a split will occur nor which worker thread
+  will consume which item (due to work stealing). An approach that decomposes
+  the slice into a pointer-length pair is used instead, making it possible to
+  share the raw pointer with all the worker threads.
+- Similarly, the [`VecParallelSource`](iter::VecParallelSource) API in
+  [iter/source/vec.rs](https://github.com/gendx/paralight/blob/main/src/iter/source/vec.rs)
+  provides parallel iterators that consume a `Vec<T>`. This is achieved by
+  decomposing the vector into a pointer-length-capacity triple, and sharing the
+  base pointer with all the worker threads so that they can consume items of
+  type `T` (via [`std::ptr::read()`](std::ptr::read)). Additionally, the
+  original `Vec<T>` allocation is released when the iterator is dropped (to
+  avoid memory leaks), which involves reconstructing it from the
+  pointer-allocation pair (via [`Vec::from_raw_parts()`](Vec::from_raw_parts)).
+- Likewise, the [`ArrayParallelSource`](iter::ArrayParallelSource) API in
+  [iter/source/array.rs](https://github.com/gendx/paralight/blob/main/src/iter/source/array.rs)
+  provides parallel iterators that consume a `[T; N]`. The situation is similar
+  to `Vec<T>`, except that the items aren't allocated on the heap behind a
+  pointer, but directly in the array. This involves a more careful combination
+  of wrapper types. Note that a
+  [prior implementation](https://github.com/gendx/paralight/commit/8c5fab6c52e2495bd89ac4f1fef78a18470d7335)
+  was quickly
+  [reverted](https://github.com/gendx/paralight/commit/59c995672634aead96a4d977fe1fcab1e0faa9a5)
+  due to being unsound, highlighting once again the importance of code coverage
+  and the effectiveness of [Miri](https://github.com/rust-lang/miri).
+- Lastly, the definition of the [`SourceDescriptor`](iter::SourceDescriptor)
+  trait in
+  [iter/source/mod.rs](https://github.com/gendx/paralight/blob/main/src/iter/source/mod.rs)
+  has `unsafe` methods because it requires the caller to pass each index once
+  and only once. Indeed, the safety of the previously mentioned iterator sources
+  (mutable slice, vector, array) assumes a correct calling pattern. The
+  `SourceDescriptor` trait is public (so that dependents of Paralight can define
+  their own sources of items), so these `unsafe` functions leak in the public
+  API. Internally, this causes `unsafe` blocks each time the trait is
+  implemented, and the associated safety comments are a good opportunity to
+  check correctness.
+
+Note that the last point relies on _correctness_ of the (safe) work-stealing
+implementation in
+[core/range.rs](https://github.com/gendx/paralight/blob/main/src/core/range.rs)
+and that's still missing a formal proof.
+
+And that's all the `unsafe` code there is!
 
 ## Disclaimer
 

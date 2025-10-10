@@ -23,6 +23,120 @@ use std::num::NonZeroUsize;
 fn main() {
     let cli = Cli::parse();
 
+    match cli.parallelism {
+        Parallelism::Serial => dispatch_serial(cli),
+        Parallelism::Paralight => dispatch_paralight(cli),
+    }
+}
+
+fn dispatch_serial(cli: Cli) {
+    match (cli.scenario, cli.owned_input, cli.boxed_items) {
+        (Scenario::Sum, false, false) => {
+            let input = (0..cli.input_size).collect::<Vec<u64>>();
+            let sum = black_box(input).iter().sum::<u64>();
+            println!("sum = {sum}");
+        }
+        (Scenario::Sum, true, false) => {
+            let input = (0..cli.input_size).collect::<Vec<u64>>();
+            let sum = black_box(input).into_iter().sum::<u64>();
+            println!("sum = {sum}");
+        }
+        (Scenario::Sum, false, true) => {
+            let input = (0..cli.input_size).map(Box::new).collect::<Vec<Box<u64>>>();
+            let sum = black_box(input).iter().map(|x| **x).sum::<u64>();
+            println!("sum = {sum}");
+        }
+        (Scenario::Sum, true, true) => {
+            let input = (0..cli.input_size).map(Box::new).collect::<Vec<Box<u64>>>();
+            let sum = black_box(input).into_iter().map(|x| *x).sum::<u64>();
+            println!("sum = {sum}");
+        }
+        (Scenario::Add, false, false) => {
+            let mut output = vec![0; cli.input_size as usize];
+            let left = (0..cli.input_size).collect::<Vec<u64>>();
+            let right = (0..cli.input_size).collect::<Vec<u64>>();
+
+            let output_slice = output.as_mut_slice();
+            let left_slice = left.as_slice();
+            let right_slice = right.as_slice();
+
+            black_box(left_slice)
+                .iter()
+                .zip(black_box(right_slice).iter())
+                .zip(black_box(output_slice.iter_mut()))
+                .for_each(|((a, b), out)| *out = *a + *b);
+            println!("added {} elements", black_box(output).len());
+        }
+        (Scenario::Add, true, false) => {
+            let mut output = vec![0; cli.input_size as usize];
+            let left = (0..cli.input_size).collect::<Vec<u64>>();
+            let right = (0..cli.input_size).collect::<Vec<u64>>();
+
+            let output_slice = output.as_mut_slice();
+
+            black_box(left)
+                .into_iter()
+                .zip(black_box(right))
+                .zip(black_box(output_slice.iter_mut()))
+                .for_each(|((a, b), out)| *out = a + b);
+            println!("added {} elements", black_box(output).len());
+        }
+        (Scenario::Add, false, true) => {
+            let mut output = vec![0; cli.input_size as usize];
+            let left = (0..cli.input_size).map(Box::new).collect::<Vec<Box<u64>>>();
+            let right = (0..cli.input_size).map(Box::new).collect::<Vec<Box<u64>>>();
+
+            let output_slice = output.as_mut_slice();
+            let left_slice = left.as_slice();
+            let right_slice = right.as_slice();
+
+            black_box(left_slice)
+                .iter()
+                .zip(black_box(right_slice).iter())
+                .zip(black_box(output_slice.iter_mut()))
+                .for_each(|((a, b), out)| *out = **a + **b);
+            println!("added {} elements", black_box(output).len());
+        }
+        (Scenario::Add, true, true) => {
+            let mut output = vec![0; cli.input_size as usize];
+            let left = (0..cli.input_size).map(Box::new).collect::<Vec<Box<u64>>>();
+            let right = (0..cli.input_size).map(Box::new).collect::<Vec<Box<u64>>>();
+
+            let output_slice = output.as_mut_slice();
+
+            black_box(left)
+                .into_iter()
+                .zip(black_box(right))
+                .zip(black_box(output_slice.iter_mut()))
+                .for_each(|((a, b), out)| *out = *a + *b);
+            println!("added {} elements", black_box(output).len());
+        }
+        (Scenario::FindAny | Scenario::FindFirst, false, false) => {
+            let input = fill_needles(cli.input_size as usize, cli.density);
+            let input_slice = input.as_slice();
+            let found = black_box(input_slice).iter().find(|x| **x);
+            println!("found = {found:?}");
+        }
+        (Scenario::FindAny | Scenario::FindFirst, true, false) => {
+            let input = fill_needles(cli.input_size as usize, cli.density);
+            let found = black_box(input).into_iter().find(|x| *x);
+            println!("found = {found:?}");
+        }
+        (Scenario::FindAny | Scenario::FindFirst, false, true) => {
+            let input = fill_boxed_needles(cli.input_size as usize, cli.density);
+            let input_slice = input.as_slice();
+            let found = black_box(input_slice).iter().find(|x| ***x);
+            println!("found = {found:?}");
+        }
+        (Scenario::FindAny | Scenario::FindFirst, true, true) => {
+            let input = fill_boxed_needles(cli.input_size as usize, cli.density);
+            let found = black_box(input).into_iter().find(|x| **x);
+            println!("found = {found:?}");
+        }
+    }
+}
+
+fn dispatch_paralight(cli: Cli) {
     let mut thread_pool = ThreadPoolBuilder {
         num_threads: match cli.num_threads {
             Some(num_threads) => ThreadCount::Count(num_threads),
@@ -257,6 +371,10 @@ struct Cli {
     #[arg(long, value_enum)]
     range_strategy: RangeStrategyCli,
 
+    /// Parallelism mode.
+    #[arg(long, value_enum, default_value_t = Parallelism::Paralight)]
+    parallelism: Parallelism,
+
     /// Scenario to run in parallel.
     #[arg(long, value_enum)]
     scenario: Scenario,
@@ -299,4 +417,13 @@ enum Scenario {
     FindAny,
     /// Find the first value.
     FindFirst,
+}
+
+/// Parallelism mode.
+#[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
+enum Parallelism {
+    /// Process the input serially.
+    Serial,
+    /// Use paralight.
+    Paralight,
 }
