@@ -31,7 +31,9 @@
 #![doc(test(attr(deny(warnings))))]
 
 mod core;
+
 pub mod iter;
+
 mod macros;
 
 pub use core::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPool, ThreadPoolBuilder};
