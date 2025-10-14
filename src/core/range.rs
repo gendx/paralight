@@ -440,13 +440,13 @@ impl AtomicRange {
     /// Atomically loads the range.
     #[inline(always)]
     fn load(&self) -> PackedRange {
-        PackedRange(self.0.load(Ordering::SeqCst))
+        PackedRange(self.0.load(Ordering::Relaxed))
     }
 
     /// Atomically stores the range.
     #[inline(always)]
     fn store(&self, range: PackedRange) {
-        self.0.store(range.0, Ordering::SeqCst)
+        self.0.store(range.0, Ordering::Relaxed)
     }
 
     /// Atomically compares and exchanges the range. In case of failure, the
@@ -455,7 +455,7 @@ impl AtomicRange {
     fn compare_exchange(&self, before: PackedRange, after: PackedRange) -> Result<(), PackedRange> {
         match self
             .0
-            .compare_exchange(before.0, after.0, Ordering::SeqCst, Ordering::SeqCst)
+            .compare_exchange(before.0, after.0, Ordering::Relaxed, Ordering::Relaxed)
         {
             Ok(_) => Ok(()),
             Err(e) => Err(PackedRange(e)),
