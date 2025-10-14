@@ -17,6 +17,14 @@ use super::util::LifetimeParameterized;
 use crate::iter::{Accumulator, SourceCleanup};
 use crate::macros::{log_debug, log_error, log_warn};
 use crossbeam_utils::CachePadded;
+#[cfg(loom)]
+use loom::{
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
+    thread::{self, JoinHandle},
+};
 // Platforms that support `libc::sched_setaffinity()`.
 #[cfg(all(
     not(miri),
@@ -35,9 +43,14 @@ use std::convert::TryFrom;
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::ops::ControlFlow;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
-use std::thread::JoinHandle;
+#[cfg(not(loom))]
+use std::{
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
+    thread::{self, JoinHandle},
+};
 
 /// Number of threads to spawn in a thread pool.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -358,7 +371,7 @@ impl<F: RangeFactory> ThreadPoolImpl<F> {
                     pipeline: borrower,
                 };
                 WorkerThreadHandle {
-                    handle: std::thread::spawn(move || {
+                    handle: thread::spawn(move || {
                         #[cfg(all(
                             not(miri),
                             any(
@@ -444,9 +457,17 @@ impl<F: RangeFactory> ThreadPoolImpl<F> {
         self.range_orchestrator.reset_ranges(input_len);
 
         let num_threads = self.threads.len();
+        #[cfg(not(loom))]
         let outputs = (0..num_threads)
             .map(|_| Mutex::new(None))
             .collect::<Arc<[_]>>();
+        // TODO: Remove this hack once https://github.com/tokio-rs/loom/issues/395 is fixed.
+        #[cfg(loom)]
+        let outputs = Arc::new(
+            (0..num_threads)
+                .map(|_| Mutex::new(None))
+                .collect::<Vec<_>>(),
+        );
         let bound = AtomicUsize::new(usize::MAX);
 
         self.pipeline.lend(&UpperBoundedPipelineImpl {
@@ -489,9 +510,17 @@ impl<F: RangeFactory> ThreadPoolImpl<F> {
         self.range_orchestrator.reset_ranges(input_len);
 
         let num_threads = self.threads.len();
+        #[cfg(not(loom))]
         let outputs = (0..num_threads)
             .map(|_| Mutex::new(None))
             .collect::<Arc<[_]>>();
+        // TODO: Remove this hack once https://github.com/tokio-rs/loom/issues/395 is fixed.
+        #[cfg(loom)]
+        let outputs = Arc::new(
+            (0..num_threads)
+                .map(|_| Mutex::new(None))
+                .collect::<Vec<_>>(),
+        );
 
         self.pipeline.lend(&IterPipelineImpl {
             outputs: outputs.clone(),
@@ -552,7 +581,11 @@ struct UpperBoundedPipelineImpl<
     Cleanup: SourceCleanup,
 > {
     bound: CachePadded<AtomicUsize>,
+    #[cfg(not(loom))]
     outputs: Arc<[Mutex<Option<Output>>]>,
+    // TODO: Remove this hack once https://github.com/tokio-rs/loom/issues/395 is fixed.
+    #[cfg(loom)]
+    outputs: Arc<Vec<Mutex<Option<Output>>>>,
     init: Init,
     process_item: ProcessItem,
     finalize: Finalize,
@@ -590,7 +623,11 @@ where
 }
 
 struct IterPipelineImpl<'a, Output, Accum: Accumulator<usize, Output>, Cleanup: SourceCleanup> {
+    #[cfg(not(loom))]
     outputs: Arc<[Mutex<Option<Output>>]>,
+    // TODO: Remove this hack once https://github.com/tokio-rs/loom/issues/395 is fixed.
+    #[cfg(loom)]
+    outputs: Arc<Vec<Mutex<Option<Output>>>>,
     accum: Accum,
     cleanup: &'a Cleanup,
 }

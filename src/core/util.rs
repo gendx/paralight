@@ -6,8 +6,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[cfg(loom)]
+use loom::sync::{Condvar, Mutex, MutexGuard};
 use std::ptr::NonNull;
-use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
+use std::sync::PoisonError;
+#[cfg(not(loom))]
+use std::sync::{Condvar, Mutex, MutexGuard};
 
 /// An ergonomic wrapper around a [`Mutex`]-[`Condvar`] pair.
 pub struct Status<T> {
@@ -45,9 +49,22 @@ impl<T> Status<T> {
     /// This returns a [`MutexGuard`], allowing to further inspect or modify the
     /// status.
     pub fn wait_while(&self, predicate: impl FnMut(&mut T) -> bool) -> MutexGuard<'_, T> {
-        self.condvar
+        #[cfg(not(loom))]
+        return self
+            .condvar
             .wait_while(self.mutex.lock().unwrap(), predicate)
-            .unwrap()
+            .unwrap();
+        #[cfg(loom)]
+        return self.manual_wait_while(predicate);
+    }
+
+    #[cfg(loom)]
+    fn manual_wait_while(&self, mut predicate: impl FnMut(&mut T) -> bool) -> MutexGuard<'_, T> {
+        let mut guard = self.mutex.lock().unwrap();
+        while predicate(&mut *guard) {
+            guard = self.condvar.wait(guard).unwrap();
+        }
+        guard
     }
 }
 

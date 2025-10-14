@@ -10,12 +10,22 @@ use crate::macros::log_debug;
 #[cfg(feature = "log_parallelism")]
 use crate::macros::{log_info, log_trace};
 use crossbeam_utils::CachePadded;
+#[cfg(all(loom, feature = "log_parallelism"))]
+use loom::sync::Mutex;
+#[cfg(loom)]
+use loom::sync::{
+    atomic::{AtomicU64, AtomicUsize, Ordering},
+    Arc,
+};
 #[cfg(feature = "log_parallelism")]
 use std::ops::AddAssign;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::Arc;
-#[cfg(feature = "log_parallelism")]
+#[cfg(all(not(loom), feature = "log_parallelism"))]
 use std::sync::Mutex;
+#[cfg(not(loom))]
+use std::sync::{
+    atomic::{AtomicU64, AtomicUsize, Ordering},
+    Arc,
+};
 
 /// A factory for handing out ranges of items to various threads.
 ///
@@ -267,7 +277,11 @@ impl SkipIterator for UpperBoundedRange<'_> {
 /// continue processing items.
 pub struct WorkStealingRangeFactory {
     /// Handle to the ranges of all the threads.
+    #[cfg(not(loom))]
     ranges: Arc<[AtomicRange]>,
+    // TODO: Remove this hack once https://github.com/tokio-rs/loom/issues/395 is fixed.
+    #[cfg(loom)]
+    ranges: Arc<Vec<AtomicRange>>,
     /// Handle to the work-stealing statistics.
     #[cfg(feature = "log_parallelism")]
     stats: Arc<Mutex<WorkStealingStats>>,
@@ -284,7 +298,11 @@ impl RangeFactory for WorkStealingRangeFactory {
             panic!("Only up to {} threads (2^32 - 1) are supported", u32::MAX);
         }
         Self {
+            #[cfg(not(loom))]
             ranges: (0..num_threads).map(|_| AtomicRange::default()).collect(),
+            // TODO: Remove this hack once https://github.com/tokio-rs/loom/issues/395 is fixed.
+            #[cfg(loom)]
+            ranges: Arc::new((0..num_threads).map(|_| AtomicRange::default()).collect()),
             #[cfg(feature = "log_parallelism")]
             stats: Arc::new(Mutex::new(WorkStealingStats::default())),
         }
@@ -311,7 +329,11 @@ impl RangeFactory for WorkStealingRangeFactory {
 /// An orchestrator for the [`WorkStealingRangeFactory`].
 pub struct WorkStealingRangeOrchestrator {
     /// Handle to the ranges of all the threads.
+    #[cfg(not(loom))]
     ranges: Arc<[AtomicRange]>,
+    // TODO: Remove this hack once https://github.com/tokio-rs/loom/issues/395 is fixed.
+    #[cfg(loom)]
+    ranges: Arc<Vec<AtomicRange>>,
     /// Handle to the work-stealing statistics.
     #[cfg(feature = "log_parallelism")]
     stats: Arc<Mutex<WorkStealingStats>>,
@@ -357,7 +379,11 @@ pub struct WorkStealingRange {
     /// Index of the thread that owns this range.
     id: usize,
     /// Handle to the ranges of all the threads.
+    #[cfg(not(loom))]
     ranges: Arc<[AtomicRange]>,
+    // TODO: Remove this hack once https://github.com/tokio-rs/loom/issues/395 is fixed.
+    #[cfg(loom)]
+    ranges: Arc<Vec<AtomicRange>>,
     /// Handle to the work-stealing statistics.
     #[cfg(feature = "log_parallelism")]
     stats: Arc<Mutex<WorkStealingStats>>,
@@ -1016,6 +1042,148 @@ mod test {
                     (next, _) => return next,
                 }
             }
+        }
+    }
+
+    #[cfg(loom)]
+    mod loooom {
+        use super::*;
+
+        use loom::model::Builder;
+
+        #[test]
+        fn test_fixed_range() {
+            let mut builder = Builder::new();
+            builder.preemption_bound = Some(3);
+            builder.check(|| {
+                let factory = FixedRangeFactory::new(4);
+                let ranges: [_; 4] = std::array::from_fn(|i| factory.range(i));
+                let orchestrator = factory.orchestrator();
+
+                orchestrator.reset_ranges(100);
+                let handles = ranges.map(|range| {
+                    loom::thread::spawn(move || {
+                        SkipIteratorWrapper(range.iter()).collect::<Vec<_>>()
+                    })
+                });
+                let values: [Vec<usize>; 4] = handles.map(|handle| handle.join().unwrap());
+
+                // The fixed range implementation always yields the same items in order.
+                for (i, set) in values.iter().enumerate() {
+                    assert_eq!(*set, (i * 25..(i + 1) * 25).collect::<Vec<_>>());
+                }
+            });
+        }
+
+        #[test]
+        fn test_work_stealing_range_2_threads() {
+            let mut builder = Builder::new();
+            builder.preemption_bound = Some(2);
+            builder.check(|| {
+                const NUM_THREADS: usize = 2;
+                const NUM_ELEMENTS: usize = 10;
+
+                let factory = WorkStealingRangeFactory::new(NUM_THREADS);
+                let ranges: [_; NUM_THREADS] = std::array::from_fn(|i| factory.range(i));
+                let orchestrator = factory.orchestrator();
+
+                orchestrator.reset_ranges(NUM_ELEMENTS);
+                let handles = ranges.map(|range| {
+                    loom::thread::spawn(move || {
+                        SkipIteratorWrapper(range.iter()).collect::<Vec<_>>()
+                    })
+                });
+                let values: [Vec<usize>; NUM_THREADS] =
+                    handles.map(|handle| handle.join().unwrap());
+
+                // This checks that:
+                // - all ranges yield disjoint elements,
+                // - each range never yields the same element twice.
+                let mut all_values = vec![false; NUM_ELEMENTS];
+                for set in values {
+                    println!("Values: {set:?}");
+                    for x in set {
+                        assert!(!all_values[x]);
+                        all_values[x] = true;
+                    }
+                }
+                // Check that the whole range is covered.
+                assert!(all_values.iter().all(|x| *x));
+            });
+        }
+
+        #[test]
+        fn test_work_stealing_range_3_threads() {
+            let mut builder = Builder::new();
+            builder.preemption_bound = Some(3);
+            builder.check(|| {
+                const NUM_THREADS: usize = 3;
+                const NUM_ELEMENTS: usize = 10;
+
+                let factory = WorkStealingRangeFactory::new(NUM_THREADS);
+                let ranges: [_; NUM_THREADS] = std::array::from_fn(|i| factory.range(i));
+                let orchestrator = factory.orchestrator();
+
+                orchestrator.reset_ranges(NUM_ELEMENTS);
+                let handles = ranges.map(|range| {
+                    loom::thread::spawn(move || {
+                        SkipIteratorWrapper(range.iter()).collect::<Vec<_>>()
+                    })
+                });
+                let values: [Vec<usize>; NUM_THREADS] =
+                    handles.map(|handle| handle.join().unwrap());
+
+                // This checks that:
+                // - all ranges yield disjoint elements,
+                // - each range never yields the same element twice.
+                let mut all_values = vec![false; NUM_ELEMENTS];
+                for set in values {
+                    println!("Values: {set:?}");
+                    for x in set {
+                        assert!(!all_values[x]);
+                        all_values[x] = true;
+                    }
+                }
+                // Check that the whole range is covered.
+                assert!(all_values.iter().all(|x| *x));
+            });
+        }
+
+        #[test]
+        fn test_work_stealing_range_4_threads() {
+            let mut builder = Builder::new();
+            builder.preemption_bound = Some(2);
+            builder.check(|| {
+                const NUM_THREADS: usize = 4;
+                const NUM_ELEMENTS: usize = 10;
+
+                let factory = WorkStealingRangeFactory::new(NUM_THREADS);
+                let ranges: [_; NUM_THREADS] = std::array::from_fn(|i| factory.range(i));
+                let orchestrator = factory.orchestrator();
+
+                orchestrator.reset_ranges(NUM_ELEMENTS);
+                let handles = ranges.map(|range| {
+                    loom::thread::spawn(move || {
+                        SkipIteratorWrapper(range.iter()).collect::<Vec<_>>()
+                    })
+                });
+                let values: [Vec<usize>; NUM_THREADS] =
+                    handles.map(|handle| handle.join().unwrap());
+
+                // This checks that:
+                // - all ranges yield disjoint elements,
+                // - each range never yields the same element twice.
+                let mut all_values = vec![false; NUM_ELEMENTS];
+                for set in values {
+                    println!("Values: {set:?}");
+                    for x in set {
+                        assert!(!all_values[x]);
+                        all_values[x] = true;
+                    }
+                }
+                // Check that the whole range is covered.
+                assert!(all_values.iter().all(|x| *x));
+            });
         }
     }
 

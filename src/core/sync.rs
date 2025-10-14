@@ -11,8 +11,16 @@
 use super::util::{DynLifetimeView, LifetimeParameterized, Status};
 use crate::macros::{log_debug, log_error};
 use crossbeam_utils::CachePadded;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, RwLock};
+#[cfg(loom)]
+use loom::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc, RwLock,
+};
+#[cfg(not(loom))]
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc, RwLock,
+};
 
 /// State of a worker thread.
 #[derive(Clone, Copy)]
