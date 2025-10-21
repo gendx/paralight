@@ -16,8 +16,7 @@ pub mod vec;
 pub mod vec_deque;
 pub mod zip;
 
-use super::{Accumulator, ParallelIterator};
-use crate::iter::GenericThreadPool;
+use super::{Accumulator, GenericThreadPool, ParallelIterator};
 use std::ops::ControlFlow;
 
 /// An interface describing how to fetch items from a [`ParallelSource`].

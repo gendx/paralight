@@ -141,23 +141,7 @@ impl ThreadPool {
     }
 }
 
-// Safety: proof of the safety guarantees is deferred to the inner calls.
 unsafe impl GenericThreadPool for &mut ThreadPool {
-    /// Processes an input of the given length in parallel and returns the
-    /// aggregated output.
-    ///
-    /// With this variant, the pipeline may skip processing items at larger
-    /// indices whenever a call to `process_item` returns
-    /// [`ControlFlow::Break`].
-    ///
-    /// # Safety guarantees
-    ///
-    /// This function guarantees that:
-    /// - the indices passed to `process_item()` are in `0..input_len`,
-    /// - the ranges passed to `cleanup.cleanup_item_range()` are included in
-    ///   `0..input_len`,
-    /// - each index in `0..inner_len` is passed exactly once in calls to
-    ///   `process_item()` and `cleanup.cleanup_item_range()`.
     fn upper_bounded_pipeline<Output: Send, Accum>(
         self,
         input_len: usize,
@@ -172,17 +156,6 @@ unsafe impl GenericThreadPool for &mut ThreadPool {
             .upper_bounded_pipeline(input_len, init, process_item, finalize, reduce, cleanup)
     }
 
-    /// Processes an input of the given length in parallel and returns the
-    /// aggregated output.
-    ///
-    /// # Safety guarantees
-    ///
-    /// This function guarantees that:
-    /// - the indices passed to `accum.accumulate()` are in `0..input_len`,
-    /// - the ranges passed to `cleanup.cleanup_item_range()` are included in
-    ///   `0..input_len`,
-    /// - each index in `0..inner_len` is passed exactly once in calls to
-    ///   `accum.accumulate()` and `cleanup.cleanup_item_range()`.
     fn iter_pipeline<Output: Send>(
         self,
         input_len: usize,
