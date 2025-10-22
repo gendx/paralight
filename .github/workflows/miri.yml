@@ -10,7 +10,7 @@ jobs:
       fail-fast: false
     runs-on: ubuntu-latest
     env:
-      RUSTFLAGS: "-D warnings"
+      RUSTFLAGS: "-D warnings -C debug_assertions"
       MIRIFLAGS: "-Zmiri-num-cpus=4"
     steps:
       - uses: actions/checkout@v4

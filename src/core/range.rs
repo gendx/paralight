@@ -496,7 +496,7 @@ impl PackedRange {
     /// Increments the start of the range.
     #[inline(always)]
     fn increment_start(self) -> (u32, Self) {
-        assert!(self.start() < self.end());
+        debug_assert!(self.start() < self.end());
         (self.start(), PackedRange::new(self.start() + 1, self.end()))
     }
 
@@ -1190,6 +1190,7 @@ mod test {
         }
     }
 
+    #[cfg(debug_assertions)]
     #[test]
     #[should_panic(expected = "assertion failed: self.start() < self.end()")]
     fn test_packed_range_increment_start_overflow() {

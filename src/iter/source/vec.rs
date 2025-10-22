@@ -134,7 +134,7 @@ impl<T: Send> SourceDescriptor for VecSourceDescriptor<T> {
     }
 
     unsafe fn fetch_item(&self, index: usize) -> Self::Item {
-        assert!(index < self.len);
+        debug_assert!(index < self.len);
         let base_ptr: *const T = self.ptr.get();
         // SAFETY:
         // - The offset in bytes `index * size_of::<T>()` fits in an `isize`, because

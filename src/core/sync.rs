@@ -143,7 +143,7 @@ impl<T: LifetimeParameterized> Lender<T> {
             .shared_context
             .main_status
             .wait_while(|status| *status == MainStatus::Waiting);
-        assert_eq!(*guard, MainStatus::Ready);
+        debug_assert_eq!(*guard, MainStatus::Ready);
 
         let num_panicking_threads = self
             .shared_context
@@ -223,7 +223,7 @@ impl<T: LifetimeParameterized> Borrower<T> {
                 WorkerState::Finished
             }
             WorkerStatus::Round(r) => {
-                assert_eq!(round, r);
+                debug_assert_eq!(round, r);
                 log_debug!(
                     "[thread {}, round {round:?}] Received start signal. Processing...",
                     self.id
@@ -296,7 +296,7 @@ impl<T: LifetimeParameterized> Drop for Notifier<'_, T> {
             .shared_context
             .num_active_threads
             .fetch_sub(1, Ordering::SeqCst);
-        assert!(thread_count > 0);
+        debug_assert!(thread_count > 0);
         log_debug!(
             "[thread {}, round {round:?}] Decremented the number of active threads: {}.",
             self.id,

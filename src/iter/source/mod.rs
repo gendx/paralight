@@ -718,6 +718,7 @@ where
     //   and `fetch_item()`, the chain adaptor doesn't repeat indices passed to the
     //   two downstream descriptors.
     unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+        debug_assert!(index < self.len);
         if index < self.len1 {
             // SAFETY: See the function comment. This branch implements the mapping for an
             // index in `0..len1` to `0..len1`.
@@ -859,6 +860,7 @@ impl<Inner: SourceDescriptor> SourceDescriptor for RevSourceDescriptor<Inner> {
     }
 
     unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+        debug_assert!(index < self.len);
         // SAFETY: Given an inner descriptor of length `len`, the `RevSourceDescriptor`
         // implements a bijective mapping of indices from `0..len` to `0..len` given by
         // `rev: x -> len - 1 - x`.
@@ -937,6 +939,7 @@ impl<Inner: SourceDescriptor> SourceDescriptor for SkipSourceDescriptor<Inner> {
     }
 
     unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+        debug_assert!(index < self.len);
         // SAFETY: Given an inner descriptor of length `len` as well as a parameter
         // `count <= len`, the `SkipSourceDescriptor` implements a bijective mapping of
         // indices from `0..len - count` to `count..len` given by a translation of
@@ -1082,6 +1085,7 @@ impl<Inner: SourceDescriptor> SourceDescriptor for StepBySourceDescriptor<Inner>
     }
 
     unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+        debug_assert!(index < self.len);
         // SAFETY: See the function comment in `Self::cleanup_item_range`. This
         // implements the mapping `i -> step * i`.
         unsafe { self.inner.fetch_item(self.step * index) }
@@ -1181,6 +1185,7 @@ impl<Inner: SourceDescriptor> SourceDescriptor for TakeSourceDescriptor<Inner> {
     }
 
     unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+        debug_assert!(index < self.count);
         // SAFETY: Given an inner descriptor of length `len` as well as a parameter
         // `count <= len`, the `TakeSourceDescriptor` implements a pass-through mapping
         // of indices from `0..count` to `0..count`.

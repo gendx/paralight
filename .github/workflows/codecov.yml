@@ -4,6 +4,7 @@ jobs:
   coverage:
     runs-on: ubuntu-latest
     env:
+      RUSTFLAGS: "-C debug_assertions"
       RUST_LOG: "debug"
     steps:
       - uses: actions/checkout@v4

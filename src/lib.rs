@@ -457,7 +457,7 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .pipeline(
                 || 0u32,
-                |acc, item| acc + *item as u32,
+                |acc, item| acc.wrapping_add(*item as u32),
                 |acc| acc as u64,
                 |a, b| (a + b) & 0xffff_ffff,
             );

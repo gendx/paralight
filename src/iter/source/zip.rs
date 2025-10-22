@@ -323,6 +323,7 @@ macro_rules! zipable_tuple {
             }
 
             unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+                debug_assert!(index < self.len);
                 ( $(
                     // SAFETY: Given descriptors of equal lengths `len`, the `ZipEqSourceDescriptor`
                     // implements a pass-through of indices in `0..len` to all of them.
@@ -379,6 +380,7 @@ macro_rules! zipable_tuple {
             }
 
             unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+                debug_assert!(index < self.len);
                 ( $( if index < self.descriptors.$i.len() {
                     // SAFETY: Given descriptors of maximal length `len`, the
                     // `ZipMaxSourceDescriptor` implements a pass-through of indices in `0..len` to
@@ -453,6 +455,7 @@ macro_rules! zipable_tuple {
                 }
 
                 unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+                    debug_assert!(index < self.len);
                     ( $(
                         // SAFETY: Given descriptors of minimal length `len`, the
                         // `ZipMinSourceDescriptor` implements a pass-through of indices in `0..len`
@@ -606,6 +609,7 @@ where
     }
 
     unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+        debug_assert!(index < self.len);
         self.descriptors.each_ref().map(|desc| {
             // SAFETY: Given descriptors of equal lengths `len`, the `ZipEqSourceDescriptor`
             // implements a pass-through of indices in `0..len` to all of them.
@@ -664,6 +668,7 @@ where
     }
 
     unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+        debug_assert!(index < self.len);
         self.descriptors.each_ref().map(|desc| {
             if index < desc.len() {
                 // SAFETY: Given descriptors of maximal length `len`, the
@@ -735,6 +740,7 @@ where
     }
 
     unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+        debug_assert!(index < self.len);
         self.descriptors.each_ref().map(|desc| {
             // SAFETY: Given descriptors of minimal length `len`, the
             // `ZipMinSourceDescriptor` implements a pass-through of indices in `0..len`

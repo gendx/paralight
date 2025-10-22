@@ -81,6 +81,7 @@ impl<'data, T: Sync> SourceDescriptor for SliceSourceDescriptor<'data, T> {
     }
 
     unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+        debug_assert!(index < self.slice.len());
         // SAFETY: The index is smaller than the length of the input slice, due to the
         // safety pre-conditions of the `fetch_item()` function.
         unsafe { self.slice.get_unchecked(index) }
@@ -165,7 +166,7 @@ impl<'data, T: Send + 'data> SourceDescriptor for MutSliceSourceDescriptor<'data
     }
 
     unsafe fn fetch_item(&self, index: usize) -> Self::Item {
-        assert!(index < self.len);
+        debug_assert!(index < self.len);
         let base_ptr: *mut T = self.ptr.get();
         // SAFETY:
         // - The offset in bytes `index * size_of::<T>()` fits in an `isize`, because

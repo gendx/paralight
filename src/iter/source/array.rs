@@ -121,7 +121,7 @@ impl<T: Send, const N: usize> SourceDescriptor for ArraySourceDescriptor<T, N> {
     }
 
     unsafe fn fetch_item(&self, index: usize) -> Self::Item {
-        assert!(index < N);
+        debug_assert!(index < N);
         let base_ptr: *const T = self.array.start();
         // SAFETY:
         // - The offset in bytes `index * size_of::<T>()` fits in an `isize`, because
