@@ -79,6 +79,9 @@ impl<T: Send, const N: usize> SourceCleanup for ArraySourceDescriptor<T, N> {
 
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
+            debug_assert!(range.start <= range.end);
+            debug_assert!(range.start <= N);
+            debug_assert!(range.end <= N);
             let base_ptr: *mut T = self.array.start();
             // SAFETY:
             // - The offset in bytes `range.start * size_of::<T>()` fits in an `isize`,

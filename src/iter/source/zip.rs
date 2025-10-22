@@ -295,6 +295,9 @@ macro_rules! zipable_tuple {
 
             unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
                 if Self::NEEDS_CLEANUP {
+                    debug_assert!(range.start <= range.end);
+                    debug_assert!(range.start <= self.len);
+                    debug_assert!(range.end <= self.len);
                     $(
                         // SAFETY: Given descriptors of equal lengths `len`, the `ZipEqSourceDescriptor`
                         // implements a pass-through of indices in `0..len` to all of them.
@@ -347,6 +350,9 @@ macro_rules! zipable_tuple {
 
             unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
                 if Self::NEEDS_CLEANUP {
+                    debug_assert!(range.start <= range.end);
+                    debug_assert!(range.start <= self.len);
+                    debug_assert!(range.end <= self.len);
                     $( {
                         let this_len = self.descriptors.$i.len();
                         let this_range = range.start.min(this_len)..range.end.min(this_len);
@@ -425,6 +431,9 @@ macro_rules! zipable_tuple {
 
                 unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
                     if Self::NEEDS_CLEANUP {
+                        debug_assert!(range.start <= range.end);
+                        debug_assert!(range.start <= self.len);
+                        debug_assert!(range.end <= self.len);
                         $(
                             // SAFETY: Given descriptors of minimal length `len`, the
                             // `ZipMinSourceDescriptor` implements a pass-through of indices in `0..len`
@@ -581,6 +590,9 @@ where
 
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
+            debug_assert!(range.start <= range.end);
+            debug_assert!(range.start <= self.len);
+            debug_assert!(range.end <= self.len);
             for desc in &self.descriptors {
                 // SAFETY: Given descriptors of equal lengths `len`, the `ZipEqSourceDescriptor`
                 // implements a pass-through of indices in `0..len` to all of them.
@@ -633,6 +645,9 @@ where
 
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
+            debug_assert!(range.start <= range.end);
+            debug_assert!(range.start <= self.len);
+            debug_assert!(range.end <= self.len);
             for desc in &self.descriptors {
                 let this_len = desc.len();
                 let this_range = range.start.min(this_len)..range.end.min(this_len);
@@ -708,6 +723,9 @@ where
 
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
+            debug_assert!(range.start <= range.end);
+            debug_assert!(range.start <= self.len);
+            debug_assert!(range.end <= self.len);
             for desc in &self.descriptors {
                 // SAFETY: Given descriptors of minimal length `len`, the
                 // `ZipMinSourceDescriptor` implements a pass-through of indices in `0..len`
