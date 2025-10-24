@@ -588,7 +588,7 @@ pub trait ParallelSourceExt: ParallelSource {
     fn with_thread_pool<T: GenericThreadPool>(
         self,
         thread_pool: T,
-    ) -> BaseParallelIterator<Self, T> {
+    ) -> BaseParallelIterator<T, Self> {
         BaseParallelIterator {
             thread_pool,
             source: self,
@@ -1274,12 +1274,12 @@ impl<Inner: ParallelSource> ParallelSource for TakeExact<Inner> {
 /// implements the [`ParallelSource`] and [`ParallelSourceExt`] traits, but it
 /// is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
-pub struct BaseParallelIterator<S: ParallelSource, T: GenericThreadPool> {
-    source: S,
+pub struct BaseParallelIterator<T: GenericThreadPool, S: ParallelSource> {
     thread_pool: T,
+    source: S,
 }
 
-impl<S: ParallelSource, T: GenericThreadPool> ParallelIterator for BaseParallelIterator<S, T> {
+impl<T: GenericThreadPool, S: ParallelSource> ParallelIterator for BaseParallelIterator<T, S> {
     type Item = S::Item;
 
     fn upper_bounded_pipeline<Output: Send, Accum>(
