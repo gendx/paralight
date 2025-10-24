@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.0.7 - 2025-10-24
+
+### Added
+
+- A new `GenericThreadPool` trait, allowing to use Paralight with your own
+  thread pool as long as it implements this API
+  (https://github.com/gendx/paralight/pull/10).
+- More debug assertions.
+- More example programs.
+- An FAQ about documentation, testing and usage of unsafe code.
+
+### Changed
+
+- The parallel source over an immutable slice now uses `slice::get_unchecked()`
+  internally for improved performance.
+- Replaced internal assertions by debug assertions, which might improve
+  performance.
+- Upgraded the `nix` dependency to version 0.30.
+- Upgraded the `criterion` dev-dependency to version 0.7.
+- Documentation now uses `feature(doc_cfg)` instead of the deprecated
+  `feature(doc_auto_cfg)`.
+
 ## 0.0.6 - 2025-02-28
 
 ### Added
