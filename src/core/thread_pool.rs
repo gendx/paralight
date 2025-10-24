@@ -141,6 +141,7 @@ impl ThreadPool {
     }
 }
 
+// SAFETY: proof of the safety guarantees is deferred to the inner calls.
 unsafe impl GenericThreadPool for &mut ThreadPool {
     fn upper_bounded_pipeline<Output: Send, Accum>(
         self,
