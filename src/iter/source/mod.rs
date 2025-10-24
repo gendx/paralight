@@ -16,8 +16,7 @@ pub mod vec;
 pub mod vec_deque;
 pub mod zip;
 
-use super::{Accumulator, ParallelIterator};
-use crate::ThreadPool;
+use super::{Accumulator, GenericThreadPool, ParallelIterator};
 use std::ops::ControlFlow;
 
 /// An interface describing how to fetch items from a [`ParallelSource`].
@@ -586,7 +585,10 @@ pub trait ParallelSourceExt: ParallelSource {
     ///     .sum::<i32>();
     /// assert_eq!(sum, 5 * 11);
     /// ```
-    fn with_thread_pool(self, thread_pool: &mut ThreadPool) -> BaseParallelIterator<'_, Self> {
+    fn with_thread_pool<T: GenericThreadPool>(
+        self,
+        thread_pool: T,
+    ) -> BaseParallelIterator<Self, T> {
         BaseParallelIterator {
             thread_pool,
             source: self,
@@ -1272,12 +1274,12 @@ impl<Inner: ParallelSource> ParallelSource for TakeExact<Inner> {
 /// implements the [`ParallelSource`] and [`ParallelSourceExt`] traits, but it
 /// is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
-pub struct BaseParallelIterator<'pool, S: ParallelSource> {
-    thread_pool: &'pool mut ThreadPool,
+pub struct BaseParallelIterator<S: ParallelSource, T: GenericThreadPool> {
     source: S,
+    thread_pool: T,
 }
 
-impl<S: ParallelSource> ParallelIterator for BaseParallelIterator<'_, S> {
+impl<S: ParallelSource, T: GenericThreadPool> ParallelIterator for BaseParallelIterator<S, T> {
     type Item = S::Item;
 
     fn upper_bounded_pipeline<Output: Send, Accum>(

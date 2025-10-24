@@ -14,7 +14,7 @@ use super::range::{
 };
 use super::sync::{make_lending_group, Borrower, Lender, WorkerState};
 use super::util::LifetimeParameterized;
-use crate::iter::{Accumulator, SourceCleanup};
+use crate::iter::{Accumulator, GenericThreadPool, SourceCleanup};
 use crate::macros::{log_debug, log_error, log_warn};
 use crossbeam_utils::CachePadded;
 // Platforms that support `libc::sched_setaffinity()`.
@@ -139,24 +139,12 @@ impl ThreadPool {
     pub fn num_threads(&self) -> NonZeroUsize {
         self.inner.num_threads()
     }
+}
 
-    /// Processes an input of the given length in parallel and returns the
-    /// aggregated output.
-    ///
-    /// With this variant, the pipeline may skip processing items at larger
-    /// indices whenever a call to `process_item` returns
-    /// [`ControlFlow::Break`].
-    ///
-    /// # Safety guarantees
-    ///
-    /// This function guarantees that:
-    /// - the indices passed to `process_item()` are in `0..input_len`,
-    /// - the ranges passed to `cleanup.cleanup_item_range()` are included in
-    ///   `0..input_len`,
-    /// - each index in `0..inner_len` is passed exactly once in calls to
-    ///   `process_item()` and `cleanup.cleanup_item_range()`.
-    pub(crate) fn upper_bounded_pipeline<Output: Send, Accum>(
-        &mut self,
+// SAFETY: proof of the safety guarantees is deferred to the inner calls.
+unsafe impl GenericThreadPool for &mut ThreadPool {
+    fn upper_bounded_pipeline<Output: Send, Accum>(
+        self,
         input_len: usize,
         init: impl Fn() -> Accum + Sync,
         process_item: impl Fn(Accum, usize) -> ControlFlow<Accum, Accum> + Sync,
@@ -169,19 +157,8 @@ impl ThreadPool {
             .upper_bounded_pipeline(input_len, init, process_item, finalize, reduce, cleanup)
     }
 
-    /// Processes an input of the given length in parallel and returns the
-    /// aggregated output.
-    ///
-    /// # Safety guarantees
-    ///
-    /// This function guarantees that:
-    /// - the indices passed to `accum.accumulate()` are in `0..input_len`,
-    /// - the ranges passed to `cleanup.cleanup_item_range()` are included in
-    ///   `0..input_len`,
-    /// - each index in `0..inner_len` is passed exactly once in calls to
-    ///   `accum.accumulate()` and `cleanup.cleanup_item_range()`.
-    pub(crate) fn iter_pipeline<Output: Send>(
-        &mut self,
+    fn iter_pipeline<Output: Send>(
+        self,
         input_len: usize,
         accum: impl Accumulator<usize, Output> + Sync,
         reduce: impl Accumulator<Output, Output>,
