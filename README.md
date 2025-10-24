@@ -470,6 +470,11 @@ This is not an officially supported Google product.
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for details.
 
+Note that Paralight is still an early stage project, with many design changes as
+new features are added. Therefore it is highly recommended to file a
+[GitHub issue](https://github.com/gendx/paralight/issues) for discussion before
+submitting a pull request, unless you're making a trivial change or bug fix.
+
 ## License
 
 This software is distributed under the terms of both the
