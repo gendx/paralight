@@ -104,9 +104,9 @@ pub trait SourceCleanup {
 /// provides additional methods (iterator adaptors) as an extension of this
 /// trait.
 ///
-/// This can be turned into a [`ParallelIterator`] by attaching a [`ThreadPool`]
-/// via the [`with_thread_pool()`](ParallelSourceExt::with_thread_pool)
-/// function.
+/// This can be turned into a [`ParallelIterator`] by attaching a
+/// [`GenericThreadPool`] via the
+/// [`with_thread_pool()`](ParallelSourceExt::with_thread_pool) function.
 pub trait ParallelSource: Sized {
     /// The type of items that this parallel source produces.
     ///
@@ -565,8 +565,8 @@ pub trait ParallelSourceExt: ParallelSource {
         }
     }
 
-    /// Attaches the given [`ThreadPool`] to this [`ParallelSource`] and obtain
-    /// a [`ParallelIterator`].
+    /// Attaches the given [`GenericThreadPool`] to this [`ParallelSource`] and
+    /// obtain a [`ParallelIterator`].
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};

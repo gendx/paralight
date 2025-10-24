@@ -2906,19 +2906,20 @@ pub trait ParallelIteratorExt: ParallelIterator {
 }
 
 /// A thread pool backend that can execute parallel iterators.
-/// You most likely won't have to interact with this trait directly,
-/// as it is implemented for [`&mut ThreadPool`](crate::ThreadPool),
-/// and interacting with a thread pool is done via the
+///
+/// You most likely won't have to interact with this trait directly, as it is
+/// implemented for [`&mut ThreadPool`](crate::ThreadPool), and interacting with
+/// a thread pool is done via the
 /// [`with_thread_pool()`](ParallelSourceExt::with_thread_pool) iterator
 /// adaptor. You can implement this trait if you want to use Paralight iterators
 /// with an alternate thread pool implementation that you provide.
 ///
 /// # Safety
 ///
-/// This trait is marked as `unsafe`, because implementers **must**
-/// ensure the safety guarantees of
-/// [`GenericThreadPool::upper_bounded_pipeline`]
-/// and [`GenericThreadPool::iter_pipeline`].
+/// This trait is marked as `unsafe`, because implementers **must** ensure the
+/// safety guarantees of
+/// [`upper_bounded_pipeline()`](Self::upper_bounded_pipeline) and
+/// [`iter_pipeline()`](Self::iter_pipeline).
 pub unsafe trait GenericThreadPool {
     /// Processes an input of the given length in parallel and returns the
     /// aggregated output.

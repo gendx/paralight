@@ -192,9 +192,9 @@ scheduler works on your OS.
 
 To create parallel pipelines, be mindful that the
 [`with_thread_pool()`](iter::ParallelSourceExt::with_thread_pool) function takes
-the thread pool by mutable reference [`&mut`](reference). This is a deliberate
-design choice because only one pipeline can be run at a time on a given thread
-pool.
+a [`ThreadPool`](ThreadPool) by mutable reference [`&mut`](reference). This is a
+deliberate design choice because only one pipeline can be run at a time on a
+given thread pool.
 
 To release the resources (i.e. the worker threads) created by a
 [`ThreadPool`](ThreadPool), simply [`drop()`](drop) it.
@@ -280,6 +280,16 @@ let sum = matrix
 // ⚠️ This statement is never reached due to the panic/deadlock!
 assert_eq!(sum, 990_000);
 ```
+
+### Bringing your own thread pool
+
+As an alternative to the provided [`ThreadPool`](ThreadPool), you can use
+Paralight with any thread pool that implements the
+[`GenericThreadPool`](iter::GenericThreadPool) interface, via the
+[`with_thread_pool()`](iter::ParallelSourceExt::with_thread_pool) adaptor.
+
+Note that the [`GenericThreadPool`](iter::GenericThreadPool) trait is marked as
+`unsafe` due to the requirements that your implementation must uphold.
 
 ## Limitations
 
@@ -442,11 +452,13 @@ list of places where `unsafe` is needed.
   API. Internally, this causes `unsafe` blocks each time the trait is
   implemented, and the associated safety comments are a good opportunity to
   check correctness.
-
-Note that the last point relies on _correctness_ of the (safe) work-stealing
-implementation in
-[core/range.rs](https://github.com/gendx/paralight/blob/main/src/core/range.rs)
-and that's still missing a formal proof.
+- Symmetrically, [`GenericThreadPool`](iter::GenericThreadPool) is an `unsafe`
+  trait, implemented for `&mut ThreadPool` in
+  [core/thread_pool.rs](https://github.com/gendx/paralight/blob/main/src/core/thread_pool.rs).
+  This in turn relies on _correctness_ of the (safe) work-stealing
+  implementation in
+  [core/range.rs](https://github.com/gendx/paralight/blob/main/src/core/range.rs),
+  that is still missing a formal proof.
 
 And that's all the `unsafe` code there is!
 
