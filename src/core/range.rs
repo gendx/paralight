@@ -281,7 +281,10 @@ impl RangeFactory for WorkStealingRangeFactory {
 
     fn new(num_threads: usize) -> Self {
         if u32::try_from(num_threads).is_err() {
-            panic!("Only up to {} threads (2^32 - 1) are supported", u32::MAX);
+            panic!(
+                "cannot spawn {num_threads} threads: only up to {} threads (2^32 - 1) are supported",
+                u32::MAX
+            );
         }
         Self {
             ranges: (0..num_threads).map(|_| AtomicRange::default()).collect(),
@@ -323,7 +326,7 @@ impl RangeOrchestrator for WorkStealingRangeOrchestrator {
         let num_threads = self.ranges.len() as u64;
         let num_elements = u32::try_from(num_elements).unwrap_or_else(|_| {
             panic!(
-                "Only ranges of up to {} elements (2^32 - 1) are supported",
+                "cannot process range of {num_elements} elements: only ranges of up to {} elements (2^32 - 1) are supported",
                 u32::MAX
             );
         }) as u64;
@@ -1102,13 +1105,17 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "Only up to 4294967295 threads (2^32 - 1) are supported")]
+    #[should_panic(
+        expected = "cannot spawn 10000000000 threads: only up to 4294967295 threads (2^32 - 1) are supported"
+    )]
     fn test_work_stealing_range_too_many_threads() {
         WorkStealingRangeFactory::new(10_000_000_000);
     }
 
     #[test]
-    #[should_panic(expected = "Only ranges of up to 4294967295 elements (2^32 - 1) are supported")]
+    #[should_panic(
+        expected = "cannot process range of 10000000000 elements: only ranges of up to 4294967295 elements (2^32 - 1) are supported"
+    )]
     fn test_work_stealing_range_too_many_items() {
         let factory = WorkStealingRangeFactory::new(4);
         let orchestrator = factory.orchestrator();

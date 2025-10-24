@@ -16,7 +16,7 @@
 #![cfg_attr(not(test), forbid(clippy::undocumented_unsafe_blocks))]
 #![cfg_attr(
     all(test, feature = "nightly_tests"),
-    feature(coverage_attribute, negative_impls)
+    feature(cfg_sanitize, coverage_attribute, negative_impls)
 )]
 #![cfg_attr(
     feature = "nightly",
@@ -125,6 +125,9 @@ mod test {
                 test_source_slice_mut_not_sync,
                 test_source_range,
                 test_source_range_backwards => fail("cannot iterate over a backward range"),
+                #[cfg(feature = "nightly_tests")]
+                #[cfg(not(any(miri, sanitize = "thread")))]
+                test_source_range_u32max,
                 #[cfg(feature = "nightly")]
                 test_source_range_u64,
                 #[cfg(feature = "nightly")]
@@ -1122,6 +1125,71 @@ mod test {
             .into_par_iter()
             .with_thread_pool(&mut thread_pool)
             .sum::<usize>();
+    }
+
+    #[cfg(feature = "nightly_tests")]
+    #[cfg(not(any(miri, sanitize = "thread")))]
+    fn test_source_range_u32max(range_strategy: RangeStrategy) {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let sum = (0..u32::MAX as usize)
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .map(|x| x as u64)
+            .sum::<u64>();
+        assert_eq!(sum, (u32::MAX as u64 - 1) * u32::MAX as u64 / 2);
+    }
+
+    #[cfg(feature = "nightly_tests")]
+    #[cfg(not(any(miri, sanitize = "thread")))]
+    #[test]
+    fn test_source_range_u33max_fixed() {
+        #[cfg(all(not(miri), feature = "log"))]
+        LazyLock::force(&ENV_LOGGER_INIT);
+
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy: RangeStrategy::Fixed,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let sum = (0..u32::MAX as usize * 2)
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .map(|x| x as u64)
+            .reduce(|| 0, |a, b| a.wrapping_add(b));
+        assert_eq!(sum, (u32::MAX as u64 * 2 - 1).wrapping_mul(u32::MAX as u64));
+    }
+
+    #[cfg(feature = "nightly_tests")]
+    #[cfg(not(any(miri, sanitize = "thread")))]
+    #[test]
+    #[should_panic(
+        expected = "cannot process range of 8589934590 elements: only ranges of up to 4294967295 elements (2^32 - 1) are supported"
+    )]
+    fn test_source_range_u33max_work_stealing() {
+        #[cfg(all(not(miri), feature = "log"))]
+        LazyLock::force(&ENV_LOGGER_INIT);
+
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy: RangeStrategy::WorkStealing,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let sum = (0..u32::MAX as usize * 2)
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .map(|x| x as u64)
+            .reduce(|| 0, |a, b| a.wrapping_add(b));
+        assert_eq!(sum, (u32::MAX as u64 * 2 - 1).wrapping_mul(u32::MAX as u64));
     }
 
     #[cfg(feature = "nightly")]
