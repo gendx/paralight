@@ -40,8 +40,8 @@ pub use core::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPool, ThreadP
 mod test {
     use super::*;
     use crate::iter::{
-        IntoParallelRefMutSource, IntoParallelRefSource, IntoParallelSource, ParallelIterator,
-        ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+        GenericThreadPool, IntoParallelRefMutSource, IntoParallelRefSource, IntoParallelSource,
+        ParallelIterator, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
     };
     use rand::Rng;
     use std::cell::Cell;
@@ -58,7 +58,7 @@ mod test {
     macro_rules! parallelism_tests {
         (
             $mod:ident,
-            $range_strategy:expr,
+            $thread_pool:expr,
             $( $( #[ $attrs:meta ] )* $case:ident $( => fail($msg:expr) )? ,)*
         ) => {
             mod $mod {
@@ -71,7 +71,7 @@ mod test {
                     fn $case() {
                         #[cfg(all(not(miri), feature = "log"))]
                         LazyLock::force(&ENV_LOGGER_INIT);
-                        $crate::test::$case($range_strategy);
+                        $crate::test::$case($thread_pool);
                     }
                 )*
             }
@@ -79,10 +79,10 @@ mod test {
     }
 
     macro_rules! all_parallelism_tests {
-        ( $mod:ident, $range_strategy:expr ) => {
+        ( $mod:ident, $thread_pool:expr ) => {
             parallelism_tests!(
                 $mod,
-                $range_strategy,
+                $thread_pool,
                 test_pipeline_sum_integers,
                 test_pipeline_empty_input,
                 test_pipeline_one_panic => fail("worker thread(s) panicked!"),
@@ -229,8 +229,24 @@ mod test {
         };
     }
 
-    all_parallelism_tests!(fixed, RangeStrategy::Fixed);
-    all_parallelism_tests!(work_stealing, RangeStrategy::WorkStealing);
+    all_parallelism_tests!(
+        fixed,
+        ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy: RangeStrategy::Fixed,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build()
+    );
+    all_parallelism_tests!(
+        work_stealing,
+        ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy: RangeStrategy::WorkStealing,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build()
+    );
 
     #[cfg(not(miri))]
     const INPUT_LEN: u64 = 100_000;
@@ -246,14 +262,10 @@ mod test {
         10_000
     };
 
-    fn test_pipeline_sum_integers(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_pipeline_sum_integers<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let sum = input
             .par_iter()
@@ -262,14 +274,10 @@ mod test {
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_pipeline_empty_input(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_pipeline_empty_input<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         // The input can be empty.
         let input: [u64; 0] = [];
         let sum = input
@@ -279,14 +287,10 @@ mod test {
         assert_eq!(sum, 0);
     }
 
-    fn test_pipeline_one_panic(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_pipeline_one_panic<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         input
             .par_iter()
@@ -306,14 +310,10 @@ mod test {
             );
     }
 
-    fn test_pipeline_some_panics(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_pipeline_some_panics<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         input
             .par_iter()
@@ -333,14 +333,10 @@ mod test {
             );
     }
 
-    fn test_pipeline_many_panics(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_pipeline_many_panics<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         input
             .par_iter()
@@ -360,14 +356,10 @@ mod test {
             );
     }
 
-    fn test_pipelines_sum_twice(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_pipelines_sum_twice<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         // The same input can be processed multiple times on the thread pool.
         let sum1 = input
@@ -383,14 +375,10 @@ mod test {
         assert_eq!(sum2, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_pipelines_several_inputs(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_pipelines_several_inputs<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         // Several inputs can be used successively.
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let sum1 = input
@@ -409,14 +397,10 @@ mod test {
         assert_eq!(sum2, INPUT_LEN * (2 * INPUT_LEN + 1));
     }
 
-    fn test_pipelines_several_functions(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_pipelines_several_functions<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         // Several functions can be computed successively.
         let sum = input
@@ -445,14 +429,10 @@ mod test {
         );
     }
 
-    fn test_pipelines_several_accumulators(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_pipelines_several_accumulators<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         // Several accumulator types can be used successively.
         let sum1 = input
@@ -473,14 +453,10 @@ mod test {
         assert_eq!(sum2, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_pipelines_several_input_types(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_pipelines_several_input_types<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         // Several input types can be used successively.
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let sum = input
@@ -504,14 +480,10 @@ mod test {
         assert_eq!(sum_lengths, expected_sum_lengths(INPUT_LEN));
     }
 
-    fn test_pipelines_several_types(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_pipelines_several_types<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         // Pipelines with different types can be used successively.
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let sum = input
@@ -556,14 +528,10 @@ mod test {
     impl !Send for NotSend {}
 
     #[cfg(feature = "nightly_tests")]
-    fn test_pipeline_non_send_functions(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_pipeline_non_send_functions<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         // Non-Send functions can be used in the pipeline.
         let init = NotSend(0);
@@ -616,14 +584,10 @@ mod test {
     }
 
     #[cfg(feature = "nightly_tests")]
-    fn test_pipeline_non_send_input(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_pipeline_non_send_input<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         // A non-Send input can be used in the pipeline.
         let input = (0..=INPUT_LEN).map(NotSend).collect::<Vec<NotSend>>();
         let sum = input
@@ -633,14 +597,10 @@ mod test {
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_pipeline_non_sync_output(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_pipeline_non_sync_output<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         // A non-Sync output can be used in the pipeline.
         let sum = input
@@ -657,14 +617,10 @@ mod test {
     }
 
     #[cfg(feature = "nightly_tests")]
-    fn test_pipeline_non_send_accumulator(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_pipeline_non_send_accumulator<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         // A non-Send accumulator can be used in the pipeline.
         let sum = input
@@ -679,14 +635,10 @@ mod test {
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_pipeline_non_sync_accumulator(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_pipeline_non_sync_accumulator<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         // A non-Sync accumulator can be used in the pipeline.
         let sum = input
@@ -704,14 +656,10 @@ mod test {
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_pipeline_non_send_sync_accumulator(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_pipeline_non_send_sync_accumulator<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         // A neither Send nor Sync accumulator can be used in the pipeline.
         let sum = input
@@ -729,14 +677,10 @@ mod test {
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_pipeline_local_lifetime_functions(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_pipeline_local_lifetime_functions<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         // The pipeline functions can borrow local values (and therefore have a local
         // lifetime).
         let zero = 0;
@@ -790,14 +734,10 @@ mod test {
         assert_eq!(sum4, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_pipeline_local_lifetime_input(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_pipeline_local_lifetime_input<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         // The pipeline input can borrow local values (and therefore have a local
         // lifetime).
         let token = ();
@@ -813,14 +753,10 @@ mod test {
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_pipeline_local_lifetime_output(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_pipeline_local_lifetime_output<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         // The pipeline output can borrow local values (and therefore have a local
         // lifetime).
         let token = ();
@@ -840,14 +776,10 @@ mod test {
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_pipeline_local_lifetime_accumulator(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_pipeline_local_lifetime_accumulator<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         // The pipeline accumulator can borrow local values (and therefore have a local
         // lifetime).
         let token = ();
@@ -867,14 +799,10 @@ mod test {
     }
 
     #[cfg(feature = "nightly")]
-    fn test_source_array(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_array<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input: [u64; ARRAY_LEN as usize + 1] = std::array::from_fn(|i| i as u64);
         let sum = input
             .into_par_iter()
@@ -899,14 +827,10 @@ mod test {
     }
 
     #[cfg(feature = "nightly")]
-    fn test_source_array_boxed(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_array_boxed<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input: [Box<u64>; ARRAY_LEN as usize + 1] = std::array::from_fn(|i| Box::new(i as u64));
         let sum = input
             .into_par_iter()
@@ -932,14 +856,10 @@ mod test {
     }
 
     #[cfg(feature = "nightly")]
-    fn test_source_array_panic(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_array_panic<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input: [Box<u64>; ARRAY_LEN as usize + 1] = std::array::from_fn(|i| Box::new(i as u64));
         input
             .into_par_iter()
@@ -952,14 +872,10 @@ mod test {
     }
 
     #[cfg(feature = "nightly")]
-    fn test_source_array_find_any_panic(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_array_find_any_panic<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input: [Box<u64>; ARRAY_LEN as usize + 1] = std::array::from_fn(|i| Box::new(i as u64));
         input
             .into_par_iter()
@@ -974,14 +890,10 @@ mod test {
     }
 
     #[cfg(feature = "nightly")]
-    fn test_source_array_find_first_panic(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_array_find_first_panic<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input: [Box<u64>; ARRAY_LEN as usize + 1] = std::array::from_fn(|i| Box::new(i as u64));
         input
             .into_par_iter()
@@ -995,14 +907,10 @@ mod test {
             });
     }
 
-    fn test_source_boxed_slice(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_boxed_slice<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).map(Box::new).collect::<Box<[Box<u64>]>>();
         let sum = input
             .into_par_iter()
@@ -1027,14 +935,10 @@ mod test {
         assert_eq!(needle, Some(Box::new(9)));
     }
 
-    fn test_source_slice(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_slice<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let sum = input
             .par_iter()
@@ -1044,14 +948,10 @@ mod test {
     }
 
     #[cfg(feature = "nightly_tests")]
-    fn test_source_slice_not_send(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_slice_not_send<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).map(NotSend).collect::<Vec<NotSend>>();
         let sum = input
             .par_iter()
@@ -1060,14 +960,10 @@ mod test {
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_source_slice_mut(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_slice_mut<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let mut values = (0..=INPUT_LEN).collect::<Vec<u64>>();
         values
             .par_iter_mut()
@@ -1076,14 +972,10 @@ mod test {
         assert_eq!(values, (0..=INPUT_LEN).map(|x| x * 2).collect::<Vec<_>>());
     }
 
-    fn test_source_slice_mut_not_sync(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_slice_mut_not_sync<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let mut values = (0..=INPUT_LEN).map(Cell::new).collect::<Vec<Cell<u64>>>();
         values
             .par_iter_mut()
@@ -1097,14 +989,10 @@ mod test {
         );
     }
 
-    fn test_source_range(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_range<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let sum = (0..INPUT_LEN as usize)
             .into_par_iter()
             .with_thread_pool(&mut thread_pool)
@@ -1113,14 +1001,10 @@ mod test {
     }
 
     #[allow(clippy::reversed_empty_ranges)]
-    fn test_source_range_backwards(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_range_backwards<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         (10..0)
             .into_par_iter()
             .with_thread_pool(&mut thread_pool)
@@ -1129,14 +1013,10 @@ mod test {
 
     #[cfg(feature = "nightly_tests")]
     #[cfg(not(any(miri, sanitize = "thread")))]
-    fn test_source_range_u32max(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_range_u32max<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let sum = (0..u32::MAX as usize)
             .into_par_iter()
             .with_thread_pool(&mut thread_pool)
@@ -1193,14 +1073,10 @@ mod test {
     }
 
     #[cfg(feature = "nightly")]
-    fn test_source_range_u64(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_range_u64<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let sum = (0..INPUT_LEN)
             .into_par_iter()
             .with_thread_pool(&mut thread_pool)
@@ -1209,28 +1085,20 @@ mod test {
     }
 
     #[cfg(feature = "nightly")]
-    fn test_source_range_u128_too_large(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_range_u128_too_large<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         (0u128..0x1_0000_0000_0000_0000)
             .into_par_iter()
             .with_thread_pool(&mut thread_pool)
             .sum::<u128>();
     }
 
-    fn test_source_range_inclusive(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_range_inclusive<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let sum = (0..=INPUT_LEN as usize)
             .into_par_iter()
             .with_thread_pool(&mut thread_pool)
@@ -1239,28 +1107,20 @@ mod test {
     }
 
     #[allow(clippy::reversed_empty_ranges)]
-    fn test_source_range_inclusive_backwards(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_range_inclusive_backwards<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         (10..=0)
             .into_par_iter()
             .with_thread_pool(&mut thread_pool)
             .sum::<usize>();
     }
 
-    fn test_source_range_inclusive_too_large(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_range_inclusive_too_large<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         (0..=usize::MAX)
             .into_par_iter()
             .with_thread_pool(&mut thread_pool)
@@ -1268,14 +1128,10 @@ mod test {
     }
 
     #[cfg(feature = "nightly")]
-    fn test_source_range_inclusive_u64(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_range_inclusive_u64<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let sum = (0..=INPUT_LEN)
             .into_par_iter()
             .with_thread_pool(&mut thread_pool)
@@ -1284,14 +1140,10 @@ mod test {
     }
 
     #[cfg(feature = "nightly")]
-    fn test_source_range_inclusive_u64_too_large(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_range_inclusive_u64_too_large<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         (0..=u64::MAX)
             .into_par_iter()
             .with_thread_pool(&mut thread_pool)
@@ -1299,28 +1151,20 @@ mod test {
     }
 
     #[cfg(feature = "nightly")]
-    fn test_source_range_inclusive_u128_too_large(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_range_inclusive_u128_too_large<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         (0u128..=0x1_0000_0000_0000_0000)
             .into_par_iter()
             .with_thread_pool(&mut thread_pool)
             .sum::<u128>();
     }
 
-    fn test_source_vec(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_vec<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let sum = input
             .into_par_iter()
@@ -1329,14 +1173,10 @@ mod test {
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_source_vec_boxed(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_vec_boxed<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
         let sum = input
             .into_par_iter()
@@ -1346,14 +1186,10 @@ mod test {
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_source_vec_find_any(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_vec_find_any<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
         let needle = input
             .into_par_iter()
@@ -1363,14 +1199,10 @@ mod test {
         assert_eq!(*needle.unwrap() % 10, 9);
     }
 
-    fn test_source_vec_find_first(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_vec_find_first<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
         let needle = input
             .into_par_iter()
@@ -1379,14 +1211,10 @@ mod test {
         assert_eq!(needle, Some(Box::new(9)));
     }
 
-    fn test_source_vec_panic(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_vec_panic<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
         input
             .into_par_iter()
@@ -1398,14 +1226,10 @@ mod test {
             });
     }
 
-    fn test_source_vec_find_any_panic(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_vec_find_any_panic<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
         input
             .into_par_iter()
@@ -1419,14 +1243,10 @@ mod test {
             });
     }
 
-    fn test_source_vec_find_first_panic(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_vec_find_first_panic<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
         input
             .into_par_iter()
@@ -1440,14 +1260,10 @@ mod test {
             });
     }
 
-    fn test_source_vec_deque_ref(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_vec_deque_ref<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         // Simple contiguous VecDeque.
         let input = (0..=INPUT_LEN).collect::<VecDeque<u64>>();
         assert!(vec_deque_is_contiguous(&input));
@@ -1470,14 +1286,10 @@ mod test {
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_source_vec_deque_ref_mut(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_vec_deque_ref_mut<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         // Simple contiguous VecDeque.
         let mut values = (0..=INPUT_LEN).collect::<VecDeque<u64>>();
         assert!(vec_deque_is_contiguous(&values));
@@ -1506,14 +1318,10 @@ mod test {
         );
     }
 
-    fn test_source_adaptor_chain(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_adaptor_chain<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input1 = (0..INPUT_LEN / 2).collect::<Vec<u64>>();
         let input2 = (INPUT_LEN / 2..=INPUT_LEN).collect::<Vec<u64>>();
         let sum = input1
@@ -1524,14 +1332,10 @@ mod test {
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_source_adaptor_chain_cleanup(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_adaptor_chain_cleanup<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input1 = (0..INPUT_LEN / 2).map(Box::new).collect::<Vec<Box<u64>>>();
         let input2 = (INPUT_LEN / 2..=INPUT_LEN)
             .map(Box::new)
@@ -1563,14 +1367,10 @@ mod test {
         assert_eq!(needle, Some(Box::new(9)));
     }
 
-    fn test_source_adaptor_chain_overflow(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_adaptor_chain_overflow<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         (0..usize::MAX)
             .into_par_iter()
             .chain((0..1).into_par_iter())
@@ -1578,14 +1378,10 @@ mod test {
             .sum::<usize>();
     }
 
-    fn test_source_adaptor_chains_cleanup(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_adaptor_chains_cleanup<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let make_chained_iters = || {
             // Make a binary tree of chained iterators.
             let inputs: [Vec<Box<u64>>; 16] = std::array::from_fn(|chunk| {
@@ -1629,14 +1425,10 @@ mod test {
         assert_eq!(needle, Some(Box::new(9)));
     }
 
-    fn test_source_adaptor_enumerate(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_adaptor_enumerate<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let sum_squares = input
             .par_iter()
@@ -1650,14 +1442,10 @@ mod test {
         );
     }
 
-    fn test_source_adaptor_enumerate_cleanup(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_adaptor_enumerate_cleanup<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
         let sum_squares = input
             .clone()
@@ -1690,14 +1478,10 @@ mod test {
         assert_eq!(needle, Some((9, Box::new(9))));
     }
 
-    fn test_source_adaptor_rev(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_adaptor_rev<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let sum = input
             .par_iter()
@@ -1709,14 +1493,10 @@ mod test {
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN - 1) * (INPUT_LEN + 1) / 6);
     }
 
-    fn test_source_adaptor_rev_cleanup(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_adaptor_rev_cleanup<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
 
         let sum = input
@@ -1747,14 +1527,10 @@ mod test {
         assert_eq!(needle, Some(Box::new(expected)));
     }
 
-    fn test_source_adaptor_skip(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_adaptor_skip<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (1..=INPUT_LEN).collect::<Vec<u64>>();
         let sum = input
             .par_iter()
@@ -1771,14 +1547,10 @@ mod test {
         assert_eq!(sum_empty, 0);
     }
 
-    fn test_source_adaptor_skip_cleanup(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_adaptor_skip_cleanup<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (1..=2 * INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
 
         // Skip less than half of the items.
@@ -1827,14 +1599,10 @@ mod test {
         }
     }
 
-    fn test_source_adaptor_skip_exact(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_adaptor_skip_exact<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (1..=INPUT_LEN).collect::<Vec<u64>>();
         let sum = input
             .par_iter()
@@ -1844,14 +1612,10 @@ mod test {
         assert_eq!(sum, INPUT_LEN.div_ceil(2) * ((3 * INPUT_LEN) / 2 + 1) / 2);
     }
 
-    fn test_source_adaptor_skip_exact_too_much(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_adaptor_skip_exact_too_much<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (1..=INPUT_LEN).collect::<Vec<u64>>();
         input
             .par_iter()
@@ -1860,14 +1624,10 @@ mod test {
             .sum::<u64>();
     }
 
-    fn test_source_adaptor_step_by(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_adaptor_step_by<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let mut input = (0..=2 * INPUT_LEN).collect::<Vec<u64>>();
         let sum_by_1 = input
             .par_iter()
@@ -1899,14 +1659,10 @@ mod test {
         assert_eq!(sum_empty, 0);
     }
 
-    fn test_source_adaptor_step_by_cleanup(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_adaptor_step_by_cleanup<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=3 * INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
 
         let sum_by_3 = input
@@ -1955,14 +1711,10 @@ mod test {
         assert_eq!(needle, Some(Box::new(49)));
     }
 
-    fn test_source_adaptor_step_by_one(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_adaptor_step_by_one<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
 
         let sum = input
@@ -1991,14 +1743,10 @@ mod test {
         assert_eq!(needle, Some(Box::new(9)));
     }
 
-    fn test_source_adaptor_step_by_zero(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_adaptor_step_by_zero<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         input
             .par_iter()
@@ -2007,28 +1755,20 @@ mod test {
             .sum::<u64>();
     }
 
-    fn test_source_adaptor_step_by_zero_empty(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_adaptor_step_by_zero_empty<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         [].par_iter()
             .step_by(0)
             .with_thread_pool(&mut thread_pool)
             .sum::<u64>();
     }
 
-    fn test_source_adaptor_take(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_adaptor_take<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (1..=INPUT_LEN).collect::<Vec<u64>>();
         let sum = input
             .par_iter()
@@ -2045,14 +1785,10 @@ mod test {
         assert_eq!(sum_all, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_source_adaptor_take_cleanup(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_adaptor_take_cleanup<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         // Take less than half or more than half of the items.
         for take in [INPUT_LEN / 2, 3 * INPUT_LEN / 2] {
             let input = (1..=2 * INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
@@ -2084,14 +1820,10 @@ mod test {
         }
     }
 
-    fn test_source_adaptor_take_exact(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_adaptor_take_exact<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (1..=INPUT_LEN).collect::<Vec<u64>>();
         let sum = input
             .par_iter()
@@ -2101,14 +1833,10 @@ mod test {
         assert_eq!(sum, ((INPUT_LEN / 2) * (INPUT_LEN / 2 + 1)) / 2);
     }
 
-    fn test_source_adaptor_take_exact_too_much(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_adaptor_take_exact_too_much<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (1..=INPUT_LEN).collect::<Vec<u64>>();
         input
             .par_iter()
@@ -2117,14 +1845,10 @@ mod test {
             .sum::<u64>();
     }
 
-    fn test_source_adaptor_zip_eq(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_adaptor_zip_eq<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let left = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let right = (INPUT_LEN..=2 * INPUT_LEN).collect::<Vec<u64>>();
 
@@ -2147,14 +1871,10 @@ mod test {
         assert_eq!(sum_right, 3 * INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_source_adaptor_zip_eq_cleanup(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_adaptor_zip_eq_cleanup<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let left = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
         let right = (INPUT_LEN..=2 * INPUT_LEN)
             .map(Box::new)
@@ -2207,14 +1927,10 @@ mod test {
         assert_eq!(needle, Some([Box::new(9), Box::new(INPUT_LEN + 9)]));
     }
 
-    fn test_source_adaptor_zip_eq_unequal_array(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_adaptor_zip_eq_unequal_array<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let left = (0..=2 * INPUT_LEN).collect::<Vec<u64>>();
         let right = (INPUT_LEN..=2 * INPUT_LEN).collect::<Vec<u64>>();
         [left.par_iter(), right.par_iter()]
@@ -2224,14 +1940,10 @@ mod test {
             .reduce(|| [0, 0], |[a, b], [c, d]| [a + c, b + d]);
     }
 
-    fn test_source_adaptor_zip_eq_unequal_tuple(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_adaptor_zip_eq_unequal_tuple<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let left = (0..=2 * INPUT_LEN).collect::<Vec<u64>>();
         let right = (INPUT_LEN..=2 * INPUT_LEN).collect::<Vec<u64>>();
         (left.par_iter(), right.par_iter())
@@ -2241,14 +1953,10 @@ mod test {
             .reduce(|| (0, 0), |(a, b), (c, d)| (a + c, b + d));
     }
 
-    fn test_source_adaptor_zip_max(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_adaptor_zip_max<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let left = (0..=2 * INPUT_LEN).collect::<Vec<u64>>();
         let right = (INPUT_LEN..=2 * INPUT_LEN).collect::<Vec<u64>>();
 
@@ -2271,14 +1979,10 @@ mod test {
         assert_eq!(sum_right, 3 * INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_source_adaptor_zip_max_cleanup(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_adaptor_zip_max_cleanup<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let left = (0..=2 * INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
         let right = (INPUT_LEN..=2 * INPUT_LEN)
             .map(Box::new)
@@ -2335,14 +2039,10 @@ mod test {
         );
     }
 
-    fn test_source_adaptor_zip_min(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_adaptor_zip_min<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let left = (0..=2 * INPUT_LEN).collect::<Vec<u64>>();
         let right = (INPUT_LEN..=2 * INPUT_LEN).collect::<Vec<u64>>();
 
@@ -2365,14 +2065,10 @@ mod test {
         assert_eq!(sum_right, 3 * INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_source_adaptor_zip_min_cleanup(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_source_adaptor_zip_min_cleanup<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let left = (0..=2 * INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
         let right = (INPUT_LEN..=2 * INPUT_LEN)
             .map(Box::new)
@@ -2425,14 +2121,10 @@ mod test {
         assert_eq!(needle, Some([Box::new(9), Box::new(INPUT_LEN + 9)]));
     }
 
-    fn test_adaptor_all(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_all<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let all_even = input
             .par_iter()
@@ -2459,14 +2151,10 @@ mod test {
         assert!(all_empty);
     }
 
-    fn test_adaptor_any(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_any<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let any_even = input
             .par_iter()
@@ -2493,14 +2181,10 @@ mod test {
         assert!(!any_empty);
     }
 
-    fn test_adaptor_cloned(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_cloned<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
         let sum = input
             .par_iter()
@@ -2516,15 +2200,11 @@ mod test {
         assert_eq!(*sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_adaptor_cmp(range_strategy: RangeStrategy) {
+    fn test_adaptor_cmp<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         use std::cmp::Ordering;
-
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
 
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let ordering = (input.par_iter(), input.par_iter())
@@ -2552,15 +2232,11 @@ mod test {
         assert_eq!(ordering, Ordering::Greater);
     }
 
-    fn test_adaptor_cmp_by(range_strategy: RangeStrategy) {
+    fn test_adaptor_cmp_by<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         use std::cmp::Ordering;
-
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
 
         let left = (0..=INPUT_LEN).map(|i| (i, 0)).collect::<Vec<(u64, u64)>>();
         let right = (0..=INPUT_LEN).map(|i| (0, i)).collect::<Vec<(u64, u64)>>();
@@ -2579,15 +2255,11 @@ mod test {
         assert_eq!(ordering, Ordering::Less);
     }
 
-    fn test_adaptor_cmp_by_key(range_strategy: RangeStrategy) {
+    fn test_adaptor_cmp_by_key<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         use std::cmp::Ordering;
-
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
 
         let left = (0..=INPUT_LEN).map(|i| (i, 0)).collect::<Vec<(u64, u64)>>();
         let right = (0..=INPUT_LEN).map(|i| (i, 1)).collect::<Vec<(u64, u64)>>();
@@ -2617,15 +2289,11 @@ mod test {
         assert_eq!(ordering, Ordering::Greater);
     }
 
-    fn test_adaptor_cmp_by_keys(range_strategy: RangeStrategy) {
+    fn test_adaptor_cmp_by_keys<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         use std::cmp::Ordering;
-
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
 
         let left = (0..=INPUT_LEN).map(|i| (i, 0)).collect::<Vec<(u64, u64)>>();
         let right = (0..=INPUT_LEN).map(|i| (1, i)).collect::<Vec<(u64, u64)>>();
@@ -2655,14 +2323,10 @@ mod test {
         assert_eq!(ordering, Ordering::Greater);
     }
 
-    fn test_adaptor_copied(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_copied<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let sum = input
             .par_iter()
@@ -2672,14 +2336,10 @@ mod test {
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_adaptor_eq(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_eq<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let equal = (input.par_iter(), input.par_iter())
             .zip_eq()
@@ -2697,14 +2357,10 @@ mod test {
         assert!(!equal);
     }
 
-    fn test_adaptor_eq_by_key(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_eq_by_key<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let left = (0..=INPUT_LEN).map(|i| (i, 0)).collect::<Vec<(u64, u64)>>();
         let right = (0..=INPUT_LEN).map(|i| (i, 1)).collect::<Vec<(u64, u64)>>();
         let equal = (left.par_iter(), right.par_iter())
@@ -2720,14 +2376,10 @@ mod test {
         assert!(!equal);
     }
 
-    fn test_adaptor_eq_by_keys(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_eq_by_keys<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let left = (0..=INPUT_LEN).map(|i| (i, 0)).collect::<Vec<(u64, u64)>>();
         let right = (0..=INPUT_LEN).map(|i| (1, i)).collect::<Vec<(u64, u64)>>();
         let equal = (left.par_iter(), right.par_iter())
@@ -2743,14 +2395,10 @@ mod test {
         assert!(!equal);
     }
 
-    fn test_adaptor_filter(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_filter<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let sum = input
             .par_iter()
@@ -2760,14 +2408,10 @@ mod test {
         assert_eq!(sum, (INPUT_LEN / 2) * (INPUT_LEN / 2 + 1));
     }
 
-    fn test_adaptor_filter_find_first(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_filter_find_first<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let needle = input
             .par_iter()
@@ -2777,14 +2421,10 @@ mod test {
         assert_eq!(needle, Some(&41));
     }
 
-    fn test_adaptor_filter_map(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_filter_map<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let sum = input
             .par_iter()
@@ -2794,14 +2434,10 @@ mod test {
         assert_eq!(sum, 3 * (INPUT_LEN / 2) * (INPUT_LEN / 2 + 1));
     }
 
-    fn test_adaptor_find_any(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_find_any<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let first = input
             .par_iter()
@@ -2845,14 +2481,10 @@ mod test {
         assert_eq!(empty, None);
     }
 
-    fn test_adaptor_find_first(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_find_first<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let first = input
             .par_iter()
@@ -2903,14 +2535,10 @@ mod test {
         assert_eq!(empty, None);
     }
 
-    fn test_adaptor_find_map_any(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_find_map_any<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let first = input
             .par_iter()
@@ -2954,14 +2582,10 @@ mod test {
         assert_eq!(empty, None);
     }
 
-    fn test_adaptor_find_map_first(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_find_map_first<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let first = input
             .par_iter()
@@ -3012,14 +2636,10 @@ mod test {
         assert_eq!(empty, None);
     }
 
-    fn test_adaptor_for_each(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_for_each<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let set = Mutex::new(HashSet::new());
         input
@@ -3033,14 +2653,10 @@ mod test {
         assert_eq!(set, (0..=INPUT_LEN).collect());
     }
 
-    fn test_adaptor_for_each_init(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_for_each_init<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let mut values = (0..=INPUT_LEN).collect::<Vec<u64>>();
         values
             .par_iter_mut()
@@ -3056,15 +2672,11 @@ mod test {
         assert!(sum <= INPUT_LEN * (INPUT_LEN + 1));
     }
 
-    fn test_adaptor_inspect(range_strategy: RangeStrategy) {
+    fn test_adaptor_inspect<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         use std::sync::atomic::Ordering;
-
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
 
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let sum = AtomicU64::new(0);
@@ -3082,14 +2694,10 @@ mod test {
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_adaptor_map(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_map<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let sum1 = input
             .par_iter()
@@ -3116,14 +2724,10 @@ mod test {
         assert_eq!(sum3, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_adaptor_map_init(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_map_init<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let sum = input
             .par_iter()
@@ -3138,14 +2742,10 @@ mod test {
         assert!(sum <= 3 * INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_adaptor_map_init_find_first(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_map_init_find_first<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let needle = input
             .par_iter()
@@ -3159,14 +2759,10 @@ mod test {
         assert!(needle == 10 || needle == 11);
     }
 
-    fn test_adaptor_max(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_max<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let mut input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let max = input
             .par_iter()
@@ -3192,14 +2788,10 @@ mod test {
         assert_eq!(max_empty, None);
     }
 
-    fn test_adaptor_max_by(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_max_by<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         // Custom comparison function where even numbers are smaller than all odd
         // numbers.
         let mut input = (0..=INPUT_LEN).collect::<Vec<u64>>();
@@ -3229,14 +2821,10 @@ mod test {
         assert_eq!(max_empty, None);
     }
 
-    fn test_adaptor_max_by_key(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_max_by_key<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let mut input = (0..=INPUT_LEN)
             .map(|x| (x, INPUT_LEN - x))
             .collect::<Vec<(u64, u64)>>();
@@ -3264,14 +2852,10 @@ mod test {
         assert_eq!(max_empty, None);
     }
 
-    fn test_adaptor_min(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_min<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let mut input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let min = input
             .par_iter()
@@ -3297,14 +2881,10 @@ mod test {
         assert_eq!(min_empty, None);
     }
 
-    fn test_adaptor_min_by(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_min_by<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         // Custom comparison function where even numbers are smaller than all odd
         // numbers.
         let mut input = (1..=INPUT_LEN).collect::<Vec<u64>>();
@@ -3334,14 +2914,10 @@ mod test {
         assert_eq!(min_empty, None);
     }
 
-    fn test_adaptor_min_by_key(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_min_by_key<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let mut input = (0..=INPUT_LEN)
             .map(|x| (x, INPUT_LEN - x))
             .collect::<Vec<(u64, u64)>>();
@@ -3369,14 +2945,10 @@ mod test {
         assert_eq!(min_empty, None);
     }
 
-    fn test_adaptor_ne(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_ne<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let not_equal = (input.par_iter(), input.par_iter())
             .zip_eq()
@@ -3394,14 +2966,10 @@ mod test {
         assert!(not_equal);
     }
 
-    fn test_adaptor_ne_by_key(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_ne_by_key<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let left = (0..=INPUT_LEN).map(|i| (i, 0)).collect::<Vec<(u64, u64)>>();
         let right = (0..=INPUT_LEN).map(|i| (i, 1)).collect::<Vec<(u64, u64)>>();
         let not_equal = (left.par_iter(), right.par_iter())
@@ -3417,14 +2985,10 @@ mod test {
         assert!(not_equal);
     }
 
-    fn test_adaptor_ne_by_keys(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_ne_by_keys<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let left = (0..=INPUT_LEN).map(|i| (i, 0)).collect::<Vec<(u64, u64)>>();
         let right = (0..=INPUT_LEN).map(|i| (1, i)).collect::<Vec<(u64, u64)>>();
         let not_equal = (left.par_iter(), right.par_iter())
@@ -3440,15 +3004,11 @@ mod test {
         assert!(not_equal);
     }
 
-    fn test_adaptor_partial_cmp(range_strategy: RangeStrategy) {
+    fn test_adaptor_partial_cmp<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         use std::cmp::Ordering;
-
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
 
         let input = (0..=INPUT_LEN).map(|x| x as f64).collect::<Vec<f64>>();
         let ordering = (input.par_iter(), input.par_iter())
@@ -3498,15 +3058,11 @@ mod test {
         assert_eq!(ordering, Some(Ordering::Greater));
     }
 
-    fn test_adaptor_partial_cmp_by(range_strategy: RangeStrategy) {
+    fn test_adaptor_partial_cmp_by<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         use std::cmp::Ordering;
-
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
 
         let left = (0..=INPUT_LEN)
             .map(|i| (i as f64, 0.0))
@@ -3557,15 +3113,11 @@ mod test {
         assert_eq!(ordering, Some(Ordering::Less));
     }
 
-    fn test_adaptor_partial_cmp_by_key(range_strategy: RangeStrategy) {
+    fn test_adaptor_partial_cmp_by_key<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         use std::cmp::Ordering;
-
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
 
         let left = (0..=INPUT_LEN)
             .map(|i| (i as f64, 0.0))
@@ -3629,15 +3181,11 @@ mod test {
         assert_eq!(ordering, Some(Ordering::Less));
     }
 
-    fn test_adaptor_partial_cmp_by_keys(range_strategy: RangeStrategy) {
+    fn test_adaptor_partial_cmp_by_keys<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         use std::cmp::Ordering;
-
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
 
         let left = (0..=INPUT_LEN)
             .map(|i| (i as f64, 0.0))
@@ -3701,14 +3249,10 @@ mod test {
         assert_eq!(ordering, Some(Ordering::Less));
     }
 
-    fn test_adaptor_product(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_product<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (1..=INPUT_LEN).map(|_| -1).collect::<Vec<i32>>();
         let product = input
             .par_iter()
@@ -3717,14 +3261,10 @@ mod test {
         assert_eq!(product, if INPUT_LEN % 2 == 0 { 1 } else { -1 });
     }
 
-    fn test_adaptor_reduce(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_reduce<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let sum = input
             .par_iter()
@@ -3734,14 +3274,10 @@ mod test {
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_adaptor_sum(range_strategy: RangeStrategy) {
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
-
+    fn test_adaptor_sum<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let sum = input
             .par_iter()
@@ -3750,15 +3286,11 @@ mod test {
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_adaptor_try_for_each(range_strategy: RangeStrategy) {
+    fn test_adaptor_try_for_each<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         use std::sync::atomic::Ordering;
-
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
 
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
 
@@ -3796,15 +3328,11 @@ mod test {
     }
 
     #[cfg(feature = "nightly")]
-    fn test_adaptor_try_for_each_option(range_strategy: RangeStrategy) {
+    fn test_adaptor_try_for_each_option<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         use std::sync::atomic::Ordering;
-
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
 
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
 
@@ -3840,15 +3368,11 @@ mod test {
         assert!(result.is_none());
     }
 
-    fn test_adaptor_try_for_each_init(range_strategy: RangeStrategy) {
+    fn test_adaptor_try_for_each_init<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         use std::sync::atomic::Ordering;
-
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
 
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
 
@@ -3889,15 +3413,11 @@ mod test {
     }
 
     #[cfg(feature = "nightly")]
-    fn test_adaptor_try_for_each_init_option(range_strategy: RangeStrategy) {
+    fn test_adaptor_try_for_each_init_option<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         use std::sync::atomic::Ordering;
-
-        let mut thread_pool = ThreadPoolBuilder {
-            num_threads: ThreadCount::AvailableParallelism,
-            range_strategy,
-            cpu_pinning: CpuPinningPolicy::No,
-        }
-        .build();
 
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
 
