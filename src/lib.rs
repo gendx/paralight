@@ -153,7 +153,7 @@ mod test {
                 test_source_range,
                 test_source_range_backwards => fail("cannot iterate over a backward range", "cannot iterate over a backward range"),
                 #[cfg(feature = "nightly_tests")]
-                #[cfg(not(any(miri, sanitize = "thread")))]
+                #[cfg(not(any(miri, coverage, sanitize = "thread")))]
                 test_source_range_u32max,
                 #[cfg(feature = "nightly")]
                 test_source_range_u64,
@@ -1048,7 +1048,7 @@ mod test {
     }
 
     #[cfg(feature = "nightly_tests")]
-    #[cfg(not(any(miri, sanitize = "thread")))]
+    #[cfg(not(any(miri, coverage, sanitize = "thread")))]
     fn test_source_range_u32max<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
@@ -1062,7 +1062,7 @@ mod test {
     }
 
     #[cfg(feature = "nightly_tests")]
-    #[cfg(not(any(miri, sanitize = "thread")))]
+    #[cfg(not(any(miri, coverage, sanitize = "thread")))]
     #[test]
     fn test_source_range_u33max_fixed() {
         #[cfg(all(not(miri), feature = "log"))]
@@ -1084,7 +1084,7 @@ mod test {
     }
 
     #[cfg(feature = "nightly_tests")]
-    #[cfg(not(any(miri, sanitize = "thread")))]
+    #[cfg(not(any(miri, coverage, sanitize = "thread")))]
     #[test]
     #[should_panic(
         expected = "cannot process range of 8589934590 elements: only ranges of up to 4294967295 elements (2^32 - 1) are supported"
