@@ -10,4 +10,4 @@ jobs:
       - uses: dtolnay/rust-toolchain@nightly
 
       - name: Build documentation
-        run: cargo doc --verbose --features=log,log_parallelism,nightly --no-deps
+        run: cargo doc --verbose --features=log,log_parallelism,rayon,nightly --no-deps

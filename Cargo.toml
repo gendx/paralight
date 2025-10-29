@@ -10,10 +10,10 @@ categories = ["concurrency"]
 keywords = ["parallelism", "thread-pool", "iterator"]
 exclude = [".github/*"]
 edition = "2021"
-rust-version = "1.77.0"
+rust-version = "1.80.0"
 
 [package.metadata.docs.rs]
-features = ["log", "log_parallelism", "nightly"]
+features = ["log", "log_parallelism", "nightly", "rayon"]
 rustdoc-args = ["--cfg", "docsrs", "--generate-link-to-definition"]
 
 [features]
@@ -22,10 +22,12 @@ log = ["dep:log"]
 log_parallelism = ["log"]
 nightly = []
 nightly_tests = []
+rayon = ["dep:rayon-core"]
 
 [dependencies]
 crossbeam-utils = "0.8.21"
 log = { optional = true, version = "0.4" }
+rayon-core = { optional = true, version = "1.13.0" }
 
 # Platforms that support `libc::sched_setaffinity()`.
 [target.'cfg(any(target_os = "android", target_os = "dragonfly", target_os = "freebsd", target_os = "linux"))'.dependencies]

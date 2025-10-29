@@ -2966,6 +2966,42 @@ pub unsafe trait GenericThreadPool {
     ) -> Output;
 }
 
+// SAFETY: The implementation is the same as the one on `&T`, which safely
+// implements `GenericThreadPool`.
+unsafe impl<'a, T> GenericThreadPool for &'a mut T
+where
+    &'a T: GenericThreadPool,
+{
+    fn upper_bounded_pipeline<Output: Send, Accum>(
+        self,
+        input_len: usize,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(Accum, usize) -> ControlFlow<Accum, Accum> + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+        cleanup: &(impl SourceCleanup + Sync),
+    ) -> Output {
+        (self as &'a T).upper_bounded_pipeline(
+            input_len,
+            init,
+            process_item,
+            finalize,
+            reduce,
+            cleanup,
+        )
+    }
+
+    fn iter_pipeline<Output: Send>(
+        self,
+        input_len: usize,
+        accum: impl Accumulator<usize, Output> + Sync,
+        reduce: impl Accumulator<Output, Output>,
+        cleanup: &(impl SourceCleanup + Sync),
+    ) -> Output {
+        (self as &'a T).iter_pipeline(input_len, accum, reduce, cleanup)
+    }
+}
+
 struct SumAccumulator;
 
 impl<Item, Output> Accumulator<Item, Output> for SumAccumulator

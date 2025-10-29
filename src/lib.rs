@@ -34,6 +34,8 @@ mod core;
 pub mod iter;
 mod macros;
 
+#[cfg(feature = "rayon")]
+pub use core::RayonThreadPool;
 pub use core::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPool, ThreadPoolBuilder};
 
 #[cfg(test)]
@@ -78,16 +80,41 @@ mod test {
         };
     }
 
+    macro_rules! parallelism_tests_select_failure_msg {
+        (
+            rayon,
+            $thread_pool:expr,
+            $( $( #[ $attrs:meta ] )* $case:ident $( => fail($msg:expr, $rayon_msg:expr) )? ,)*
+        ) => {
+            parallelism_tests!(
+                rayon,
+                $thread_pool,
+                $( $( #[ $attrs ] )* $case $( => fail($rayon_msg) )? ,)*
+            );
+        };
+        (
+            $mod:ident,
+            $thread_pool:expr,
+            $( $( #[ $attrs:meta ] )* $case:ident $( => fail($msg:expr, $rayon_msg:expr) )? ,)*
+        ) => {
+            parallelism_tests!(
+                $mod,
+                $thread_pool,
+                $( $( #[ $attrs ] )* $case $( => fail($msg) )? ,)*
+            );
+        };
+    }
+
     macro_rules! all_parallelism_tests {
         ( $mod:ident, $thread_pool:expr ) => {
-            parallelism_tests!(
+            parallelism_tests_select_failure_msg!(
                 $mod,
                 $thread_pool,
                 test_pipeline_sum_integers,
                 test_pipeline_empty_input,
-                test_pipeline_one_panic => fail("worker thread(s) panicked!"),
-                test_pipeline_some_panics => fail("worker thread(s) panicked!"),
-                test_pipeline_many_panics => fail("worker thread(s) panicked!"),
+                test_pipeline_one_panic => fail("worker thread(s) panicked!", "arithmetic panic"),
+                test_pipeline_some_panics => fail("worker thread(s) panicked!", "arithmetic panic"),
+                test_pipeline_many_panics => fail("worker thread(s) panicked!", "arithmetic panic"),
                 test_pipelines_sum_twice,
                 test_pipelines_several_inputs,
                 test_pipelines_several_functions,
@@ -112,11 +139,11 @@ mod test {
                 #[cfg(feature = "nightly")]
                 test_source_array_boxed,
                 #[cfg(feature = "nightly")]
-                test_source_array_panic => fail("worker thread(s) panicked!"),
+                test_source_array_panic => fail("worker thread(s) panicked!", "arithmetic panic"),
                 #[cfg(feature = "nightly")]
-                test_source_array_find_any_panic => fail("worker thread(s) panicked!"),
+                test_source_array_find_any_panic => fail("worker thread(s) panicked!", "arithmetic panic"),
                 #[cfg(feature = "nightly")]
-                test_source_array_find_first_panic => fail("worker thread(s) panicked!"),
+                test_source_array_find_first_panic => fail("worker thread(s) panicked!", "arithmetic panic"),
                 test_source_boxed_slice,
                 test_source_slice,
                 #[cfg(feature = "nightly_tests")]
@@ -124,35 +151,35 @@ mod test {
                 test_source_slice_mut,
                 test_source_slice_mut_not_sync,
                 test_source_range,
-                test_source_range_backwards => fail("cannot iterate over a backward range"),
+                test_source_range_backwards => fail("cannot iterate over a backward range", "cannot iterate over a backward range"),
                 #[cfg(feature = "nightly_tests")]
                 #[cfg(not(any(miri, sanitize = "thread")))]
                 test_source_range_u32max,
                 #[cfg(feature = "nightly")]
                 test_source_range_u64,
                 #[cfg(feature = "nightly")]
-                test_source_range_u128_too_large => fail("cannot iterate over a range with more than usize::MAX items"),
+                test_source_range_u128_too_large => fail("cannot iterate over a range with more than usize::MAX items", "cannot iterate over a range with more than usize::MAX items"),
                 test_source_range_inclusive,
-                test_source_range_inclusive_backwards => fail("cannot iterate over a backward range"),
-                test_source_range_inclusive_too_large => fail("cannot iterate over a range with more than usize::MAX items"),
+                test_source_range_inclusive_backwards => fail("cannot iterate over a backward range", "cannot iterate over a backward range"),
+                test_source_range_inclusive_too_large => fail("cannot iterate over a range with more than usize::MAX items", "cannot iterate over a range with more than usize::MAX items"),
                 #[cfg(feature = "nightly")]
                 test_source_range_inclusive_u64,
                 #[cfg(feature = "nightly")]
-                test_source_range_inclusive_u64_too_large => fail("cannot iterate over a range with more than usize::MAX items"),
+                test_source_range_inclusive_u64_too_large => fail("cannot iterate over a range with more than usize::MAX items", "cannot iterate over a range with more than usize::MAX items"),
                 #[cfg(feature = "nightly")]
-                test_source_range_inclusive_u128_too_large => fail("cannot iterate over a range with more than usize::MAX items"),
+                test_source_range_inclusive_u128_too_large => fail("cannot iterate over a range with more than usize::MAX items", "cannot iterate over a range with more than usize::MAX items"),
                 test_source_vec,
                 test_source_vec_boxed,
                 test_source_vec_find_any,
                 test_source_vec_find_first,
-                test_source_vec_panic => fail("worker thread(s) panicked!"),
-                test_source_vec_find_any_panic => fail("worker thread(s) panicked!"),
-                test_source_vec_find_first_panic => fail("worker thread(s) panicked!"),
+                test_source_vec_panic => fail("worker thread(s) panicked!", "arithmetic panic"),
+                test_source_vec_find_any_panic => fail("worker thread(s) panicked!", "arithmetic panic"),
+                test_source_vec_find_first_panic => fail("worker thread(s) panicked!", "arithmetic panic"),
                 test_source_vec_deque_ref,
                 test_source_vec_deque_ref_mut,
                 test_source_adaptor_chain,
                 test_source_adaptor_chain_cleanup,
-                test_source_adaptor_chain_overflow => fail("called chain() with sources that together produce more than usize::MAX items"),
+                test_source_adaptor_chain_overflow => fail("called chain() with sources that together produce more than usize::MAX items", "called chain() with sources that together produce more than usize::MAX items"),
                 test_source_adaptor_chains_cleanup,
                 test_source_adaptor_enumerate,
                 test_source_adaptor_enumerate_cleanup,
@@ -161,20 +188,20 @@ mod test {
                 test_source_adaptor_skip,
                 test_source_adaptor_skip_cleanup,
                 test_source_adaptor_skip_exact,
-                test_source_adaptor_skip_exact_too_much => fail("called skip_exact() with more items than this source produces"),
+                test_source_adaptor_skip_exact_too_much => fail("called skip_exact() with more items than this source produces", "called skip_exact() with more items than this source produces"),
                 test_source_adaptor_step_by,
                 test_source_adaptor_step_by_cleanup,
                 test_source_adaptor_step_by_one,
-                test_source_adaptor_step_by_zero => fail("called step_by() with a step of zero"),
-                test_source_adaptor_step_by_zero_empty => fail("called step_by() with a step of zero"),
+                test_source_adaptor_step_by_zero => fail("called step_by() with a step of zero", "called step_by() with a step of zero"),
+                test_source_adaptor_step_by_zero_empty => fail("called step_by() with a step of zero", "called step_by() with a step of zero"),
                 test_source_adaptor_take,
                 test_source_adaptor_take_cleanup,
                 test_source_adaptor_take_exact,
-                test_source_adaptor_take_exact_too_much => fail("called take_exact() with more items than this source produces"),
+                test_source_adaptor_take_exact_too_much => fail("called take_exact() with more items than this source produces", "called take_exact() with more items than this source produces"),
                 test_source_adaptor_zip_eq,
                 test_source_adaptor_zip_eq_cleanup,
-                test_source_adaptor_zip_eq_unequal_array => fail("called zip_eq() with sources of different lengths"),
-                test_source_adaptor_zip_eq_unequal_tuple => fail("called zip_eq() with sources of different lengths"),
+                test_source_adaptor_zip_eq_unequal_array => fail("called zip_eq() with sources of different lengths", "called zip_eq() with sources of different lengths"),
+                test_source_adaptor_zip_eq_unequal_tuple => fail("called zip_eq() with sources of different lengths", "called zip_eq() with sources of different lengths"),
                 test_source_adaptor_zip_max,
                 test_source_adaptor_zip_max_cleanup,
                 test_source_adaptor_zip_min,
@@ -246,6 +273,15 @@ mod test {
             cpu_pinning: CpuPinningPolicy::No,
         }
         .build()
+    );
+    // TODO: Enable Miri once supported by Rayon and its dependencies: https://github.com/crossbeam-rs/crossbeam/issues/1181.
+    #[cfg(all(feature = "rayon", not(miri)))]
+    all_parallelism_tests!(
+        rayon,
+        RayonThreadPool::new_global(
+            ThreadCount::AvailableParallelism,
+            RangeStrategy::WorkStealing,
+        )
     );
 
     #[cfg(not(miri))]

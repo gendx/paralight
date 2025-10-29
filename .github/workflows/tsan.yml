@@ -27,5 +27,5 @@ jobs:
         run: cargo test --release -Zbuild-std --target=x86_64-unknown-linux-gnu --verbose --all --no-default-features ${{ matrix.all_test_features }}
       - name: Run tests (log feature)
         run: cargo test --release -Zbuild-std --target=x86_64-unknown-linux-gnu --verbose --all --no-default-features --features=log${{ matrix.test_features }}
-      - name: Run tests (log_parallelism feature)
-        run: cargo test --release -Zbuild-std --target=x86_64-unknown-linux-gnu --verbose --all --no-default-features --features=log_parallelism${{ matrix.test_features }}
+      - name: Run tests (all features)
+        run: cargo test --release -Zbuild-std --target=x86_64-unknown-linux-gnu --verbose --all --no-default-features --features=log,log_parallelism,rayon${{ matrix.test_features }}

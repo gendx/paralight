@@ -2,7 +2,7 @@
 
 [![Crate](https://img.shields.io/crates/v/paralight.svg?logo=rust)](https://crates.io/crates/paralight)
 [![Documentation](https://img.shields.io/docsrs/paralight?logo=rust)](https://docs.rs/paralight)
-[![Minimum Rust 1.77.0](https://img.shields.io/badge/rust-1.77.0%2B-orange.svg?logo=rust)](https://releases.rs/docs/1.77.0/)
+[![Minimum Rust 1.80.0](https://img.shields.io/badge/rust-1.80.0%2B-orange.svg?logo=rust)](https://releases.rs/docs/1.80.0/)
 [![Lines of Code](https://www.aschey.tech/tokei/github/gendx/paralight?category=code&branch=main)](https://github.com/gendx/paralight)
 [![Dependencies](https://deps.rs/repo/github/gendx/paralight/status.svg)](https://deps.rs/repo/github/gendx/paralight)
 [![License](https://img.shields.io/crates/l/paralight.svg)](https://github.com/gendx/paralight/blob/main/LICENSE)
@@ -194,7 +194,8 @@ To create parallel pipelines, be mindful that the
 [`with_thread_pool()`](iter::ParallelSourceExt::with_thread_pool) function takes
 a [`ThreadPool`](ThreadPool) by mutable reference [`&mut`](reference). This is a
 deliberate design choice because only one pipeline can be run at a time on a
-given thread pool.
+given Paralight thread pool (for more flexible options, see
+["Bringing your own thread pool"](#bringing-your-own-thread-pool) below).
 
 To release the resources (i.e. the worker threads) created by a
 [`ThreadPool`](ThreadPool), simply [`drop()`](drop) it.
@@ -281,15 +282,39 @@ let sum = matrix
 assert_eq!(sum, 990_000);
 ```
 
-### Bringing your own thread pool
+## Bringing your own thread pool
 
-As an alternative to the provided [`ThreadPool`](ThreadPool), you can use
-Paralight with any thread pool that implements the
+As an alternative to the provided [`ThreadPool`](ThreadPool) implementation, you
+can use Paralight with any thread pool that implements the
 [`GenericThreadPool`](iter::GenericThreadPool) interface, via the
 [`with_thread_pool()`](iter::ParallelSourceExt::with_thread_pool) adaptor.
 
 Note that the [`GenericThreadPool`](iter::GenericThreadPool) trait is marked as
 `unsafe` due to the requirements that your implementation must uphold.
+
+For convenience, the [`RayonThreadPool`](RayonThreadPool) wrapper around
+[Rayon](https://docs.rs/rayon) thread pools is available under the `rayon`
+feature, and implements [`GenericThreadPool`](iter::GenericThreadPool).
+
+```rust
+# // TODO: Enable Miri once supported by Rayon and its dependencies:
+# // https://github.com/crossbeam-rs/crossbeam/issues/1181.
+# #[cfg(all(feature = "rayon", not(miri)))]
+# {
+use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
+use paralight::{RangeStrategy, RayonThreadPool, ThreadCount};
+
+let thread_pool = RayonThreadPool::new_global(
+    ThreadCount::try_from(rayon_core::current_num_threads())
+        .expect("Paralight cannot operate with 0 threads"),
+    RangeStrategy::WorkStealing,
+);
+
+let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+let sum = input.par_iter().with_thread_pool(&thread_pool).sum::<i32>();
+assert_eq!(sum, 5 * 11);
+# }
+```
 
 ## Limitations
 
@@ -385,6 +410,12 @@ This multi-layered approach to safety is crucial given how complex mixing memory
 safety with multi-threading is, and it has indeed
 [caught a bug](https://github.com/gendx/paralight/commit/59c995672634aead96a4d977fe1fcab1e0faa9a5)
 during development.
+
+Note: The Rayon thread pool integration is unfortunately not tested under Miri,
+as Rayon in general
+[triggers Miri errors](https://github.com/crossbeam-rs/crossbeam/issues/1181).
+On the plus side, using vanilla Paralight in your program is fully compatible
+with Miri.
 
 ### Use of `unsafe` code
 

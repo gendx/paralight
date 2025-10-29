@@ -8,9 +8,9 @@
 
 //! A thread pool implementing parallelism at a lightweight cost.
 
+use super::pipeline::{IterPipelineImpl, Pipeline, UpperBoundedPipelineImpl};
 use super::range::{
-    FixedRangeFactory, Range, RangeFactory, RangeOrchestrator, SkipIterator,
-    WorkStealingRangeFactory,
+    FixedRangeFactory, Range, RangeFactory, RangeOrchestrator, WorkStealingRangeFactory,
 };
 use super::sync::{make_lending_group, Borrower, Lender, WorkerState};
 use super::util::LifetimeParameterized;
@@ -35,7 +35,7 @@ use std::convert::TryFrom;
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::ops::ControlFlow;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
@@ -47,6 +47,17 @@ pub enum ThreadCount {
     AvailableParallelism,
     /// Spawn the given number of threads.
     Count(NonZeroUsize),
+}
+
+impl ThreadCount {
+    /// Resolves the number of threads to spawn.
+    pub fn count(self) -> NonZeroUsize {
+        match self {
+            ThreadCount::AvailableParallelism => std::thread::available_parallelism()
+                .expect("Getting the available parallelism failed"),
+            ThreadCount::Count(count) => count,
+        }
+    }
 }
 
 impl TryFrom<usize> for ThreadCount {
@@ -141,7 +152,7 @@ impl ThreadPool {
     }
 }
 
-// SAFETY: proof of the safety guarantees is deferred to the inner calls.
+// SAFETY: Proof of the safety guarantees is deferred to the inner calls.
 unsafe impl GenericThreadPool for &mut ThreadPool {
     fn upper_bounded_pipeline<Output: Send, Accum>(
         self,
@@ -179,11 +190,7 @@ enum ThreadPoolEnum {
 impl ThreadPoolEnum {
     /// Creates a new thread pool using the given parameters.
     fn new(builder: &ThreadPoolBuilder) -> Self {
-        let num_threads: NonZeroUsize = match builder.num_threads {
-            ThreadCount::AvailableParallelism => std::thread::available_parallelism()
-                .expect("Getting the available parallelism failed"),
-            ThreadCount::Count(count) => count,
-        };
+        let num_threads: NonZeroUsize = builder.num_threads.count();
         let num_threads: usize = num_threads.into();
         match builder.range_strategy {
             RangeStrategy::Fixed => ThreadPoolEnum::Fixed(ThreadPoolImpl::new(
@@ -505,10 +512,6 @@ impl<F: RangeFactory> Drop for ThreadPoolImpl<F> {
     }
 }
 
-trait Pipeline<R: Range> {
-    fn run(&self, worker_id: usize, range: &R);
-}
-
 /// An intermediate struct representing a `dyn Pipeline<R> + Sync` with variable
 /// lifetime. Because Rust doesn't directly support higher-kinded types, we use
 /// the generic associated type of the [`LifetimeParameterized`] trait as a
@@ -517,123 +520,6 @@ struct DynLifetimeSyncPipeline<R: Range>(PhantomData<R>);
 
 impl<R: Range> LifetimeParameterized for DynLifetimeSyncPipeline<R> {
     type T<'a> = dyn Pipeline<R> + Sync + 'a;
-}
-
-struct UpperBoundedPipelineImpl<
-    'a,
-    Output,
-    Accum,
-    Init: Fn() -> Accum,
-    ProcessItem: Fn(Accum, usize) -> ControlFlow<Accum, Accum>,
-    Finalize: Fn(Accum) -> Output,
-    Cleanup: SourceCleanup,
-> {
-    bound: CachePadded<AtomicUsize>,
-    outputs: Arc<[Mutex<Option<Output>>]>,
-    init: Init,
-    process_item: ProcessItem,
-    finalize: Finalize,
-    cleanup: &'a Cleanup,
-}
-
-impl<R, Output, Accum, Init, ProcessItem, Finalize, Cleanup> Pipeline<R>
-    for UpperBoundedPipelineImpl<'_, Output, Accum, Init, ProcessItem, Finalize, Cleanup>
-where
-    R: Range,
-    Init: Fn() -> Accum,
-    ProcessItem: Fn(Accum, usize) -> ControlFlow<Accum, Accum>,
-    Finalize: Fn(Accum) -> Output,
-    Cleanup: SourceCleanup,
-{
-    fn run(&self, worker_id: usize, range: &R) {
-        let mut accumulator = (self.init)();
-        let iter = SkipIteratorWrapper {
-            iter: range.upper_bounded_iter(&self.bound),
-            cleanup: self.cleanup,
-        };
-        for i in iter {
-            let acc = (self.process_item)(accumulator, i);
-            accumulator = match acc {
-                ControlFlow::Continue(acc) => acc,
-                ControlFlow::Break(acc) => {
-                    self.bound.fetch_min(i, Ordering::Relaxed);
-                    acc
-                }
-            };
-        }
-        let output = (self.finalize)(accumulator);
-        *self.outputs[worker_id].lock().unwrap() = Some(output);
-    }
-}
-
-struct IterPipelineImpl<'a, Output, Accum: Accumulator<usize, Output>, Cleanup: SourceCleanup> {
-    outputs: Arc<[Mutex<Option<Output>>]>,
-    accum: Accum,
-    cleanup: &'a Cleanup,
-}
-
-impl<R, Output, Accum, Cleanup> Pipeline<R> for IterPipelineImpl<'_, Output, Accum, Cleanup>
-where
-    R: Range,
-    Accum: Accumulator<usize, Output>,
-    Cleanup: SourceCleanup,
-{
-    fn run(&self, worker_id: usize, range: &R) {
-        let iter = SkipIteratorWrapper {
-            iter: range.iter(),
-            cleanup: self.cleanup,
-        };
-        let output = self.accum.accumulate(iter);
-        *self.outputs[worker_id].lock().unwrap() = Some(output);
-    }
-}
-
-struct SkipIteratorWrapper<'a, I: SkipIterator, Cleanup: SourceCleanup> {
-    iter: I,
-    cleanup: &'a Cleanup,
-}
-
-impl<I: SkipIterator, Cleanup: SourceCleanup> Iterator for SkipIteratorWrapper<'_, I, Cleanup> {
-    type Item = usize;
-
-    #[inline(always)]
-    fn next(&mut self) -> Option<Self::Item> {
-        loop {
-            match self.iter.next() {
-                (index, None) => return index,
-                (index, Some(skipped_range)) => {
-                    // SAFETY: Due to the safety guarantees of `RangeFactory`:
-                    // - `skipped_range` is included in the range `0..input_len` (where `input_len`
-                    //   is the parameter to the `ThreadPool::*_pipeline()` call),
-                    // - `skipped_range` doesn't overlap with any other range passed to
-                    //   `cleanup_item_range()` (here or in the `Drop` implementation) nor index
-                    //   passed to `fetch_item()` (any index returned by this `next()` function).
-                    unsafe {
-                        self.cleanup.cleanup_item_range(skipped_range);
-                    }
-                    if index.is_some() {
-                        return index;
-                    }
-                }
-            }
-        }
-    }
-}
-
-impl<I: SkipIterator, Cleanup: SourceCleanup> Drop for SkipIteratorWrapper<'_, I, Cleanup> {
-    fn drop(&mut self) {
-        if let Some(range) = self.iter.remaining_range() {
-            // SAFETY: Due to the safety guarantees of `RangeFactory`:
-            // - `range` is included in the range `0..input_len` (where `input_len` is the
-            //   parameter to the `ThreadPool::*_pipeline()` call),
-            // - `range` doesn't overlap with any other range passed to
-            //   `cleanup_item_range()` (here or in the `next()` implementation) nor index
-            //   passed to `fetch_item()` (any index returned by the `next()` function).
-            unsafe {
-                self.cleanup.cleanup_item_range(range);
-            }
-        }
-    }
 }
 
 /// Context object owned by a worker thread.

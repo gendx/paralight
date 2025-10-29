@@ -11,7 +11,7 @@ jobs:
           - stable
           - beta
           - nightly
-          - 1.77.0  # MSRV
+          - 1.80.0  # MSRV
       fail-fast: false
     runs-on: ${{ matrix.os }}
     env:
@@ -28,6 +28,8 @@ jobs:
         run: cargo build --verbose --all --no-default-features --features=log
       - name: Build (log_parallelism feature)
         run: cargo build --verbose --all --no-default-features --features=log_parallelism
+      - name: Build (rayon feature)
+        run: cargo build --verbose --all --no-default-features --features=rayon
       - name: Build (default features)
         run: cargo build --verbose --all
 
@@ -40,6 +42,9 @@ jobs:
       - name: Build (nightly + log_parallelism features)
         if: ${{ matrix.rust == 'nightly' }}
         run: cargo build --verbose --all --no-default-features --features=nightly,log_parallelism
+      - name: Build (nightly + rayon features)
+        if: ${{ matrix.rust == 'nightly' }}
+        run: cargo build --verbose --all --no-default-features --features=nightly,rayon
       - name: Build (nightly + default features)
         if: ${{ matrix.rust == 'nightly' }}
         run: cargo build --verbose --all --features=nightly
