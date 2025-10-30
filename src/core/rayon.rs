@@ -476,3 +476,24 @@ where
         )
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_num_tasks() {
+        for range_strategy in [RangeStrategy::Fixed, RangeStrategy::WorkStealing] {
+            let thread_pool =
+                RayonThreadPool::new_global(ThreadCount::AvailableParallelism, range_strategy);
+            assert_eq!(
+                thread_pool.num_tasks(),
+                std::thread::available_parallelism().unwrap()
+            );
+
+            let thread_pool =
+                RayonThreadPool::new_global(ThreadCount::try_from(4).unwrap(), range_strategy);
+            assert_eq!(thread_pool.num_tasks(), NonZeroUsize::try_from(4).unwrap());
+        }
+    }
+}

@@ -93,6 +93,17 @@ mod test {
             );
         };
         (
+            rayon_local,
+            $thread_pool:expr,
+            $( $( #[ $attrs:meta ] )* $case:ident $( => fail($msg:expr, $rayon_msg:expr) )? ,)*
+        ) => {
+            parallelism_tests!(
+                rayon_local,
+                $thread_pool,
+                $( $( #[ $attrs ] )* $case $( => fail($rayon_msg) )? ,)*
+            );
+        };
+        (
             $mod:ident,
             $thread_pool:expr,
             $( $( #[ $attrs:meta ] )* $case:ident $( => fail($msg:expr, $rayon_msg:expr) )? ,)*
@@ -281,6 +292,21 @@ mod test {
         RayonThreadPool::new_global(
             ThreadCount::AvailableParallelism,
             RangeStrategy::WorkStealing,
+        )
+    );
+    // TODO: Enable Miri once supported by Rayon and its dependencies: https://github.com/crossbeam-rs/crossbeam/issues/1181.
+    // TODO: Make this work with TSAN: https://github.com/rayon-rs/rayon/issues/1275.
+    #[cfg(feature = "nightly_tests")]
+    #[cfg(all(feature = "rayon", not(miri), not(sanitize = "thread")))]
+    all_parallelism_tests!(
+        rayon_local,
+        RayonThreadPool::new(
+            &rayon_core::ThreadPoolBuilder::new()
+                .num_threads(4)
+                .build()
+                .unwrap(),
+            ThreadCount::try_from(4).unwrap(),
+            RangeStrategy::Fixed,
         )
     );
 
