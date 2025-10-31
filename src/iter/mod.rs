@@ -1217,7 +1217,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// If multiple items satisfy `f`, an arbitrary one is returned.
     ///
-    /// See also [`find_map_any()`](Self::find_map_any).
+    /// See also [`find_map_any()`](Self::find_map_any), useful if the
+    /// [`Item`](ParallelIterator::Item) type isn't [`Send`].
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
@@ -1271,7 +1272,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// Returns the first item that satisfies the predicate `f`, or [`None`] if
     /// no item satisfies it.
     ///
-    /// See also [`find_map_first()`](Self::find_map_first).
+    /// See also [`find_map_first()`](Self::find_map_first), useful if the
+    /// [`Item`](ParallelIterator::Item) type isn't [`Send`].
     ///
     /// ```
     /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
@@ -1530,7 +1532,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///     .par_iter_mut()
     ///     .with_thread_pool(&mut thread_pool)
     ///     .for_each_init(
-    ///         rand::rng,
+    ///         rand::rng, // A thread-local RNG that is neither Send nor Sync.
     ///         |rng, bit| if rng.random() { *bit = false; },
     ///     );
     ///
@@ -1670,7 +1672,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///     .par_iter()
     ///     .with_thread_pool(&mut thread_pool)
     ///     .map_init(
-    ///         rand::rng,
+    ///         rand::rng, // A thread-local RNG that is neither Send nor Sync.
     ///         |rng, &x| if rng.random() { x * 2 } else { x * 3 },
     ///     )
     ///     .sum::<i32>();
@@ -2800,14 +2802,17 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let result = (0..257)
     ///     .into_par_iter()
     ///     .with_thread_pool(&mut thread_pool)
-    ///     .try_for_each_init(rand::rng, |rng, _| {
-    ///         let byte: u8 = rng.random();
-    ///         if set.lock().unwrap().insert(byte) {
-    ///             Ok(())
-    ///         } else {
-    ///             Err(byte)
-    ///         }
-    ///     });
+    ///     .try_for_each_init(
+    ///         rand::rng, // A thread-local RNG that is neither Send nor Sync.
+    ///         |rng, _| {
+    ///             let byte: u8 = rng.random();
+    ///             if set.lock().unwrap().insert(byte) {
+    ///                 Ok(())
+    ///             } else {
+    ///                 Err(byte)
+    ///             }
+    ///         },
+    ///     );
     /// // Even a biased random number generator cannot yield more than 256 distinct bytes.
     /// assert!(result.is_err());
     /// ```
@@ -2868,14 +2873,17 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let result = (0..257)
     ///     .into_par_iter()
     ///     .with_thread_pool(&mut thread_pool)
-    ///     .try_for_each_init(rand::rng, |rng, _| {
-    ///         let byte: u8 = rng.random();
-    ///         if set.lock().unwrap().insert(byte) {
-    ///             Ok(())
-    ///         } else {
-    ///             Err(byte)
-    ///         }
-    ///     });
+    ///     .try_for_each_init(
+    ///         rand::rng, // A thread-local RNG that is neither Send nor Sync.
+    ///         |rng, _| {
+    ///             let byte: u8 = rng.random();
+    ///             if set.lock().unwrap().insert(byte) {
+    ///                 Ok(())
+    ///             } else {
+    ///                 Err(byte)
+    ///             }
+    ///         },
+    ///     );
     /// // Even a biased random number generator cannot yield more than 256 distinct bytes.
     /// assert!(result.is_err());
     /// ```
