@@ -12,6 +12,10 @@ jobs:
           - beta
           - nightly
           - 1.81.0  # MSRV for examples
+        include:
+          - extra_features: ""
+          - rust: nightly
+            extra_features: ",nightly"
       fail-fast: false
     runs-on: ${{ matrix.os }}
     env:
@@ -24,3 +28,5 @@ jobs:
 
       - name: Build examples (default features)
         run: cargo build --verbose --examples
+      - name: Build examples (all features)
+        run: cargo build --verbose --examples --features=log,log_parallelism,rayon${{ matrix.extra_features }}
