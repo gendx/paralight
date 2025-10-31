@@ -33,10 +33,11 @@
 mod core;
 pub mod iter;
 mod macros;
+mod threads;
 
 #[cfg(feature = "rayon")]
-pub use core::RayonThreadPool;
-pub use core::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPool, ThreadPoolBuilder};
+pub use threads::RayonThreadPool;
+pub use threads::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPool, ThreadPoolBuilder};
 
 #[cfg(test)]
 mod test {

@@ -8,9 +8,11 @@
 
 //! Adaptors over Rayon thread pools.
 
-use super::pipeline::{IterPipelineImpl, Pipeline, UpperBoundedPipelineImpl};
-use super::range::{FixedRangeFactory, RangeFactory, RangeOrchestrator, WorkStealingRangeFactory};
 use super::{RangeStrategy, ThreadCount};
+use crate::core::pipeline::{IterPipelineImpl, Pipeline, UpperBoundedPipelineImpl};
+use crate::core::range::{
+    FixedRangeFactory, RangeFactory, RangeOrchestrator, WorkStealingRangeFactory,
+};
 use crate::iter::{Accumulator, GenericThreadPool, SourceCleanup};
 use crossbeam_utils::CachePadded;
 use rayon_core::{Scope, ThreadPool};

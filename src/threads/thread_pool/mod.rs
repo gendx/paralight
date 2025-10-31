@@ -8,15 +8,18 @@
 
 //! A thread pool implementing parallelism at a lightweight cost.
 
-use super::pipeline::{IterPipelineImpl, Pipeline, UpperBoundedPipelineImpl};
-use super::range::{
+mod sync;
+mod util;
+
+use crate::core::pipeline::{IterPipelineImpl, Pipeline, UpperBoundedPipelineImpl};
+use crate::core::range::{
     FixedRangeFactory, Range, RangeFactory, RangeOrchestrator, WorkStealingRangeFactory,
 };
-use super::sync::{make_lending_group, Borrower, Lender, WorkerState};
-use super::util::LifetimeParameterized;
 use crate::iter::{Accumulator, GenericThreadPool, SourceCleanup};
 use crate::macros::{log_debug, log_error, log_warn};
 use crossbeam_utils::CachePadded;
+use sync::{make_lending_group, Borrower, Lender, WorkerState};
+use util::LifetimeParameterized;
 // Platforms that support `libc::sched_setaffinity()`.
 #[cfg(all(
     not(miri),
