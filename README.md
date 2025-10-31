@@ -15,6 +15,12 @@ This library allows you to distribute computation over *indexed* sources
 multiple threads. It aims to uphold the highest standards of documentation,
 testing and safety, see the [FAQ](#faq) below.
 
+It is designed to be as lightweight as possible, following the principles
+outlined in the blog post
+[*Optimization adventures: making a parallel Rust workload 10x faster with (or without) Rayon*](https://gendignoux.com/blog/2024/11/18/rust-rayon-optimized.html#a-hand-rolled-replacement-of-rayon).
+Benchmarks on a real-world use case can be seen
+[here](https://gendignoux.com/blog/2024/12/02/rust-data-oriented-design.html#results).
+
 ```rust
 use paralight::iter::{
     IntoParallelRefSource, IntoParallelRefMutSource, ParallelIteratorExt, ParallelSourceExt,
@@ -292,9 +298,21 @@ can use Paralight with any thread pool that implements the
 Note that the [`GenericThreadPool`](iter::GenericThreadPool) trait is marked as
 `unsafe` due to the requirements that your implementation must uphold.
 
+### Rayon thread pools
+
 For convenience, the [`RayonThreadPool`](RayonThreadPool) wrapper around
-[Rayon](https://docs.rs/rayon) thread pools is available under the `rayon`
-feature, and implements [`GenericThreadPool`](iter::GenericThreadPool).
+[Rayon](https://docs.rs/rayon) is available under the `rayon` feature, and
+implements [`GenericThreadPool`](iter::GenericThreadPool).
+
+However, note that this backend isn't tested with Miri nor ThreadSanitizer,
+because Rayon is broken with them.
+
+This wrapper allows you to control how many tasks are run on Rayon's thread
+pool. It is recommended to match the number of threads in the pool (as well as
+the available parallelism), to have one Paralight task per thread (and per
+available CPU core). In that case, performance should be similar to vanilla
+Paralight. This is of course only a guideline: as usual benchmark and profile
+your code to know which configuration is optimal.
 
 ```rust
 # // TODO: Enable Miri once supported by Rayon and its dependencies:
@@ -404,18 +422,20 @@ pre- and post-conditions.
 
 Additionally, [extensive testing](#testing) is conducted with
 [ThreadSanitizer](https://doc.rust-lang.org/beta/unstable-book/compiler-flags/sanitizer.html#threadsanitizer)
-and [Miri](https://github.com/rust-lang/miri).
+and [Miri](https://github.com/rust-lang/miri). Vanilla Paralight is 100%
+compatible with them, including Miri's detection of memory leaks.
 
 This multi-layered approach to safety is crucial given how complex mixing memory
 safety with multi-threading is, and it has indeed
 [caught a bug](https://github.com/gendx/paralight/commit/59c995672634aead96a4d977fe1fcab1e0faa9a5)
 during development.
 
-Note: The Rayon thread pool integration is unfortunately not tested under Miri,
-as Rayon in general
+Note: The [Rayon thread pool integration](#rayon-thread-pools) is unfortunately
+not tested under Miri, as Rayon in general
 [triggers Miri errors](https://github.com/crossbeam-rs/crossbeam/issues/1181).
-On the plus side, using vanilla Paralight in your program is fully compatible
-with Miri.
+Likewise, Rayon local thread pools
+[aren't compatible](https://github.com/rayon-rs/rayon/issues/1275) with
+ThreadSanitizer.
 
 ### Use of `unsafe` code
 
