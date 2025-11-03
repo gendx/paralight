@@ -25,9 +25,9 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
 
-      - name: Run tests (no default features)
-        run: cargo test --release --verbose --all --no-default-features ${{ matrix.all_test_features }}
+      - name: Run tests (default features)
+        run: cargo test --release --verbose --all ${{ matrix.all_test_features }}
       - name: Run tests (log feature)
-        run: cargo test --release --verbose --all --no-default-features --features=log${{ matrix.test_features }}
+        run: cargo test --release --verbose --all --features=log${{ matrix.test_features }}
       - name: Run tests (all features)
-        run: cargo test --release --verbose --all --no-default-features --features=log,log_parallelism,rayon${{ matrix.test_features }}
+        run: cargo test --release --verbose --all --features=log,log_parallelism,rayon${{ matrix.test_features }}

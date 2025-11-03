@@ -30,16 +30,22 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![doc(test(attr(deny(warnings))))]
 
+#[cfg(any(feature = "rayon", feature = "default-thread-pool"))]
 mod core;
 pub mod iter;
+#[cfg(any(feature = "rayon", feature = "default-thread-pool"))]
 mod macros;
+#[cfg(any(feature = "rayon", feature = "default-thread-pool"))]
 mod threads;
 
 #[cfg(feature = "rayon")]
 pub use threads::RayonThreadPool;
-pub use threads::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPool, ThreadPoolBuilder};
+#[cfg(feature = "default-thread-pool")]
+pub use threads::{CpuPinningPolicy, ThreadPool, ThreadPoolBuilder};
+#[cfg(any(feature = "rayon", feature = "default-thread-pool"))]
+pub use threads::{RangeStrategy, ThreadCount};
 
-#[cfg(test)]
+#[cfg(all(test, any(feature = "rayon", feature = "default-thread-pool")))]
 mod test {
     use super::*;
     use crate::iter::{
@@ -268,6 +274,7 @@ mod test {
         };
     }
 
+    #[cfg(feature = "default-thread-pool")]
     all_parallelism_tests!(
         fixed,
         ThreadPoolBuilder {
@@ -277,6 +284,7 @@ mod test {
         }
         .build()
     );
+    #[cfg(feature = "default-thread-pool")]
     all_parallelism_tests!(
         work_stealing,
         ThreadPoolBuilder {

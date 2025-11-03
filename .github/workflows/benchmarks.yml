@@ -28,9 +28,9 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
 
-      - name: Build (no default features)
-        run: cargo bench --no-run --verbose --all --no-default-features ${{ matrix.all_test_features }}
+      - name: Build (default features)
+        run: cargo bench --no-run --verbose --all ${{ matrix.all_test_features }}
       - name: Build (log feature)
-        run: cargo bench --no-run --verbose --all --no-default-features --features=log${{ matrix.test_features }}
+        run: cargo bench --no-run --verbose --all --features=log${{ matrix.test_features }}
       - name: Build (log_parallelism feature)
-        run: cargo bench --no-run --verbose --all --no-default-features --features=log_parallelism${{ matrix.test_features }}
+        run: cargo bench --no-run --verbose --all --features=log_parallelism${{ matrix.test_features }}

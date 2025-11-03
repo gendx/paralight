@@ -11,6 +11,7 @@
 mod sync;
 mod util;
 
+use super::{RangeStrategy, ThreadCount};
 use crate::core::pipeline::{IterPipelineImpl, Pipeline, UpperBoundedPipelineImpl};
 use crate::core::range::{
     FixedRangeFactory, Range, RangeFactory, RangeOrchestrator, WorkStealingRangeFactory,
@@ -34,52 +35,12 @@ use nix::{
     sched::{sched_setaffinity, CpuSet},
     unistd::Pid,
 };
-use std::convert::TryFrom;
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::ops::ControlFlow;
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
-
-/// Number of threads to spawn in a thread pool.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ThreadCount {
-    /// Spawn the number of threads returned by
-    /// [`std::thread::available_parallelism()`].
-    AvailableParallelism,
-    /// Spawn the given number of threads.
-    Count(NonZeroUsize),
-}
-
-impl ThreadCount {
-    /// Resolves the number of threads to spawn.
-    pub fn count(self) -> NonZeroUsize {
-        match self {
-            ThreadCount::AvailableParallelism => std::thread::available_parallelism()
-                .expect("Getting the available parallelism failed"),
-            ThreadCount::Count(count) => count,
-        }
-    }
-}
-
-impl TryFrom<usize> for ThreadCount {
-    type Error = <NonZeroUsize as TryFrom<usize>>::Error;
-
-    fn try_from(thread_count: usize) -> Result<Self, Self::Error> {
-        let count = NonZeroUsize::try_from(thread_count)?;
-        Ok(ThreadCount::Count(count))
-    }
-}
-
-/// Strategy to distribute ranges of work items among threads.
-#[derive(Clone, Copy)]
-pub enum RangeStrategy {
-    /// Each thread processes a fixed range of items.
-    Fixed,
-    /// Threads can steal work from each other.
-    WorkStealing,
-}
 
 /// Policy to pin worker threads to CPUs.
 #[derive(Clone, Copy)]
@@ -553,15 +514,6 @@ impl<R: Range> ThreadContext<R> {
 mod test {
     use super::*;
     use crate::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-
-    #[test]
-    fn test_thread_count_try_from_usize() {
-        assert!(ThreadCount::try_from(0).is_err());
-        assert_eq!(
-            ThreadCount::try_from(1),
-            Ok(ThreadCount::Count(NonZeroUsize::try_from(1).unwrap()))
-        );
-    }
 
     #[test]
     fn test_build_thread_pool_available_parallelism() {

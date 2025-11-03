@@ -16,7 +16,7 @@ macro_rules! log_debug {
     }
 }
 
-#[cfg(feature = "log")]
+#[cfg(all(feature = "default-thread-pool", feature = "log"))]
 macro_rules! log_error {
     ( $($args:tt)* ) => {
         log::error!( $($args)* )
@@ -37,7 +37,7 @@ macro_rules! log_trace {
     }
 }
 
-#[cfg(feature = "log")]
+#[cfg(all(feature = "default-thread-pool", feature = "log"))]
 macro_rules! log_warn {
     ( $($args:tt)* ) => {
         log::warn!( $($args)* )
@@ -51,7 +51,7 @@ macro_rules! log_debug {
     };
 }
 
-#[cfg(not(feature = "log"))]
+#[cfg(all(feature = "default-thread-pool", not(feature = "log")))]
 macro_rules! log_error {
     ( $($args:tt)* ) => {
         ()
@@ -72,13 +72,15 @@ macro_rules! log_trace {
     };
 }
 
-#[cfg(not(feature = "log"))]
+#[cfg(all(feature = "default-thread-pool", not(feature = "log")))]
 macro_rules! log_warn {
     ( $($args:tt)* ) => {
         ()
     };
 }
 
-pub(crate) use {log_debug, log_error, log_warn};
+pub(crate) use log_debug;
+#[cfg(feature = "default-thread-pool")]
+pub(crate) use {log_error, log_warn};
 #[cfg(feature = "log_parallelism")]
 pub(crate) use {log_info, log_trace};

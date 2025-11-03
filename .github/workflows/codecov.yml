@@ -13,7 +13,7 @@ jobs:
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Generate code coverage
-        run: cargo llvm-cov --verbose --release --no-default-features --features log,log_parallelism,rayon,nightly_tests --workspace --lcov --output-path lcov.info
+        run: cargo llvm-cov --verbose --release --features log,log_parallelism,rayon,nightly_tests --workspace --lcov --output-path lcov.info
       - name: Generate code coverage with nightly APIs
         run: cargo llvm-cov --verbose --release --all-features --workspace --lcov --output-path lcov-nightly.info
       - name: Upload to Codecov

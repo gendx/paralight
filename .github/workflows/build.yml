@@ -22,6 +22,8 @@ jobs:
         with:
           toolchain: ${{ matrix.rust }}
 
+      - name: Build (default features)
+        run: cargo build --verbose --all
       - name: Build (no default features)
         run: cargo build --verbose --all --no-default-features
       - name: Build (log feature)
@@ -30,9 +32,10 @@ jobs:
         run: cargo build --verbose --all --no-default-features --features=log_parallelism
       - name: Build (rayon feature)
         run: cargo build --verbose --all --no-default-features --features=rayon
-      - name: Build (default features)
-        run: cargo build --verbose --all
 
+      - name: Build (nightly + default features)
+        if: ${{ matrix.rust == 'nightly' }}
+        run: cargo build --verbose --all --features=nightly
       - name: Build (nightly feature)
         if: ${{ matrix.rust == 'nightly' }}
         run: cargo build --verbose --all --no-default-features --features=nightly
@@ -45,6 +48,3 @@ jobs:
       - name: Build (nightly + rayon features)
         if: ${{ matrix.rust == 'nightly' }}
         run: cargo build --verbose --all --no-default-features --features=nightly,rayon
-      - name: Build (nightly + default features)
-        if: ${{ matrix.rust == 'nightly' }}
-        run: cargo build --verbose --all --features=nightly

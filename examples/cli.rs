@@ -20,7 +20,12 @@ fn main() {
 
     match cli.parallelism {
         Parallelism::Serial => dispatch_serial(cli),
-        Parallelism::Paralight => dispatch_paralight(cli),
+        Parallelism::Paralight => {
+            #[cfg(not(feature = "default-thread-pool"))]
+            panic!("Please compile this example with the `default-thread-pool` feature to use `--parallelism=paralight`.");
+            #[cfg(feature = "default-thread-pool")]
+            dispatch_paralight(cli);
+        }
         Parallelism::Rayon => {
             #[cfg(not(feature = "rayon"))]
             panic!("Please compile this example with the `rayon` feature to use `--parallelism=rayon`.");
@@ -143,6 +148,7 @@ fn dispatch_serial(cli: Cli) {
     }
 }
 
+#[cfg(feature = "default-thread-pool")]
 fn dispatch_paralight(cli: Cli) {
     use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
 
@@ -180,6 +186,7 @@ fn dispatch_paralight_on_rayon(cli: Cli) {
     dispatch_thread_pool(cli, &thread_pool);
 }
 
+#[cfg(any(feature = "rayon", feature = "default-thread-pool"))]
 fn dispatch_thread_pool(cli: Cli, thread_pool: impl paralight::iter::GenericThreadPool) {
     use paralight::iter::{
         IntoParallelRefMutSource, IntoParallelRefSource, IntoParallelSource, ParallelIteratorExt,

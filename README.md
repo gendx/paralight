@@ -298,6 +298,10 @@ can use Paralight with any thread pool that implements the
 Note that the [`GenericThreadPool`](iter::GenericThreadPool) trait is marked as
 `unsafe` due to the requirements that your implementation must uphold.
 
+If you don't need the default [`ThreadPool`](ThreadPool) implementation, you can
+disable the `default-thread-pool` feature of Paralight and still benefit from
+all the iterator API.
+
 ### Rayon thread pools
 
 For convenience, the [`RayonThreadPool`](RayonThreadPool) wrapper around
