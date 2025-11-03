@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.0.8 - 2025-11-03
+
+### Added
+
+- An implementation of `GenericThreadPool` for thread pools provided by the
+  `rayon-core` crate. This is available under the `rayon` feature.
+
+### Changed
+
+- The minimum supported Rust version (MSRV) is now 1.80.0.
+- The default `ThreadPool` implementation is now gated by the
+  `default-thread-pool` feature. It is still enabled by default but can be
+  disabled if you don't need it.
+- Improved the panic messages when trying to spawn too many threads or to
+  process too many items.
+
 ## 0.0.7 - 2025-10-24
 
 ### Added
