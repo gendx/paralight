@@ -41,6 +41,11 @@ use std::ops::ControlFlow;
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
+#[cfg(all(not(miri), target_os = "windows"))]
+use windows_sys::Win32::{
+    Foundation::GetLastError,
+    System::Threading::{GetCurrentThread, SetThreadAffinityMask},
+};
 
 /// Policy to pin worker threads to CPUs.
 #[derive(Clone, Copy)]
@@ -283,7 +288,8 @@ impl<F: RangeFactory> ThreadPoolImpl<F> {
                 target_os = "android",
                 target_os = "dragonfly",
                 target_os = "freebsd",
-                target_os = "linux"
+                target_os = "linux",
+                target_os = "windows"
             ))
         ))]
         match cpu_pinning {
@@ -337,6 +343,50 @@ impl<F: RangeFactory> ThreadPoolImpl<F> {
                                 } else if let Err(e) = sched_setaffinity(Pid::from_raw(0), &cpu_set)
                                 {
                                     panic!("Failed to set CPU affinity for thread #{id}: {e}");
+                                } else {
+                                    log_debug!("Pinned thread #{id} to CPU #{id}");
+                                }
+                            }
+                        }
+                        #[cfg(all(not(miri), target_os = "windows"))]
+                        match cpu_pinning {
+                            CpuPinningPolicy::No => (),
+                            CpuPinningPolicy::IfSupported => {
+                                let affinity_mask = 1usize << id;
+                                // SAFETY: `GetCurrentThread()` always returns a valid handle for the
+                                // current thread if it's used within the same thread.
+                                let thread = unsafe { GetCurrentThread() };
+                                // SAFETY: `SetThreadAffinityMask()` may fail if the requested CPU
+                                // isn't in the current process's affinity mask or if the affinity
+                                // mask can't be used for another reason. In these cases it will
+                                // fail gracefully.
+                                let result = unsafe { SetThreadAffinityMask(thread, affinity_mask) };
+                                if result == 0 {
+                                    // SAFETY: `GetLastError()`is used when an error is returned
+                                    // from `SetThreadAffinityMask()`, and should always return an
+                                    // error code.
+                                    let _last_error = unsafe { GetLastError() };
+                                    log_warn!("Failed to set CPU affinity for thread #{id}: error code {_last_error}");
+                                } else {
+                                    log_debug!("Pinned thread #{id} to CPU #{id}");
+                                }
+                            }
+                            CpuPinningPolicy::Always => {
+                                let affinity_mask = 1usize << id;
+                                // SAFETY: `GetCurrentThread()` always returns a valid handle for the
+                                // current thread if it's used within the same thread.
+                                let thread = unsafe { GetCurrentThread() };
+                                // SAFETY: `SetThreadAffinityMask()` may fail if the requested CPU
+                                // isn't in the current process's affinity mask or if the affinity
+                                // mask can't be used for another reason. In these cases it will
+                                // fail gracefully.
+                                let result = unsafe { SetThreadAffinityMask(thread, affinity_mask) };
+                                if result == 0 {
+                                    // SAFETY: `GetLastError()`is used when an error is returned
+                                    // from `SetThreadAffinityMask()`, and should always return an
+                                    // error code.
+                                    let last_error = unsafe { GetLastError() };
+                                    panic!("Failed to set CPU affinity for thread #{id}: error code {last_error}");
                                 } else {
                                     log_debug!("Pinned thread #{id} to CPU #{id}");
                                 }
@@ -575,7 +625,8 @@ mod test {
             target_os = "android",
             target_os = "dragonfly",
             target_os = "freebsd",
-            target_os = "linux"
+            target_os = "linux",
+            target_os = "windows"
         )
     ))]
     #[test]
@@ -602,7 +653,8 @@ mod test {
             target_os = "android",
             target_os = "dragonfly",
             target_os = "freebsd",
-            target_os = "linux"
+            target_os = "linux",
+            target_os = "windows"
         ))
     ))]
     #[test]

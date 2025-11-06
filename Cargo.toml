@@ -18,7 +18,7 @@ rustdoc-args = ["--cfg", "docsrs", "--generate-link-to-definition"]
 
 [features]
 default = ["default-thread-pool"]
-default-thread-pool = ["dep:nix"]
+default-thread-pool = ["dep:nix", "dep:windows-sys"]
 log = ["dep:log"]
 log_parallelism = ["log"]
 nightly = []
@@ -33,6 +33,10 @@ rayon-core = { optional = true, version = "1.13.0" }
 # Platforms that support `libc::sched_setaffinity()`.
 [target.'cfg(any(target_os = "android", target_os = "dragonfly", target_os = "freebsd", target_os = "linux"))'.dependencies]
 nix = { optional = true, version = "0.30", features = ["sched"] }
+
+# Windows thread affinity support.
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { optional = true, version = "0.61", features = ["Win32_System_Threading"] }
 
 [dev-dependencies]
 clap = { version = "4.5.31", features = ["derive"] }
