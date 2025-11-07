@@ -1,14 +1,14 @@
 # Paralight: a lightweight parallelism library for indexed structures
 
 [![Crate](https://img.shields.io/crates/v/paralight.svg?logo=rust)](https://crates.io/crates/paralight)
-[![Documentation](https://img.shields.io/docsrs/paralight/0.0.8?logo=rust)](https://docs.rs/paralight/0.0.8/)
-[![Minimum Rust 1.80.0](https://img.shields.io/crates/msrv/paralight/0.0.8.svg?logo=rust&color=orange)](https://releases.rs/docs/1.80.0/)
-[![Lines of Code](https://www.aschey.tech/tokei/github/gendx/paralight?category=code&branch=0.0.8)](https://github.com/gendx/paralight/tree/0.0.8)
-[![Dependencies](https://deps.rs/crate/paralight/0.0.8/status.svg)](https://deps.rs/crate/paralight/0.0.8)
-[![License](https://img.shields.io/crates/l/paralight/0.0.8.svg)](https://github.com/gendx/paralight/blob/0.0.8/LICENSE)
-[![Codecov](https://codecov.io/gh/gendx/paralight/branch/0.0.8/graph/badge.svg)](https://codecov.io/gh/gendx/paralight/tree/0.0.8)
-[![Build Status](https://github.com/gendx/paralight/actions/workflows/build.yml/badge.svg?branch=0.0.8)](https://github.com/gendx/paralight/actions/workflows/build.yml)
-[![Test Status](https://github.com/gendx/paralight/actions/workflows/tests.yml/badge.svg?branch=0.0.8)](https://github.com/gendx/paralight/actions/workflows/tests.yml)
+[![Documentation](https://img.shields.io/docsrs/paralight?logo=rust)](https://docs.rs/paralight)
+[![Minimum Rust 1.80.0](https://img.shields.io/badge/rust-1.80.0%2B-orange.svg?logo=rust)](https://releases.rs/docs/1.80.0/)
+[![Lines of Code](https://www.aschey.tech/tokei/github/gendx/paralight?category=code&branch=main)](https://github.com/gendx/paralight)
+[![Dependencies](https://deps.rs/repo/github/gendx/paralight/status.svg)](https://deps.rs/repo/github/gendx/paralight)
+[![License](https://img.shields.io/crates/l/paralight.svg)](https://github.com/gendx/paralight/blob/main/LICENSE)
+[![Codecov](https://codecov.io/gh/gendx/paralight/branch/main/graph/badge.svg)](https://app.codecov.io/gh/gendx/paralight/tree/main)
+[![Build Status](https://github.com/gendx/paralight/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/gendx/paralight/actions/workflows/build.yml)
+[![Test Status](https://github.com/gendx/paralight/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/gendx/paralight/actions/workflows/tests.yml)
 
 This library allows you to distribute computation over *indexed* sources
 ([slices](slice), [ranges](std::ops::Range), [`Vec`](std::vec::Vec), etc.) among
@@ -449,7 +449,7 @@ As mentioned, Paralight uses as little `unsafe` code as possible. Here is the
 list of places where `unsafe` is needed.
 
 - Lifetime-erasure in
-  [core/util.rs](https://github.com/gendx/paralight/blob/main/src/core/util.rs).
+  [threads/thread_pool/util.rs](https://github.com/gendx/paralight/blob/main/src/threads/thread_pool/util.rs).
   The goal is essentially to share an `Arc<Mutex<&'a T>>` between the main
   threads and worker threads where `T` contains a description of a parallel
   pipeline. The difficulty is that the lifetime `'a` is only valid for a limited
@@ -514,7 +514,9 @@ list of places where `unsafe` is needed.
   check correctness.
 - Symmetrically, [`GenericThreadPool`](iter::GenericThreadPool) is an `unsafe`
   trait, implemented for `&mut ThreadPool` in
-  [core/thread_pool.rs](https://github.com/gendx/paralight/blob/main/src/core/thread_pool.rs).
+  [threads/thread_pool/mod.rs](https://github.com/gendx/paralight/blob/main/src/threads/thread_pool/mod.rs)
+  and for `&RayonThreadPool` in
+  [threads/rayon.rs](https://github.com/gendx/paralight/blob/main/src/threads/rayon.rs).
   This in turn relies on _correctness_ of the (safe) work-stealing
   implementation in
   [core/range.rs](https://github.com/gendx/paralight/blob/main/src/core/range.rs),
