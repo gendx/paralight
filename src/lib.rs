@@ -16,8 +16,9 @@
 #![cfg_attr(not(test), forbid(clippy::undocumented_unsafe_blocks))]
 #![cfg_attr(
     all(test, feature = "nightly_tests"),
-    feature(cfg_sanitize, coverage_attribute, negative_impls)
+    feature(cfg_sanitize, negative_impls)
 )]
+#![cfg_attr(all(test, coverage_nightly), feature(coverage_attribute))]
 #![cfg_attr(
     feature = "nightly",
     feature(

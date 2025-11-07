@@ -66,4 +66,4 @@ name = "sum_fixed"
 required-features = ["default-thread-pool"]
 
 [lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)'] }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage,coverage_nightly)'] }

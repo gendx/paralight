@@ -231,7 +231,7 @@ mod test {
     // This ignored test showcases how to misuse the unsafe API by mutating a value
     // while it is referenced. Running it under Miri returns a failure.
     #[ignore]
-    #[cfg_attr(feature = "nightly_tests", coverage(off))]
+    #[cfg_attr(coverage_nightly, coverage(off))]
     #[test]
     #[allow(unused_assignments)]
     fn view_bad_mut() {
@@ -249,7 +249,7 @@ mod test {
     // reference whose lifetime extends beyond the underlying value's. Running it
     // under Miri returns a failure.
     #[ignore]
-    #[cfg_attr(feature = "nightly_tests", coverage(off))]
+    #[cfg_attr(coverage_nightly, coverage(off))]
     #[test]
     fn view_bad_lifetime() {
         let mut view = DynLifetimeView::<i32>::empty();
@@ -371,7 +371,7 @@ mod test {
     // This ignored test showcases how to misuse the unsafe API by mutating a value
     // while it is referenced. Running it under Miri returns a failure.
     #[ignore]
-    #[cfg_attr(feature = "nightly_tests", coverage(off))]
+    #[cfg_attr(coverage_nightly, coverage(off))]
     #[test]
     #[allow(unused_assignments)]
     fn dyn_lifetime_view_bad_mut() {
@@ -391,7 +391,7 @@ mod test {
     // reference whose lifetime extends beyond the underlying value's. Running it
     // under Miri returns a failure.
     #[ignore]
-    #[cfg_attr(feature = "nightly_tests", coverage(off))]
+    #[cfg_attr(coverage_nightly, coverage(off))]
     #[test]
     fn dyn_lifetime_view_bad_lifetime() {
         let x = 42;
