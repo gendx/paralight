@@ -164,9 +164,11 @@ panic!("Congratulations, you won the lottery and the assertion passed this time!
 Paralight allows pinning each worker thread to one CPU, on platforms that
 support it. For now, this is implemented for platforms whose
 [`target_os`](https://doc.rust-lang.org/reference/conditional-compilation.html#target_os)
-is among `android`, `dragonfly`, `freebsd` and `linux` (platforms that support
-`libc::sched_setaffinity()` via the
-[`nix` crate](https://crates.io/crates/nix)).
+is among `android`, `dragonfly`, `freebsd`, `linux` (platforms that support
+`libc::sched_setaffinity()` via the [`nix` crate](https://crates.io/crates/nix))
+and `windows` (using
+[`SetThreadAffinityMask()`](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-setthreadaffinitymask)
+via the [`windows-sys` crate](https://crates.io/crates/windows-sys)).
 
 Paralight offers three policies in the [`CpuPinningPolicy`](CpuPinningPolicy)
 enum:
@@ -496,6 +498,9 @@ list of places where `unsafe` is needed.
   [reverted](https://github.com/gendx/paralight/commit/59c995672634aead96a4d977fe1fcab1e0faa9a5)
   due to being unsound, highlighting once again the importance of code coverage
   and the effectiveness of [Miri](https://github.com/rust-lang/miri).
+- Windows API calls are used to set thread affinity in
+  [threads/thread_pool/mod.rs](https://github.com/gendx/paralight/blob/main/src/threads/thread_pool/mod.rs)
+  when requested.
 - Lastly, the definition of the [`SourceDescriptor`](iter::SourceDescriptor)
   trait in
   [iter/source/mod.rs](https://github.com/gendx/paralight/blob/main/src/iter/source/mod.rs)

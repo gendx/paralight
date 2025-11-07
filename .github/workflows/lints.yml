@@ -2,7 +2,14 @@ on: [push, pull_request]
 name: Lints on nightly toolchain
 jobs:
   clippy:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
     env:
       RUSTFLAGS: "-D warnings"
     steps:
