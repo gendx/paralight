@@ -9,11 +9,7 @@
 //! Simple program that adds two slices element-wise using Paralight with the
 //! fixed strategy.
 
-use paralight::iter::{
-    IntoParallelRefMutSource, IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt,
-    ZipableSource,
-};
-use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+use paralight::prelude::*;
 use std::hint::black_box;
 
 fn main() {

@@ -23,10 +23,8 @@ use std::collections::VecDeque;
 /// See also [`VecDequeRefMutParallelSource`].
 ///
 /// ```
-/// # use paralight::iter::{
-/// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, VecDequeRefParallelSource,
-/// # };
-/// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+/// # use paralight::iter::VecDequeRefParallelSource;
+/// # use paralight::prelude::*;
 /// # use std::collections::VecDeque;
 /// # let mut thread_pool = ThreadPoolBuilder {
 /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -73,11 +71,8 @@ impl<'data, T: Sync> ParallelSource for VecDequeRefParallelSource<'data, T> {
 /// See also [`VecDequeRefParallelSource`].
 ///
 /// ```
-/// # use paralight::iter::{
-/// #     IntoParallelRefMutSource, ParallelIteratorExt, ParallelSourceExt,
-/// #     VecDequeRefMutParallelSource,
-/// # };
-/// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+/// # use paralight::iter::VecDequeRefMutParallelSource;
+/// # use paralight::prelude::*;
 /// # use std::collections::VecDeque;
 /// # let mut thread_pool = ThreadPoolBuilder {
 /// #     num_threads: ThreadCount::AvailableParallelism,

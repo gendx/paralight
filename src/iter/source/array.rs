@@ -31,10 +31,8 @@ use std::mem::MaybeUninit;
 /// - [`maybe_uninit_uninit_array_transpose`](https://github.com/rust-lang/rust/issues/96097).
 ///
 /// ```
-/// # use paralight::iter::{
-/// #     ArrayParallelSource, IntoParallelSource, ParallelIteratorExt, ParallelSourceExt,
-/// # };
-/// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+/// # use paralight::iter::ArrayParallelSource;
+/// # use paralight::prelude::*;
 /// # let mut thread_pool = ThreadPoolBuilder {
 /// #     num_threads: ThreadCount::AvailableParallelism,
 /// #     range_strategy: RangeStrategy::WorkStealing,

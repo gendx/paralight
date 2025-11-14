@@ -150,7 +150,7 @@ fn dispatch_serial(cli: Cli) {
 
 #[cfg(feature = "default-thread-pool")]
 fn dispatch_paralight(cli: Cli) {
-    use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    use paralight::prelude::*;
 
     let mut thread_pool = ThreadPoolBuilder {
         num_threads: match cli.num_threads {
@@ -170,7 +170,7 @@ fn dispatch_paralight(cli: Cli) {
 
 #[cfg(feature = "rayon")]
 fn dispatch_paralight_on_rayon(cli: Cli) {
-    use paralight::{RangeStrategy, RayonThreadPool, ThreadCount};
+    use paralight::prelude::*;
 
     let thread_pool = RayonThreadPool::new_global(
         match cli.num_threads {
@@ -188,10 +188,7 @@ fn dispatch_paralight_on_rayon(cli: Cli) {
 
 #[cfg(any(feature = "rayon", feature = "default-thread-pool"))]
 fn dispatch_thread_pool(cli: Cli, thread_pool: impl paralight::iter::GenericThreadPool) {
-    use paralight::iter::{
-        IntoParallelRefMutSource, IntoParallelRefSource, IntoParallelSource, ParallelIteratorExt,
-        ParallelSourceExt, ZipableSource,
-    };
+    use paralight::prelude::*;
 
     match (cli.scenario, cli.owned_input, cli.boxed_items) {
         (Scenario::Sum, false, false) => {

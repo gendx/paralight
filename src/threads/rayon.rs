@@ -32,8 +32,7 @@ use std::sync::{Arc, Mutex};
 /// # // TODO: Enable Miri once supported by Rayon and its dependencies: https://github.com/crossbeam-rs/crossbeam/issues/1181.
 /// # #[cfg(not(miri))]
 /// # {
-/// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-/// # use paralight::{RangeStrategy, RayonThreadPool, ThreadCount};
+/// # use paralight::prelude::*;
 /// let thread_pool = RayonThreadPool::new_global(
 ///     ThreadCount::try_from(rayon_core::current_num_threads())
 ///         .expect("Paralight cannot operate with 0 threads"),
@@ -63,8 +62,8 @@ impl RayonThreadPool<'static> {
     /// each task may be executed by any thread in the pool, so there is no
     /// guarantee of a one-to-one match between Paralight tasks and Rayon
     /// threads (for a one-to-one match, use Paralight's built-in
-    /// [`ThreadPool`](crate::ThreadPool)). This is especially true if the Rayon
-    /// thread pool is also executing other tasks.
+    /// [`ThreadPool`](crate::threads::ThreadPool)). This is especially true if
+    /// the Rayon thread pool is also executing other tasks.
     ///
     /// Spawning fewer tasks limits the amount of parallelism, which might be
     /// desirable if other work is being executed in parallel (on the Rayon
@@ -81,8 +80,7 @@ impl RayonThreadPool<'static> {
     /// # // TODO: Enable Miri once supported by Rayon and its dependencies: https://github.com/crossbeam-rs/crossbeam/issues/1181.
     /// # #[cfg(not(miri))]
     /// # {
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{RangeStrategy, RayonThreadPool, ThreadCount};
+    /// # use paralight::prelude::*;
     /// let thread_pool = RayonThreadPool::new_global(
     ///     ThreadCount::try_from(rayon_core::current_num_threads())
     ///         .expect("Paralight cannot operate with 0 threads"),
@@ -111,8 +109,8 @@ impl<'a> RayonThreadPool<'a> {
     /// each task may be executed by any thread in the pool, so there is no
     /// guarantee of a one-to-one match between Paralight tasks and Rayon
     /// threads (for a one-to-one match, use Paralight's built-in
-    /// [`ThreadPool`](crate::ThreadPool)). This is especially true if the Rayon
-    /// thread pool is also executing other tasks.
+    /// [`ThreadPool`](crate::threads::ThreadPool)). This is especially true if
+    /// the Rayon thread pool is also executing other tasks.
     ///
     /// Spawning fewer tasks limits the amount of parallelism, which might be
     /// desirable if other work is being executed in parallel (on the Rayon
@@ -129,8 +127,7 @@ impl<'a> RayonThreadPool<'a> {
     /// # // TODO: Enable Miri once supported by Rayon and its dependencies: https://github.com/crossbeam-rs/crossbeam/issues/1181.
     /// # #[cfg(not(miri))]
     /// # {
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{RangeStrategy, RayonThreadPool, ThreadCount};
+    /// # use paralight::prelude::*;
     /// // Create a custom Rayon thread pool.
     /// let thread_pool = rayon_core::ThreadPoolBuilder::new()
     ///     .num_threads(std::thread::available_parallelism().unwrap().into())

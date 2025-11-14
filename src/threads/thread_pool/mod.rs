@@ -74,8 +74,7 @@ impl ThreadPoolBuilder {
     /// Spawns a thread pool.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// let pool_builder = ThreadPoolBuilder {
     ///     num_threads: ThreadCount::AvailableParallelism,
     ///     range_strategy: RangeStrategy::WorkStealing,

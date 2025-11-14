@@ -22,10 +22,8 @@ use std::mem::ManuallyDrop;
 /// [`MutSliceParallelSource`](super::slice::MutSliceParallelSource).
 ///
 /// ```
-/// # use paralight::iter::{
-/// #     IntoParallelSource, ParallelIteratorExt, ParallelSourceExt, VecParallelSource,
-/// # };
-/// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+/// # use paralight::iter::VecParallelSource;
+/// # use paralight::prelude::*;
 /// # let mut thread_pool = ThreadPoolBuilder {
 /// #     num_threads: ThreadCount::AvailableParallelism,
 /// #     range_strategy: RangeStrategy::WorkStealing,

@@ -37,22 +37,25 @@ pub mod iter;
 #[cfg(any(feature = "rayon", feature = "default-thread-pool"))]
 mod macros;
 #[cfg(any(feature = "rayon", feature = "default-thread-pool"))]
-mod threads;
+pub mod threads;
 
-#[cfg(feature = "rayon")]
-pub use threads::RayonThreadPool;
-#[cfg(feature = "default-thread-pool")]
-pub use threads::{CpuPinningPolicy, ThreadPool, ThreadPoolBuilder};
-#[cfg(any(feature = "rayon", feature = "default-thread-pool"))]
-pub use threads::{RangeStrategy, ThreadCount};
-
-#[cfg(all(test, any(feature = "rayon", feature = "default-thread-pool")))]
-mod test {
-    use super::*;
-    use crate::iter::{
+/// Prelude of commonly used items from this crate.
+pub mod prelude {
+    pub use crate::iter::{
         GenericThreadPool, IntoParallelRefMutSource, IntoParallelRefSource, IntoParallelSource,
         ParallelIterator, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
     };
+    #[cfg(feature = "rayon")]
+    pub use crate::threads::RayonThreadPool;
+    #[cfg(feature = "default-thread-pool")]
+    pub use crate::threads::{CpuPinningPolicy, ThreadPool, ThreadPoolBuilder};
+    #[cfg(any(feature = "rayon", feature = "default-thread-pool"))]
+    pub use crate::threads::{RangeStrategy, ThreadCount};
+}
+
+#[cfg(all(test, any(feature = "rayon", feature = "default-thread-pool")))]
+mod test {
+    use crate::prelude::*;
     use rand::Rng;
     use std::cell::Cell;
     use std::collections::{HashSet, VecDeque};

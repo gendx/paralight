@@ -113,11 +113,7 @@ mod paralight {
     use super::{LENGTHS, NUM_THREADS};
     use divan::counter::BytesCount;
     use divan::{black_box, Bencher};
-    use paralight::iter::{
-        IntoParallelRefMutSource, IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt,
-        ZipableSource,
-    };
-    use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    use paralight::prelude::*;
 
     #[divan::bench(consts = NUM_THREADS, args = LENGTHS)]
     fn sum_fixed<const NUM_THREADS: usize>(bencher: Bencher, len: usize) {

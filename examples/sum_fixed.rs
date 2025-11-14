@@ -9,8 +9,7 @@
 //! Simple program that computes the sum of a slice using Paralight with the
 //! fixed strategy.
 
-use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+use paralight::prelude::*;
 use std::hint::black_box;
 
 fn main() {

@@ -22,11 +22,7 @@ Benchmarks on a real-world use case can be seen
 [here](https://gendignoux.com/blog/2024/12/02/rust-data-oriented-design.html#results).
 
 ```rust
-use paralight::iter::{
-    IntoParallelRefSource, IntoParallelRefMutSource, ParallelIteratorExt, ParallelSourceExt,
-    ZipableSource,
-};
-use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+use paralight::prelude::*;
 
 // Create a thread pool with the given parameters.
 let mut thread_pool = ThreadPoolBuilder {
@@ -66,35 +62,37 @@ traits ([`IntoParallelSource`](iter::IntoParallelSource),
 
 ## Thread pool configuration
 
-The [`ThreadPoolBuilder`](ThreadPoolBuilder) provides an explicit way to
-configure your thread pool, giving you fine-grained control over performance for
-your workload. There is no default, which is deliberate because the suitable
+The [`ThreadPoolBuilder`](threads::ThreadPoolBuilder) provides an explicit way
+to configure your thread pool, giving you fine-grained control over performance
+for your workload. There is no default, which is deliberate because the suitable
 parameters depend on your workload.
 
 ### Number of worker threads
 
 Paralight allows you to specify the number of worker threads to spawn in a
-thread pool with the [`ThreadCount`](ThreadCount) enum:
+thread pool with the [`ThreadCount`](threads::ThreadCount) enum:
 
-- [`AvailableParallelism`](ThreadCount::AvailableParallelism) uses the number of
-  threads returned by the standard library's
+- [`AvailableParallelism`](threads::ThreadCount::AvailableParallelism) uses the
+  number of threads returned by the standard library's
   [`available_parallelism()`](std::thread::available_parallelism) function,
-- [`Count(_)`](ThreadCount::Count) uses the specified number of threads, which
-  must be non-zero.
+- [`Count(_)`](threads::ThreadCount::Count) uses the specified number of
+  threads, which must be non-zero.
 
-For convenience, [`ThreadCount`](ThreadCount) implements the
-[`TryFrom<usize>`](TryFrom) trait to create a [`Count(_)`](ThreadCount::Count)
-instance, validating that the given number of threads is not zero.
+For convenience, [`ThreadCount`](threads::ThreadCount) implements the
+[`TryFrom<usize>`](TryFrom) trait to create a
+[`Count(_)`](threads::ThreadCount::Count) instance, validating that the given
+number of threads is not zero.
 
 **Recommendation:** It depends. While
-[`AvailableParallelism`](ThreadCount::AvailableParallelism) may be a good
-default, it usually returns twice the number of CPU cores (at least on Intel) to
-account for [hyper-threading](https://en.wikipedia.org/wiki/Hyper-threading).
-Whether this is optimal or not depends on your workload, for example whether
-it's compute bound or memory bound, whether a single thread can saturate the
-resources of one core or not, etc. Generally, the long list of caveats mentioned
-in the documentation of
-[`available_parallelism()`](std::thread::available_parallelism) applies.
+[`AvailableParallelism`](threads::ThreadCount::AvailableParallelism) may be a
+good default, it usually returns twice the number of CPU cores (at least on
+Intel) to account for
+[hyper-threading](https://en.wikipedia.org/wiki/Hyper-threading). Whether this
+is optimal or not depends on your workload, for example whether it's compute
+bound or memory bound, whether a single thread can saturate the resources of one
+core or not, etc. Generally, the long list of caveats mentioned in the
+documentation of [`available_parallelism()`](std::thread::available_parallelism)
+applies.
 
 On some workloads, hyper-threading doesn't provide a performance boost over
 using only one thread per core, because two hyper-threads would compete on
@@ -108,22 +106,23 @@ performance of your system.
 
 ### Work-stealing strategy
 
-Paralight offers two strategies in the [`RangeStrategy`](RangeStrategy) enum to
-distribute computation among threads:
+Paralight offers two strategies in the [`RangeStrategy`](threads::RangeStrategy)
+enum to distribute computation among threads:
 
-- [`Fixed`](RangeStrategy::Fixed) splits the input evenly and hands out a fixed
-  sequential range of items to each worker thread,
-- [`WorkStealing`](RangeStrategy::WorkStealing) starts with the fixed
+- [`Fixed`](threads::RangeStrategy::Fixed) splits the input evenly and hands out
+  a fixed sequential range of items to each worker thread,
+- [`WorkStealing`](threads::RangeStrategy::WorkStealing) starts with the fixed
   distribution, but lets each worker thread steal items from others once it is
   done processing its items.
 
 **Recommendation:** If your pipeline is performing roughly the same amont of
-work for each item, you should probably use the [`Fixed`](RangeStrategy::Fixed)
-strategy, to avoid paying the synchronization cost of work-stealing. This is
-especially true if the amount of work per item is small (e.g. some simple
-arithmetic operations). If the amoung of work per item is highly variable and/or
-large, you should probably use the [`WorkStealing`](RangeStrategy::WorkStealing)
-strategy (e.g. parsing strings, processing files).
+work for each item, you should probably use the
+[`Fixed`](threads::RangeStrategy::Fixed) strategy, to avoid paying the
+synchronization cost of work-stealing. This is especially true if the amount of
+work per item is small (e.g. some simple arithmetic operations). If the amoung
+of work per item is highly variable and/or large, you should probably use the
+[`WorkStealing`](threads::RangeStrategy::WorkStealing) strategy (e.g. parsing
+strings, processing files).
 
 **Note:** In work-stealing mode, each thread processes an arbitrary subset of
 items in arbitrary order, meaning that a reduction operation must be both
@@ -135,14 +134,15 @@ order). Fortunately, a lot of common operations are commutative and associative,
 but be mindful of this.
 
 ```rust,should_panic
-# use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-# use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
-# let mut thread_pool = ThreadPoolBuilder {
-#     num_threads: ThreadCount::AvailableParallelism,
-#     range_strategy: RangeStrategy::WorkStealing,
-#     cpu_pinning: CpuPinningPolicy::No,
-# }
-# .build();
+use paralight::prelude::*;
+
+let mut thread_pool = ThreadPoolBuilder {
+    num_threads: ThreadCount::AvailableParallelism,
+    range_strategy: RangeStrategy::WorkStealing,
+    cpu_pinning: CpuPinningPolicy::No,
+}
+.build();
+
 let s = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j']
     .par_iter()
     .with_thread_pool(&mut thread_pool)
@@ -170,16 +170,17 @@ and `windows` (using
 [`SetThreadAffinityMask()`](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-setthreadaffinitymask)
 via the [`windows-sys` crate](https://crates.io/crates/windows-sys)).
 
-Paralight offers three policies in the [`CpuPinningPolicy`](CpuPinningPolicy)
-enum:
+Paralight offers three policies in the
+[`CpuPinningPolicy`](threads::CpuPinningPolicy) enum:
 
-- [`No`](CpuPinningPolicy::No) doesn't pin worker threads to CPUs,
-- [`IfSupported`](CpuPinningPolicy::IfSupported) attempts to pin each worker
-  thread to a distinct CPU on supported platforms, but proceeds without pinning
-  if running on an unsupported platform or if the pinning function fails,
-- [`Always`](CpuPinningPolicy::Always) pins each worker thread to a distinct
-  CPU, panicking if the platform isn't supported or if the pinning function
-  returns an error.
+- [`No`](threads::CpuPinningPolicy::No) doesn't pin worker threads to CPUs,
+- [`IfSupported`](threads::CpuPinningPolicy::IfSupported) attempts to pin each
+  worker thread to a distinct CPU on supported platforms, but proceeds without
+  pinning if running on an unsupported platform or if the pinning function
+  fails,
+- [`Always`](threads::CpuPinningPolicy::Always) pins each worker thread to a
+  distinct CPU, panicking if the platform isn't supported or if the pinning
+  function returns an error.
 
 **Recommendation:** Whether CPU pinning is useful or detrimental depends on your
 workload. If you're processing the same data over and over again (e.g. calling
@@ -193,20 +194,20 @@ If your program is not running alone on your machine but is competing with other
 programs, CPU pinning may be detrimental, as a worker thread will be blocked
 whenever its required core is used by another program, even if another core is
 free and other worker threads are done (especially with the
-[`Fixed`](RangeStrategy::Fixed) strategy). This of course depends on how the
-scheduler works on your OS.
+[`Fixed`](threads::RangeStrategy::Fixed) strategy). This of course depends on
+how the scheduler works on your OS.
 
 ## Using a thread pool
 
 To create parallel pipelines, be mindful that the
 [`with_thread_pool()`](iter::ParallelSourceExt::with_thread_pool) function takes
-a [`ThreadPool`](ThreadPool) by mutable reference [`&mut`](reference). This is a
-deliberate design choice because only one pipeline can be run at a time on a
-given Paralight thread pool (for more flexible options, see
+a [`ThreadPool`](threads::ThreadPool) by mutable reference [`&mut`](reference).
+This is a deliberate design choice because only one pipeline can be run at a
+time on a given Paralight thread pool (for more flexible options, see
 ["Bringing your own thread pool"](#bringing-your-own-thread-pool) below).
 
 To release the resources (i.e. the worker threads) created by a
-[`ThreadPool`](ThreadPool), simply [`drop()`](drop) it.
+[`ThreadPool`](threads::ThreadPool), simply [`drop()`](drop) it.
 
 If you want to create a global thread pool, you will have to wrap it in a
 [`Mutex`](std::sync::Mutex) (or other suitable synchronization primitive) and
@@ -214,10 +215,7 @@ manually lock it to obtain a suitable `&mut ThreadPool`. You can for example
 combine a mutex with the [`LazyLock`](std::sync::LazyLock) pattern.
 
 ```rust,no_run
-use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-use paralight::{
-    CpuPinningPolicy, RangeStrategy, ThreadPool, ThreadCount, ThreadPoolBuilder,
-};
+use paralight::prelude::*;
 use std::ops::DerefMut;
 use std::sync::{LazyLock, Mutex};
 
@@ -253,10 +251,7 @@ This pitfall is the reason why Paralight doesn't provide an implicit global
 thread pool.
 
 ```rust,no_run
-# use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-# use paralight::{
-#     CpuPinningPolicy, RangeStrategy, ThreadPool, ThreadCount, ThreadPoolBuilder,
-# };
+# use paralight::prelude::*;
 # use std::ops::DerefMut;
 # use std::sync::{LazyLock, Mutex};
 #
@@ -292,23 +287,23 @@ assert_eq!(sum, 990_000);
 
 ## Bringing your own thread pool
 
-As an alternative to the provided [`ThreadPool`](ThreadPool) implementation, you
-can use Paralight with any thread pool that implements the
+As an alternative to the provided [`ThreadPool`](threads::ThreadPool)
+implementation, you can use Paralight with any thread pool that implements the
 [`GenericThreadPool`](iter::GenericThreadPool) interface, via the
 [`with_thread_pool()`](iter::ParallelSourceExt::with_thread_pool) adaptor.
 
 Note that the [`GenericThreadPool`](iter::GenericThreadPool) trait is marked as
 `unsafe` due to the requirements that your implementation must uphold.
 
-If you don't need the default [`ThreadPool`](ThreadPool) implementation, you can
-disable the `default-thread-pool` feature of Paralight and still benefit from
-all the iterator API.
+If you don't need the default [`ThreadPool`](threads::ThreadPool)
+implementation, you can disable the `default-thread-pool` feature of Paralight
+and still benefit from all the iterator API.
 
 ### Rayon thread pools
 
-For convenience, the [`RayonThreadPool`](RayonThreadPool) wrapper around
-[Rayon](https://docs.rs/rayon) is available under the `rayon` feature, and
-implements [`GenericThreadPool`](iter::GenericThreadPool).
+For convenience, the [`RayonThreadPool`](threads::RayonThreadPool) wrapper
+around [Rayon](https://docs.rs/rayon) is available under the `rayon` feature,
+and implements [`GenericThreadPool`](iter::GenericThreadPool).
 
 However, note that this backend isn't tested with Miri nor ThreadSanitizer,
 because Rayon is broken with them.
@@ -325,8 +320,7 @@ your code to know which configuration is optimal.
 # // https://github.com/crossbeam-rs/crossbeam/issues/1181.
 # #[cfg(all(feature = "rayon", not(miri)))]
 # {
-use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-use paralight::{RangeStrategy, RayonThreadPool, ThreadCount};
+use paralight::prelude::*;
 
 let thread_pool = RayonThreadPool::new_global(
     ThreadCount::try_from(rayon_core::current_num_threads())
@@ -342,12 +336,11 @@ assert_eq!(sum, 5 * 11);
 
 ## Limitations
 
-With the [`WorkStealing`](RangeStrategy::WorkStealing) strategy, inputs with
-more than [`u32::MAX`](u32::MAX) elements are currently not supported.
+With the [`WorkStealing`](threads::RangeStrategy::WorkStealing) strategy, inputs
+with more than [`u32::MAX`](u32::MAX) elements are currently not supported.
 
 ```rust,should_panic
-use paralight::iter::{IntoParallelSource, ParallelIteratorExt, ParallelSourceExt};
-use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+use paralight::prelude::*;
 
 let mut thread_pool = ThreadPoolBuilder {
     num_threads: ThreadCount::AvailableParallelism,

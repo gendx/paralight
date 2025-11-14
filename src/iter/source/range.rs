@@ -73,10 +73,8 @@ impl SourceDescriptor for RangeSourceDescriptor<usize> {
 /// feature.
 ///
 /// ```
-/// # use paralight::iter::{
-/// #     IntoParallelSource, ParallelIteratorExt, ParallelSourceExt, RangeParallelSource,
-/// # };
-/// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+/// # use paralight::iter::RangeParallelSource;
+/// # use paralight::prelude::*;
 /// # let mut thread_pool = ThreadPoolBuilder {
 /// #     num_threads: ThreadCount::AvailableParallelism,
 /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -174,10 +172,8 @@ impl ParallelSource for RangeParallelSource<usize> {
 /// feature.
 ///
 /// ```
-/// # use paralight::iter::{
-/// #     IntoParallelSource, ParallelIteratorExt, ParallelSourceExt, RangeInclusiveParallelSource,
-/// # };
-/// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+/// # use paralight::iter::RangeInclusiveParallelSource;
+/// # use paralight::prelude::*;
 /// # let mut thread_pool = ThreadPoolBuilder {
 /// #     num_threads: ThreadCount::AvailableParallelism,
 /// #     range_strategy: RangeStrategy::WorkStealing,

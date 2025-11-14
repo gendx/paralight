@@ -16,10 +16,7 @@ use super::{ParallelSource, SourceCleanup, SourceDescriptor};
 /// elements) and [arrays](array) of [`ParallelSource`]s.
 ///
 /// ```
-/// # use paralight::iter::{
-/// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-/// # };
-/// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+/// # use paralight::prelude::*;
 /// use std::array;
 ///
 /// # let mut thread_pool = ThreadPoolBuilder {
@@ -55,10 +52,7 @@ where
     /// [`ParallelSource`] will panic.
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -79,10 +73,7 @@ where
     /// ```
     ///
     /// ```should_panic
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -107,10 +98,7 @@ where
     /// [`None`] for indices beyond a given source's length.
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -140,10 +128,7 @@ where
     /// input sources lengths.
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,

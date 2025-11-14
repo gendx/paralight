@@ -62,8 +62,7 @@ pub trait ParallelIterator: Sized {
     /// - `reduce` function to reduce a pair of outputs into one output.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIterator, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -108,8 +107,7 @@ pub trait ParallelIterator: Sized {
     /// terminate early.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIterator, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # use std::ops::ControlFlow;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -167,8 +165,7 @@ pub trait ParallelIterator: Sized {
     /// skip processing items at larger indices.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIterator, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # use std::ops::ControlFlow;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -225,10 +222,8 @@ pub trait ParallelIterator: Sized {
     ///   output.
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     Accumulator, IntoParallelRefSource, ParallelIterator, ParallelSourceExt,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::iter::Accumulator;
+    /// # use paralight::prelude::*;
     /// use std::iter::Sum;
     ///
     /// # let mut thread_pool = ThreadPoolBuilder {
@@ -478,8 +473,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// predicate `f`, and [`false`] otherwise.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -504,8 +498,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// This returns [`true`] if the iterator is empty.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -539,8 +532,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// predicate `f`, and [`false`] otherwise.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -565,8 +557,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// This returns [`false`] if the iterator is empty.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -606,8 +597,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// See also [`copied()`](Self::copied).
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -649,10 +639,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// and their variants are more efficient.
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # use std::cmp::Ordering;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -670,10 +657,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// ```
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # use std::cmp::Ordering;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -691,10 +675,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// ```
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # use std::cmp::Ordering;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -714,8 +695,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// This returns [`Ordering::Equal`] if the iterator is empty.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # use std::cmp::Ordering;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -747,10 +727,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// [`partial_cmp_by()`](Self::partial_cmp_by).
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # use std::cmp::Ordering;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -801,10 +778,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// [`eq_by_key()`](Self::eq_by_key).
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # use std::cmp::Ordering;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -851,10 +825,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// [`eq_by_keys()`](Self::eq_by_keys).
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # use std::cmp::Ordering;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -896,8 +867,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// See also [`cloned()`](Self::cloned).
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -930,10 +900,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// or the more general [`all()`](Self::all) and [`any()`](Self::any).
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -950,10 +917,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// ```
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -973,10 +937,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// with [`Eq`] isn't required.
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -996,10 +957,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// implement [`PartialEq`] with each other.
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -1018,8 +976,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// This returns [`true`] if the iterator is empty.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -1048,10 +1005,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// This returns the opposite of [`ne_by_key()`](Self::ne_by_key).
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -1090,10 +1044,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// This returns the opposite of [`ne_by_keys()`](Self::ne_by_keys).
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -1136,8 +1087,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// predicate `f` returns [`true`].
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -1165,8 +1115,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// returns [`None`].
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -1186,10 +1135,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// is fine.
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIterator, ParallelIteratorExt, ParallelSourceExt,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # use std::rc::Rc;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -1221,8 +1167,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// [`Item`](ParallelIterator::Item) type isn't [`Send`].
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -1276,8 +1221,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// [`Item`](ParallelIterator::Item) type isn't [`Send`].
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -1349,8 +1293,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// the result type.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -1408,8 +1351,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// the result type.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -1477,8 +1419,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// initialize a per-thread value and pass it together with each item.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # use std::collections::HashSet;
     /// # use std::sync::Mutex;
     /// # let mut thread_pool = ThreadPoolBuilder {
@@ -1517,8 +1458,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// [`Sync`].
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefMutSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// use rand::Rng;
     ///
     /// # let mut thread_pool = ThreadPoolBuilder {
@@ -1528,12 +1468,15 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # }
     /// # .build();
     /// let mut bits: [bool; 128] = [true; 128];
-    /// bits
-    ///     .par_iter_mut()
+    /// bits.par_iter_mut()
     ///     .with_thread_pool(&mut thread_pool)
     ///     .for_each_init(
     ///         rand::rng, // A thread-local RNG that is neither Send nor Sync.
-    ///         |rng, bit| if rng.random() { *bit = false; },
+    ///         |rng, bit| {
+    ///             if rng.random() {
+    ///                 *bit = false;
+    ///             }
+    ///         },
     ///     );
     ///
     /// // The probability that these checks fail is negligible.
@@ -1563,8 +1506,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// pipeline.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # use std::sync::atomic::{AtomicUsize, Ordering};
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -1601,8 +1543,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// per-thread value and pass it together with each item.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -1622,10 +1563,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// is fine.
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIterator, ParallelIteratorExt, ParallelSourceExt,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # use std::rc::Rc;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -1657,8 +1595,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// [`Sync`].
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// use rand::Rng;
     ///
     /// # let mut thread_pool = ThreadPoolBuilder {
@@ -1696,8 +1633,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// is empty.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -1731,8 +1667,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// function `f`, or [`None`] if this iterator is empty.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -1778,8 +1713,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// empty.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -1812,8 +1746,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// is empty.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -1847,8 +1780,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// function `f`, or [`None`] if this iterator is empty.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -1894,8 +1826,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// empty.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -1934,10 +1865,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// or the more general [`all()`](Self::all) and [`any()`](Self::any).
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -1954,10 +1882,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// ```
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -1977,10 +1902,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// with [`Eq`] isn't required.
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -2000,10 +1922,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// implement [`PartialEq`] with each other.
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -2022,8 +1941,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// This returns [`false`] if the iterator is empty.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -2052,10 +1970,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// This returns the opposite of [`eq_by_key()`](Self::eq_by_key).
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -2094,10 +2009,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// This returns the opposite of [`eq_by_keys()`](Self::eq_by_keys).
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -2150,10 +2062,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// and their variants are more efficient.
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # use std::cmp::Ordering;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -2171,10 +2080,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// ```
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # use std::cmp::Ordering;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -2192,10 +2098,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// ```
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -2212,10 +2115,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// ```
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # use std::cmp::Ordering;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -2236,8 +2136,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// empty.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # use std::cmp::Ordering;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -2269,10 +2168,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// [`partial_cmp()`](Self::partial_cmp) or [`cmp_by()`](Self::cmp_by).
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # use std::cmp::Ordering;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -2361,10 +2257,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// [`cmp_by_key()`](Self::cmp_by_key) or [`eq_by_key()`](Self::eq_by_key).
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # use std::cmp::Ordering;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -2411,10 +2304,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// [`eq_by_keys()`](Self::eq_by_keys).
     ///
     /// ```
-    /// # use paralight::iter::{
-    /// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
-    /// # };
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # use std::cmp::Ordering;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -2449,8 +2339,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// Returns the product of the items produced by this iterator.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -2475,8 +2364,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// `f` to collapse pairs of items.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -2505,8 +2393,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///   In particular, `reduce()` returns `init()` if the iterator is empty.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -2532,8 +2419,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// Returns the sum of the items produced by this iterator.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -2572,8 +2458,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// Rust feature.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # use std::collections::HashSet;
     /// # use std::sync::Mutex;
     /// # let mut thread_pool = ThreadPoolBuilder {
@@ -2599,8 +2484,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// ```
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # use std::collections::HashSet;
     /// # use std::sync::Mutex;
     /// # let mut thread_pool = ThreadPoolBuilder {
@@ -2625,8 +2509,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// ```
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -2678,8 +2561,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// Rust feature.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # use std::collections::HashSet;
     /// # use std::sync::Mutex;
     /// # let mut thread_pool = ThreadPoolBuilder {
@@ -2705,8 +2587,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// ```
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # use std::collections::HashSet;
     /// # use std::sync::Mutex;
     /// # let mut thread_pool = ThreadPoolBuilder {
@@ -2731,8 +2612,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// ```
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -2786,8 +2666,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// Rust feature.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// use rand::Rng;
     ///
     /// # use std::collections::HashSet;
@@ -2857,8 +2736,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// Rust feature.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// use rand::Rng;
     ///
     /// # use std::collections::HashSet;
@@ -2916,8 +2794,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
 /// A thread pool backend that can execute parallel iterators.
 ///
 /// You most likely won't have to interact with this trait directly, as it is
-/// implemented for [`&mut ThreadPool`](crate::ThreadPool), and interacting with
-/// a thread pool is done via the
+/// implemented for [`&mut ThreadPool`](crate::threads::ThreadPool), and
+/// interacting with a thread pool is done via the
 /// [`with_thread_pool()`](ParallelSourceExt::with_thread_pool) iterator
 /// adaptor. You can implement this trait if you want to use Paralight iterators
 /// with an alternate thread pool implementation that you provide.

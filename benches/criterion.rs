@@ -6,7 +6,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use ::paralight::RangeStrategy;
+use ::paralight::threads::RangeStrategy;
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use std::mem::size_of;
 
@@ -143,11 +143,7 @@ mod rayon {
 /// Benchmarks using Paralight.
 mod paralight {
     use criterion::Bencher;
-    use paralight::iter::{
-        IntoParallelRefMutSource, IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt,
-        ZipableSource,
-    };
-    use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    use paralight::prelude::*;
     use std::hint::black_box;
 
     pub fn sum(

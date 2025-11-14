@@ -24,10 +24,8 @@ use std::marker::PhantomData;
 /// See also [`MutSliceParallelSource`].
 ///
 /// ```
-/// # use paralight::iter::{
-/// #     IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt, SliceParallelSource,
-/// # };
-/// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+/// # use paralight::iter::SliceParallelSource;
+/// # use paralight::prelude::*;
 /// # let mut thread_pool = ThreadPoolBuilder {
 /// #     num_threads: ThreadCount::AvailableParallelism,
 /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -100,10 +98,8 @@ impl<'data, T: Sync> SourceDescriptor for SliceSourceDescriptor<'data, T> {
 /// See also [`SliceParallelSource`].
 ///
 /// ```
-/// # use paralight::iter::{
-/// #     IntoParallelRefMutSource, MutSliceParallelSource, ParallelIteratorExt, ParallelSourceExt,
-/// # };
-/// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+/// # use paralight::iter::MutSliceParallelSource;
+/// # use paralight::prelude::*;
 /// # let mut thread_pool = ThreadPoolBuilder {
 /// #     num_threads: ThreadCount::AvailableParallelism,
 /// #     range_strategy: RangeStrategy::WorkStealing,

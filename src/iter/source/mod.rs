@@ -153,8 +153,7 @@ pub trait IntoParallelRefSource<'data> {
     /// Converts `&self` into a parallel source.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -188,8 +187,7 @@ pub trait IntoParallelRefMutSource<'data> {
     /// Converts `&mut self` into a parallel source.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefMutSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -214,14 +212,13 @@ pub trait ParallelSourceExt: ParallelSource {
     /// by items from the next source.
     ///
     /// Note: Given that items are processed in arbitrary order (in
-    /// [`WorkStealing`](crate::RangeStrategy::WorkStealing) mode), the order in
-    /// which sources are chained doesn't necessarily matter, but can be
-    /// relevant when combined with order-sensitive adaptors (e.g.
+    /// [`WorkStealing`](crate::threads::RangeStrategy::WorkStealing) mode), the
+    /// order in which sources are chained doesn't necessarily matter, but
+    /// can be relevant when combined with order-sensitive adaptors (e.g.
     /// [`enumerate()`](Self::enumerate), [`take()`](Self::take), etc.).
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -249,8 +246,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// items of this source.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -273,14 +269,13 @@ pub trait ParallelSourceExt: ParallelSource {
     /// reverse order.
     ///
     /// Note: Given that items are processed in arbitrary order (in
-    /// [`WorkStealing`](crate::RangeStrategy::WorkStealing) mode), this isn't
-    /// very useful on its own, but can be relevant when combined with
-    /// order-sensitive adaptors (e.g. [`enumerate()`](Self::enumerate),
-    /// [`take()`](Self::take), etc.).
+    /// [`WorkStealing`](crate::threads::RangeStrategy::WorkStealing) mode),
+    /// this isn't very useful on its own, but can be relevant when combined
+    /// with order-sensitive adaptors (e.g.
+    /// [`enumerate()`](Self::enumerate), [`take()`](Self::take), etc.).
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -308,8 +303,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// this source has fewer than `n` items.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -326,8 +320,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// ```
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -357,8 +350,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// produces no item if this source has fewer than `n` items.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -375,8 +367,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// ```
     ///
     /// ```should_panic
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -404,8 +395,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// `n`, `2*n`, etc.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -432,8 +422,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// This panics if the step is zero, even if the underlying source is empty.
     ///
     /// ```should_panic
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -449,8 +438,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// ```
     ///
     /// ```should_panic
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -477,8 +465,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// this source has fewer than `n` items.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -495,8 +482,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// ```
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -525,8 +511,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// produces all the items if this source has fewer than `n` items.
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -543,8 +528,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// ```
     ///
     /// ```should_panic
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
     /// #     range_strategy: RangeStrategy::WorkStealing,
@@ -569,8 +553,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// obtain a [`ParallelIterator`].
     ///
     /// ```
-    /// # use paralight::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
-    /// # use paralight::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    /// # use paralight::prelude::*;
     /// let mut thread_pool = ThreadPoolBuilder {
     ///     num_threads: ThreadCount::AvailableParallelism,
     ///     range_strategy: RangeStrategy::WorkStealing,
