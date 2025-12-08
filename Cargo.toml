@@ -23,11 +23,13 @@ log = ["dep:log"]
 log_parallelism = ["log"]
 nightly = []
 nightly_tests = []
+parking_lot = ["dep:parking_lot"]
 rayon = ["dep:rayon-core"]
 
 [dependencies]
 crossbeam-utils = "0.8.21"
 log = { optional = true, version = "0.4" }
+parking_lot = { optional = true, version = "0.12.5" }
 rayon-core = { optional = true, version = "1.13.0" }
 
 # Platforms that support `libc::sched_setaffinity()`.
