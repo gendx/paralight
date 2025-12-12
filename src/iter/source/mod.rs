@@ -16,7 +16,7 @@ pub mod vec;
 pub mod vec_deque;
 pub mod zip;
 
-use super::{Accumulator, GenericThreadPool, ParallelIterator};
+use super::{Accumulator, ExactSizeAccumulator, GenericThreadPool, ParallelIterator};
 use std::ops::ControlFlow;
 
 /// An interface describing how to fetch items from a [`ParallelSource`].
@@ -1293,10 +1293,10 @@ impl<T: GenericThreadPool, S: ParallelSource> ParallelIterator for BaseParallelI
         )
     }
 
-    fn iter_pipeline<Output: Send>(
+    fn iter_pipeline<Output, Accum: Send>(
         self,
-        accum: impl Accumulator<Self::Item, Output> + Sync,
-        reduce: impl Accumulator<Output, Output>,
+        accum: impl Accumulator<Self::Item, Accum> + Sync,
+        reduce: impl ExactSizeAccumulator<Accum, Output>,
     ) -> Output {
         let source_descriptor = self.source.descriptor();
         let accumulator = FetchAccumulator {

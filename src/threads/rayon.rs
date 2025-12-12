@@ -13,7 +13,7 @@ use crate::core::pipeline::{IterPipelineImpl, Pipeline, UpperBoundedPipelineImpl
 use crate::core::range::{
     FixedRangeFactory, RangeFactory, RangeOrchestrator, WorkStealingRangeFactory,
 };
-use crate::iter::{Accumulator, GenericThreadPool, SourceCleanup};
+use crate::iter::{Accumulator, ExactSizeAccumulator, GenericThreadPool, SourceCleanup};
 use crossbeam_utils::CachePadded;
 use rayon_core::{Scope, ThreadPool};
 use std::num::NonZeroUsize;
@@ -184,11 +184,11 @@ unsafe impl GenericThreadPool for &RayonThreadPool<'_> {
             .upper_bounded_pipeline(input_len, init, process_item, finalize, reduce, cleanup)
     }
 
-    fn iter_pipeline<Output: Send>(
+    fn iter_pipeline<Output, Accum: Send>(
         self,
         input_len: usize,
-        accum: impl Accumulator<usize, Output> + Sync,
-        reduce: impl Accumulator<Output, Output>,
+        accum: impl Accumulator<usize, Accum> + Sync,
+        reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
         // Proof of the safety guarantees is deferred to the inner function.
@@ -293,11 +293,11 @@ impl<'a> RayonThreadPoolEnum<'a> {
     ///   `0..input_len`,
     /// - each index in `0..inner_len` is passed exactly once in calls to
     ///   `accum.accumulate()` and `cleanup.cleanup_item_range()`.
-    fn iter_pipeline<Output: Send>(
+    fn iter_pipeline<Output, Accum: Send>(
         &self,
         input_len: usize,
-        accum: impl Accumulator<usize, Output> + Sync,
-        reduce: impl Accumulator<Output, Output>,
+        accum: impl Accumulator<usize, Accum> + Sync,
+        reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
         // Proof of the safety guarantees is deferred to the inner function.
@@ -434,11 +434,11 @@ where
     ///   `0..input_len`,
     /// - each index in `0..inner_len` is passed exactly once in calls to
     ///   `accum.accumulate()` and `cleanup.cleanup_item_range()`.
-    fn iter_pipeline<Output: Send>(
+    fn iter_pipeline<Output, Accum: Send>(
         &self,
         input_len: usize,
-        accum: impl Accumulator<usize, Output> + Sync,
-        reduce: impl Accumulator<Output, Output>,
+        accum: impl Accumulator<usize, Accum> + Sync,
+        reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
         // The safety guarantees derive from this call as well as how the
@@ -468,7 +468,7 @@ where
             }
         });
 
-        reduce.accumulate(
+        reduce.accumulate_exact(
             outputs
                 .iter()
                 .map(move |output| output.lock().unwrap().take().unwrap()),

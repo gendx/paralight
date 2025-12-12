@@ -246,6 +246,7 @@ mod test {
                 test_adaptor_find_first,
                 test_adaptor_find_map_any,
                 test_adaptor_find_map_first,
+                test_adaptor_fold_per_thread,
                 test_adaptor_for_each,
                 test_adaptor_for_each_init,
                 test_adaptor_inspect,
@@ -2709,6 +2710,33 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .find_map_first(|_: &u64| Some(42));
         assert_eq!(empty, None);
+    }
+
+    fn test_adaptor_fold_per_thread<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let collection: Vec<Vec<u64>> = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .fold_per_thread(
+                Vec::new,
+                |mut vec, x| {
+                    vec.push(x);
+                    vec
+                },
+                Vec::with_capacity,
+                |mut vecvec, vec| {
+                    vecvec.push(vec);
+                    vecvec
+                },
+            );
+
+        let mut values: Vec<u64> = collection.into_iter().flatten().collect();
+        values.sort_unstable();
+        assert_eq!(values, input);
     }
 
     fn test_adaptor_for_each<T>(mut thread_pool: T)

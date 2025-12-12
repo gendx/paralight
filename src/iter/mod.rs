@@ -39,6 +39,15 @@ pub trait Accumulator<Item, Output> {
     fn accumulate(&self, iter: impl Iterator<Item = Item>) -> Output;
 }
 
+/// Interface for an operation that accumulates items from an iterator of exact
+/// size into an output.
+///
+/// See also [`Accumulator`].
+pub trait ExactSizeAccumulator<Item, Output> {
+    /// Accumulates the items from the given iterator into an output.
+    fn accumulate_exact(&self, iter: impl ExactSizeIterator<Item = Item>) -> Output;
+}
+
 /// An iterator to process items in parallel. The [`ParallelIteratorExt`] trait
 /// provides additional methods (iterator adaptors) as an extension of this
 /// trait.
@@ -223,7 +232,7 @@ pub trait ParallelIterator: Sized {
     ///   output.
     ///
     /// ```
-    /// # use paralight::iter::Accumulator;
+    /// # use paralight::iter::{Accumulator, ExactSizeAccumulator};
     /// # use paralight::prelude::*;
     /// use std::iter::Sum;
     ///
@@ -251,11 +260,20 @@ pub trait ParallelIterator: Sized {
     ///         iter.sum()
     ///     }
     /// }
+    ///
+    /// impl<Item> ExactSizeAccumulator<Item, i32> for SumAccumulator
+    /// where
+    ///     i32: Sum<Item>,
+    /// {
+    ///     fn accumulate_exact(&self, iter: impl ExactSizeIterator<Item = Item>) -> i32 {
+    ///         iter.sum()
+    ///     }
+    /// }
     /// ```
-    fn iter_pipeline<Output: Send>(
+    fn iter_pipeline<Output, Accum: Send>(
         self,
-        accum: impl Accumulator<Self::Item, Output> + Sync,
-        reduce: impl Accumulator<Output, Output>,
+        accum: impl Accumulator<Self::Item, Accum> + Sync,
+        reduce: impl ExactSizeAccumulator<Accum, Output>,
     ) -> Output;
 }
 
@@ -263,13 +281,30 @@ struct IterReducer<Reduce> {
     reduce: Reduce,
 }
 
-impl<Output, Reduce> Accumulator<Output, Output> for IterReducer<Reduce>
+impl<Output, Reduce> ExactSizeAccumulator<Output, Output> for IterReducer<Reduce>
 where
     Reduce: Fn(Output, Output) -> Output,
 {
     #[inline(always)]
-    fn accumulate(&self, iter: impl Iterator<Item = Output>) -> Output {
+    fn accumulate_exact(&self, iter: impl ExactSizeIterator<Item = Output>) -> Output {
         iter.reduce(&self.reduce).unwrap()
+    }
+}
+
+struct IterFolder<Init, Fold> {
+    init: Init,
+    fold: Fold,
+}
+
+impl<Item, Output, Init, Fold> ExactSizeAccumulator<Item, Output> for IterFolder<Init, Fold>
+where
+    Init: Fn(usize) -> Output,
+    Fold: Fn(Output, Item) -> Output,
+{
+    #[inline(always)]
+    fn accumulate_exact(&self, iter: impl ExactSizeIterator<Item = Item>) -> Output {
+        let init = (self.init)(iter.len());
+        iter.fold(init, &self.fold)
     }
 }
 
@@ -451,10 +486,10 @@ impl<T: ParallelAdaptor> ParallelIterator for T {
         )
     }
 
-    fn iter_pipeline<Output: Send>(
+    fn iter_pipeline<Output, Accum: Send>(
         self,
-        accum: impl Accumulator<Self::Item, Output> + Sync,
-        reduce: impl Accumulator<Output, Output>,
+        accum: impl Accumulator<Self::Item, Accum> + Sync,
+        reduce: impl ExactSizeAccumulator<Accum, Output>,
     ) -> Output {
         let descriptor = self.descriptor();
         let accumulator = AdaptorAccumulator {
@@ -1414,6 +1449,74 @@ pub trait ParallelIteratorExt: ParallelIterator {
         .map(|(_, t)| t)
     }
 
+    /// Folds items of this parallel iterator into a per-thread accumulator of
+    /// type `T`, then folds again the per-thread results into an output of
+    /// type `U`.
+    ///
+    /// Per-thread accumulation is done with the `init_per_thread` and
+    /// `fold_per_thread` functions, and final accumulation with the
+    /// `init_final` and `fold_final` functions. The `init_final`
+    /// function receives the number of threads as input.
+    /// [`Item`](ParallelIterator::Item) and `U` can be non-[`Send`]: only
+    /// the per-thread accumulator type `T` needs to be [`Send`].
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let collection: Vec<Vec<i32>> = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .fold_per_thread(
+    ///         Vec::new,
+    ///         |mut vec, x| {
+    ///             vec.push(x);
+    ///             vec
+    ///         },
+    ///         Vec::with_capacity,
+    ///         |mut vecvec, vec| {
+    ///             vecvec.push(vec);
+    ///             vecvec
+    ///         },
+    ///     );
+    ///
+    /// let mut values: Vec<i32> = collection.into_iter().flatten().collect();
+    /// values.sort_unstable();
+    /// assert_eq!(values, &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    /// ```
+    fn fold_per_thread<T, U, InitPerThread, FoldPerThread, InitFinal, FoldFinal>(
+        self,
+        init_per_thread: InitPerThread,
+        fold_per_thread: FoldPerThread,
+        init_final: InitFinal,
+        fold_final: FoldFinal,
+    ) -> U
+    where
+        InitPerThread: Fn() -> T + Sync,
+        FoldPerThread: Fn(T, Self::Item) -> T + Sync,
+        InitFinal: Fn(usize) -> U,
+        FoldFinal: Fn(U, T) -> U,
+        T: Send,
+    {
+        self.iter_pipeline(
+            IterAccumulator {
+                init: init_per_thread,
+                process_item: fold_per_thread,
+                finalize: |t| t,
+            },
+            IterFolder {
+                init: init_final,
+                fold: fold_final,
+            },
+        )
+    }
+
     /// Runs `f` on each item of this parallel iterator.
     ///
     /// See also [`for_each_init()`](Self::for_each_init) if you need to
@@ -2360,7 +2463,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     where
         T: Product<Self::Item> + Product<T> + Send,
     {
-        self.iter_pipeline(ProductAccumulator, ProductAccumulator)
+        self.iter_pipeline::<T, T>(ProductAccumulator, ProductAccumulator)
     }
 
     /// Reduces the items produced by this iterator into a single item, using
@@ -2440,7 +2543,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     where
         T: Sum<Self::Item> + Sum<T> + Send,
     {
-        self.iter_pipeline(SumAccumulator, SumAccumulator)
+        self.iter_pipeline::<T, T>(SumAccumulator, SumAccumulator)
     }
 
     /// Runs the fallible function `f` on each item of this parallel iterator,
@@ -2846,11 +2949,11 @@ pub unsafe trait GenericThreadPool {
     ///   `0..input_len`,
     /// - each index in `0..inner_len` is passed exactly once in calls to
     ///   `accum.accumulate()` and `cleanup.cleanup_item_range()`.
-    fn iter_pipeline<Output: Send>(
+    fn iter_pipeline<Output, Accum: Send>(
         self,
         input_len: usize,
-        accum: impl Accumulator<usize, Output> + Sync,
-        reduce: impl Accumulator<Output, Output>,
+        accum: impl Accumulator<usize, Accum> + Sync,
+        reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output;
 }
@@ -2880,11 +2983,11 @@ where
         )
     }
 
-    fn iter_pipeline<Output: Send>(
+    fn iter_pipeline<Output, Accum: Send>(
         self,
         input_len: usize,
-        accum: impl Accumulator<usize, Output> + Sync,
-        reduce: impl Accumulator<Output, Output>,
+        accum: impl Accumulator<usize, Accum> + Sync,
+        reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
         (self as &'a T).iter_pipeline(input_len, accum, reduce, cleanup)
@@ -2903,6 +3006,16 @@ where
     }
 }
 
+impl<Item, Output> ExactSizeAccumulator<Item, Output> for SumAccumulator
+where
+    Output: Sum<Item>,
+{
+    #[inline(always)]
+    fn accumulate_exact(&self, iter: impl ExactSizeIterator<Item = Item>) -> Output {
+        iter.sum()
+    }
+}
+
 struct ProductAccumulator;
 
 impl<Item, Output> Accumulator<Item, Output> for ProductAccumulator
@@ -2911,6 +3024,16 @@ where
 {
     #[inline(always)]
     fn accumulate(&self, iter: impl Iterator<Item = Item>) -> Output {
+        iter.product()
+    }
+}
+
+impl<Item, Output> ExactSizeAccumulator<Item, Output> for ProductAccumulator
+where
+    Output: Product<Item>,
+{
+    #[inline(always)]
+    fn accumulate_exact(&self, iter: impl ExactSizeIterator<Item = Item>) -> Output {
         iter.product()
     }
 }
@@ -3166,10 +3289,10 @@ where
         )
     }
 
-    fn iter_pipeline<Output: Send>(
+    fn iter_pipeline<Output, Accum: Send>(
         self,
-        accum: impl Accumulator<Self::Item, Output> + Sync,
-        reduce: impl Accumulator<Output, Output>,
+        accum: impl Accumulator<Self::Item, Accum> + Sync,
+        reduce: impl ExactSizeAccumulator<Accum, Output>,
     ) -> Output {
         let accumulator = MapInitAccumulator {
             inner: accum,

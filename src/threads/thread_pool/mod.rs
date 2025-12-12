@@ -16,7 +16,7 @@ use crate::core::pipeline::{IterPipelineImpl, Pipeline, UpperBoundedPipelineImpl
 use crate::core::range::{
     FixedRangeFactory, Range, RangeFactory, RangeOrchestrator, WorkStealingRangeFactory,
 };
-use crate::iter::{Accumulator, GenericThreadPool, SourceCleanup};
+use crate::iter::{Accumulator, ExactSizeAccumulator, GenericThreadPool, SourceCleanup};
 use crate::macros::{log_debug, log_error, log_warn};
 use crossbeam_utils::CachePadded;
 use sync::{make_lending_group, Borrower, Lender, WorkerState};
@@ -136,11 +136,11 @@ unsafe impl GenericThreadPool for &mut ThreadPool {
             .upper_bounded_pipeline(input_len, init, process_item, finalize, reduce, cleanup)
     }
 
-    fn iter_pipeline<Output: Send>(
+    fn iter_pipeline<Output, Accum: Send>(
         self,
         input_len: usize,
-        accum: impl Accumulator<usize, Output> + Sync,
-        reduce: impl Accumulator<Output, Output>,
+        accum: impl Accumulator<usize, Accum> + Sync,
+        reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
         // Proof of the safety guarantees is deferred to the inner function.
@@ -239,11 +239,11 @@ impl ThreadPoolEnum {
     ///   `0..input_len`,
     /// - each index in `0..inner_len` is passed exactly once in calls to
     ///   `accum.accumulate()` and `cleanup.cleanup_item_range()`.
-    fn iter_pipeline<Output: Send>(
+    fn iter_pipeline<Output, Accum: Send>(
         &mut self,
         input_len: usize,
-        accum: impl Accumulator<usize, Output> + Sync,
-        reduce: impl Accumulator<Output, Output>,
+        accum: impl Accumulator<usize, Accum> + Sync,
+        reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
         // Proof of the safety guarantees is deferred to the inner function.
@@ -473,11 +473,11 @@ impl<F: RangeFactory> ThreadPoolImpl<F> {
     ///   `0..input_len`,
     /// - each index in `0..inner_len` is passed exactly once in calls to
     ///   `accum.accumulate()` and `cleanup.cleanup_item_range()`.
-    fn iter_pipeline<Output: Send>(
+    fn iter_pipeline<Output, Accum: Send>(
         &mut self,
         input_len: usize,
-        accum: impl Accumulator<usize, Output> + Sync,
-        reduce: impl Accumulator<Output, Output>,
+        accum: impl Accumulator<usize, Accum> + Sync,
+        reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
         // The safety guarantees derive from this call as well as how the
@@ -496,7 +496,7 @@ impl<F: RangeFactory> ThreadPoolImpl<F> {
             cleanup,
         });
 
-        reduce.accumulate(
+        reduce.accumulate_exact(
             outputs
                 .iter()
                 .map(move |output| output.lock().unwrap().take().unwrap()),
