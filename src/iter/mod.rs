@@ -8,9 +8,14 @@
 
 //! Iterator adaptors to define parallel pipelines more conveniently.
 
+mod detail;
 mod source;
 
-use crossbeam_utils::CachePadded;
+use detail::{
+    AdaptorAccumulator, Fuse, IterAccumulator, IterFolder, IterReducer, ProductAccumulator,
+    ShortCircuitingAccumulator, SumAccumulator,
+};
+pub use detail::{Cloned, Copied, Filter, FilterMap, Inspect, Map, MapInit};
 #[cfg(feature = "nightly")]
 pub use source::array::ArrayParallelSource;
 pub use source::range::{RangeInclusiveParallelSource, RangeParallelSource};
@@ -27,7 +32,6 @@ use std::iter::{Product, Sum};
 use std::ops::ControlFlow;
 #[cfg(feature = "nightly")]
 use std::ops::Try;
-use std::sync::atomic::AtomicBool;
 
 /// Interface for an operation that accumulates items from an iterator into an
 /// output.
@@ -46,6 +50,103 @@ pub trait Accumulator<Item, Output> {
 pub trait ExactSizeAccumulator<Item, Output> {
     /// Accumulates the items from the given iterator into an output.
     fn accumulate_exact(&self, iter: impl ExactSizeIterator<Item = Item>) -> Output;
+}
+
+/// A thread pool backend that can execute parallel iterators.
+///
+/// You most likely won't have to interact with this trait directly, as it is
+/// implemented for [`&mut ThreadPool`](crate::threads::ThreadPool), and
+/// interacting with a thread pool is done via the
+/// [`with_thread_pool()`](ParallelSourceExt::with_thread_pool) iterator
+/// adaptor. You can implement this trait if you want to use Paralight iterators
+/// with an alternate thread pool implementation that you provide.
+///
+/// # Safety
+///
+/// This trait is marked as `unsafe`, because implementers **must** ensure the
+/// safety guarantees of
+/// [`upper_bounded_pipeline()`](Self::upper_bounded_pipeline) and
+/// [`iter_pipeline()`](Self::iter_pipeline).
+pub unsafe trait GenericThreadPool {
+    /// Processes an input of the given length in parallel and returns the
+    /// aggregated output.
+    ///
+    /// With this variant, the pipeline may skip processing items at larger
+    /// indices whenever a call to `process_item` returns
+    /// [`ControlFlow::Break`].
+    ///
+    /// # Safety guarantees
+    ///
+    /// This function guarantees that:
+    /// - the indices passed to `process_item()` are in `0..input_len`,
+    /// - the ranges passed to `cleanup.cleanup_item_range()` are included in
+    ///   `0..input_len`,
+    /// - each index in `0..inner_len` is passed exactly once in calls to
+    ///   `process_item()` and `cleanup.cleanup_item_range()`.
+    fn upper_bounded_pipeline<Output: Send, Accum>(
+        self,
+        input_len: usize,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(Accum, usize) -> ControlFlow<Accum, Accum> + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+        cleanup: &(impl SourceCleanup + Sync),
+    ) -> Output;
+
+    /// Processes an input of the given length in parallel and returns the
+    /// aggregated output.
+    ///
+    /// # Safety guarantees
+    ///
+    /// This function guarantees that:
+    /// - the indices passed to `accum.accumulate()` are in `0..input_len`,
+    /// - the ranges passed to `cleanup.cleanup_item_range()` are included in
+    ///   `0..input_len`,
+    /// - each index in `0..inner_len` is passed exactly once in calls to
+    ///   `accum.accumulate()` and `cleanup.cleanup_item_range()`.
+    fn iter_pipeline<Output, Accum: Send>(
+        self,
+        input_len: usize,
+        accum: impl Accumulator<usize, Accum> + Sync,
+        reduce: impl ExactSizeAccumulator<Accum, Output>,
+        cleanup: &(impl SourceCleanup + Sync),
+    ) -> Output;
+}
+
+// SAFETY: The implementation is the same as the one on `&T`, which safely
+// implements `GenericThreadPool`.
+unsafe impl<'a, T> GenericThreadPool for &'a mut T
+where
+    &'a T: GenericThreadPool,
+{
+    fn upper_bounded_pipeline<Output: Send, Accum>(
+        self,
+        input_len: usize,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(Accum, usize) -> ControlFlow<Accum, Accum> + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+        cleanup: &(impl SourceCleanup + Sync),
+    ) -> Output {
+        (self as &'a T).upper_bounded_pipeline(
+            input_len,
+            init,
+            process_item,
+            finalize,
+            reduce,
+            cleanup,
+        )
+    }
+
+    fn iter_pipeline<Output, Accum: Send>(
+        self,
+        input_len: usize,
+        accum: impl Accumulator<usize, Accum> + Sync,
+        reduce: impl ExactSizeAccumulator<Accum, Output>,
+        cleanup: &(impl SourceCleanup + Sync),
+    ) -> Output {
+        (self as &'a T).iter_pipeline(input_len, accum, reduce, cleanup)
+    }
 }
 
 /// An iterator to process items in parallel. The [`ParallelIteratorExt`] trait
@@ -277,137 +378,6 @@ pub trait ParallelIterator: Sized {
     ) -> Output;
 }
 
-struct IterReducer<Reduce> {
-    reduce: Reduce,
-}
-
-impl<Output, Reduce> ExactSizeAccumulator<Output, Output> for IterReducer<Reduce>
-where
-    Reduce: Fn(Output, Output) -> Output,
-{
-    #[inline(always)]
-    fn accumulate_exact(&self, iter: impl ExactSizeIterator<Item = Output>) -> Output {
-        iter.reduce(&self.reduce).unwrap()
-    }
-}
-
-struct IterFolder<Init, Fold> {
-    init: Init,
-    fold: Fold,
-}
-
-impl<Item, Output, Init, Fold> ExactSizeAccumulator<Item, Output> for IterFolder<Init, Fold>
-where
-    Init: Fn(usize) -> Output,
-    Fold: Fn(Output, Item) -> Output,
-{
-    #[inline(always)]
-    fn accumulate_exact(&self, iter: impl ExactSizeIterator<Item = Item>) -> Output {
-        let init = (self.init)(iter.len());
-        iter.fold(init, &self.fold)
-    }
-}
-
-struct IterAccumulator<Init, ProcessItem, Finalize> {
-    init: Init,
-    process_item: ProcessItem,
-    finalize: Finalize,
-}
-
-impl<Item, Accum, Output, Init, ProcessItem, Finalize> Accumulator<Item, Output>
-    for IterAccumulator<Init, ProcessItem, Finalize>
-where
-    Init: Fn() -> Accum,
-    ProcessItem: Fn(Accum, Item) -> Accum,
-    Finalize: Fn(Accum) -> Output,
-{
-    #[inline(always)]
-    fn accumulate(&self, iter: impl Iterator<Item = Item>) -> Output {
-        let mut accumulator = (self.init)();
-        for item in iter {
-            accumulator = (self.process_item)(accumulator, item);
-        }
-        (self.finalize)(accumulator)
-    }
-}
-
-struct ShortCircuitingAccumulator<Init, ProcessItem, Finalize> {
-    fuse: Fuse,
-    init: Init,
-    process_item: ProcessItem,
-    finalize: Finalize,
-}
-
-impl<Item, Accum, Break, Output, Init, ProcessItem, Finalize> Accumulator<Item, Output>
-    for ShortCircuitingAccumulator<Init, ProcessItem, Finalize>
-where
-    Init: Fn() -> Accum,
-    ProcessItem: Fn(Accum, Item) -> ControlFlow<Break, Accum>,
-    Finalize: Fn(ControlFlow<Break, Accum>) -> Output,
-{
-    #[inline(always)]
-    fn accumulate(&self, mut iter: impl Iterator<Item = Item>) -> Output {
-        let mut accumulator = (self.init)();
-        let result = 'outer: {
-            while let FuseState::Unset = self.fuse.load() {
-                let Some(item) = iter.next() else {
-                    break;
-                };
-
-                match (self.process_item)(accumulator, item) {
-                    ControlFlow::Continue(acc) => {
-                        accumulator = acc;
-                        continue;
-                    }
-                    control_flow @ ControlFlow::Break(_) => {
-                        self.fuse.set();
-                        break 'outer control_flow;
-                    }
-                }
-            }
-            ControlFlow::Continue(accumulator)
-        };
-        (self.finalize)(result)
-    }
-}
-
-/// A fuse is an atomic object that starts unset and can transition once to the
-/// set state.
-///
-/// Under the hood, this contains an atomic boolean aligned to a cache line to
-/// avoid any risk of false sharing performance overhead.
-struct Fuse(CachePadded<AtomicBool>);
-
-/// State of a [`Fuse`].
-enum FuseState {
-    Unset,
-    Set,
-}
-
-impl Fuse {
-    /// Creates a new fuse in the [`Unset`](FuseState::Unset) state.
-    fn new() -> Self {
-        Fuse(CachePadded::new(AtomicBool::new(false)))
-    }
-
-    /// Reads the current state of this fuse.
-    fn load(&self) -> FuseState {
-        use std::sync::atomic::Ordering;
-
-        match self.0.load(Ordering::Relaxed) {
-            false => FuseState::Unset,
-            true => FuseState::Set,
-        }
-    }
-
-    /// Sets this fuse to the [`Set`](FuseState::Set) state.
-    fn set(&self) {
-        use std::sync::atomic::Ordering;
-
-        self.0.store(true, Ordering::Relaxed)
-    }
-}
-
 /// An internal object describing how to transform items in a
 /// [`ParallelAdaptor`].
 pub struct ParallelAdaptorDescriptor<
@@ -447,23 +417,6 @@ pub trait ParallelAdaptor {
     >;
 }
 
-struct AdaptorAccumulator<Inner, TransformItem> {
-    inner: Inner,
-    transform_item: TransformItem,
-}
-
-impl<InnerItem, Item, Output, Inner, TransformItem> Accumulator<InnerItem, Output>
-    for AdaptorAccumulator<Inner, TransformItem>
-where
-    Inner: Accumulator<Item, Output>,
-    TransformItem: Fn(InnerItem) -> Option<Item>,
-{
-    #[inline(always)]
-    fn accumulate(&self, iter: impl Iterator<Item = InnerItem>) -> Output {
-        self.inner.accumulate(iter.filter_map(&self.transform_item))
-    }
-}
-
 impl<T: ParallelAdaptor> ParallelIterator for T {
     type Item = T::Item;
 
@@ -499,6 +452,8 @@ impl<T: ParallelAdaptor> ParallelIterator for T {
         descriptor.inner.iter_pipeline(accumulator, reduce)
     }
 }
+
+impl<T: ParallelIterator> ParallelIteratorExt for T {}
 
 /// Additional methods provided for types that implement [`ParallelIterator`].
 ///
@@ -2894,432 +2849,5 @@ pub trait ParallelIteratorExt: ParallelIterator {
                 (ControlFlow::Break(e), _) | (_, ControlFlow::Break(e)) => R::from_residual(e),
             },
         )
-    }
-}
-
-/// A thread pool backend that can execute parallel iterators.
-///
-/// You most likely won't have to interact with this trait directly, as it is
-/// implemented for [`&mut ThreadPool`](crate::threads::ThreadPool), and
-/// interacting with a thread pool is done via the
-/// [`with_thread_pool()`](ParallelSourceExt::with_thread_pool) iterator
-/// adaptor. You can implement this trait if you want to use Paralight iterators
-/// with an alternate thread pool implementation that you provide.
-///
-/// # Safety
-///
-/// This trait is marked as `unsafe`, because implementers **must** ensure the
-/// safety guarantees of
-/// [`upper_bounded_pipeline()`](Self::upper_bounded_pipeline) and
-/// [`iter_pipeline()`](Self::iter_pipeline).
-pub unsafe trait GenericThreadPool {
-    /// Processes an input of the given length in parallel and returns the
-    /// aggregated output.
-    ///
-    /// With this variant, the pipeline may skip processing items at larger
-    /// indices whenever a call to `process_item` returns
-    /// [`ControlFlow::Break`].
-    ///
-    /// # Safety guarantees
-    ///
-    /// This function guarantees that:
-    /// - the indices passed to `process_item()` are in `0..input_len`,
-    /// - the ranges passed to `cleanup.cleanup_item_range()` are included in
-    ///   `0..input_len`,
-    /// - each index in `0..inner_len` is passed exactly once in calls to
-    ///   `process_item()` and `cleanup.cleanup_item_range()`.
-    fn upper_bounded_pipeline<Output: Send, Accum>(
-        self,
-        input_len: usize,
-        init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize) -> ControlFlow<Accum, Accum> + Sync,
-        finalize: impl Fn(Accum) -> Output + Sync,
-        reduce: impl Fn(Output, Output) -> Output,
-        cleanup: &(impl SourceCleanup + Sync),
-    ) -> Output;
-
-    /// Processes an input of the given length in parallel and returns the
-    /// aggregated output.
-    ///
-    /// # Safety guarantees
-    ///
-    /// This function guarantees that:
-    /// - the indices passed to `accum.accumulate()` are in `0..input_len`,
-    /// - the ranges passed to `cleanup.cleanup_item_range()` are included in
-    ///   `0..input_len`,
-    /// - each index in `0..inner_len` is passed exactly once in calls to
-    ///   `accum.accumulate()` and `cleanup.cleanup_item_range()`.
-    fn iter_pipeline<Output, Accum: Send>(
-        self,
-        input_len: usize,
-        accum: impl Accumulator<usize, Accum> + Sync,
-        reduce: impl ExactSizeAccumulator<Accum, Output>,
-        cleanup: &(impl SourceCleanup + Sync),
-    ) -> Output;
-}
-
-// SAFETY: The implementation is the same as the one on `&T`, which safely
-// implements `GenericThreadPool`.
-unsafe impl<'a, T> GenericThreadPool for &'a mut T
-where
-    &'a T: GenericThreadPool,
-{
-    fn upper_bounded_pipeline<Output: Send, Accum>(
-        self,
-        input_len: usize,
-        init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize) -> ControlFlow<Accum, Accum> + Sync,
-        finalize: impl Fn(Accum) -> Output + Sync,
-        reduce: impl Fn(Output, Output) -> Output,
-        cleanup: &(impl SourceCleanup + Sync),
-    ) -> Output {
-        (self as &'a T).upper_bounded_pipeline(
-            input_len,
-            init,
-            process_item,
-            finalize,
-            reduce,
-            cleanup,
-        )
-    }
-
-    fn iter_pipeline<Output, Accum: Send>(
-        self,
-        input_len: usize,
-        accum: impl Accumulator<usize, Accum> + Sync,
-        reduce: impl ExactSizeAccumulator<Accum, Output>,
-        cleanup: &(impl SourceCleanup + Sync),
-    ) -> Output {
-        (self as &'a T).iter_pipeline(input_len, accum, reduce, cleanup)
-    }
-}
-
-struct SumAccumulator;
-
-impl<Item, Output> Accumulator<Item, Output> for SumAccumulator
-where
-    Output: Sum<Item>,
-{
-    #[inline(always)]
-    fn accumulate(&self, iter: impl Iterator<Item = Item>) -> Output {
-        iter.sum()
-    }
-}
-
-impl<Item, Output> ExactSizeAccumulator<Item, Output> for SumAccumulator
-where
-    Output: Sum<Item>,
-{
-    #[inline(always)]
-    fn accumulate_exact(&self, iter: impl ExactSizeIterator<Item = Item>) -> Output {
-        iter.sum()
-    }
-}
-
-struct ProductAccumulator;
-
-impl<Item, Output> Accumulator<Item, Output> for ProductAccumulator
-where
-    Output: Product<Item>,
-{
-    #[inline(always)]
-    fn accumulate(&self, iter: impl Iterator<Item = Item>) -> Output {
-        iter.product()
-    }
-}
-
-impl<Item, Output> ExactSizeAccumulator<Item, Output> for ProductAccumulator
-where
-    Output: Product<Item>,
-{
-    #[inline(always)]
-    fn accumulate_exact(&self, iter: impl ExactSizeIterator<Item = Item>) -> Output {
-        iter.product()
-    }
-}
-
-impl<T: ParallelIterator> ParallelIteratorExt for T {}
-
-/// This struct is created by the [`cloned()`](ParallelIteratorExt::cloned)
-/// method on [`ParallelIteratorExt`].
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelIterator`] and [`ParallelIteratorExt`] traits, but
-/// it is nonetheless public because of the `must_use` annotation.
-#[must_use = "iterator adaptors are lazy"]
-pub struct Cloned<Inner: ParallelIterator> {
-    inner: Inner,
-}
-
-impl<'a, T, Inner: ParallelIterator> ParallelAdaptor for Cloned<Inner>
-where
-    T: Clone + 'a,
-    Inner: ParallelIterator<Item = &'a T>,
-{
-    type Item = T;
-    type Inner = Inner;
-
-    fn descriptor(
-        self,
-    ) -> ParallelAdaptorDescriptor<
-        Self::Item,
-        Self::Inner,
-        impl Fn(<Self::Inner as ParallelIterator>::Item) -> Option<Self::Item> + Sync,
-    > {
-        ParallelAdaptorDescriptor {
-            inner: self.inner,
-            transform_item: |item| Some(item.clone()),
-        }
-    }
-}
-
-/// This struct is created by the [`copied()`](ParallelIteratorExt::copied)
-/// method on [`ParallelIteratorExt`].
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelIterator`] and [`ParallelIteratorExt`] traits, but
-/// it is nonetheless public because of the `must_use` annotation.
-#[must_use = "iterator adaptors are lazy"]
-pub struct Copied<Inner: ParallelIterator> {
-    inner: Inner,
-}
-
-impl<'a, T, Inner: ParallelIterator> ParallelAdaptor for Copied<Inner>
-where
-    T: Copy + 'a,
-    Inner: ParallelIterator<Item = &'a T>,
-{
-    type Item = T;
-    type Inner = Inner;
-
-    fn descriptor(
-        self,
-    ) -> ParallelAdaptorDescriptor<
-        Self::Item,
-        Self::Inner,
-        impl Fn(<Self::Inner as ParallelIterator>::Item) -> Option<Self::Item> + Sync,
-    > {
-        ParallelAdaptorDescriptor {
-            inner: self.inner,
-            transform_item: |item| Some(*item),
-        }
-    }
-}
-
-/// This struct is created by the [`filter()`](ParallelIteratorExt::filter)
-/// method on [`ParallelIteratorExt`].
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelIterator`] and [`ParallelIteratorExt`] traits, but
-/// it is nonetheless public because of the `must_use` annotation.
-#[must_use = "iterator adaptors are lazy"]
-pub struct Filter<Inner: ParallelIterator, F> {
-    inner: Inner,
-    f: F,
-}
-
-impl<Inner: ParallelIterator, F> ParallelAdaptor for Filter<Inner, F>
-where
-    F: Fn(&Inner::Item) -> bool + Sync,
-{
-    type Item = Inner::Item;
-    type Inner = Inner;
-
-    fn descriptor(
-        self,
-    ) -> ParallelAdaptorDescriptor<
-        Self::Item,
-        Self::Inner,
-        impl Fn(<Self::Inner as ParallelIterator>::Item) -> Option<Self::Item> + Sync,
-    > {
-        ParallelAdaptorDescriptor {
-            inner: self.inner,
-            transform_item: move |item| {
-                if (self.f)(&item) {
-                    Some(item)
-                } else {
-                    None
-                }
-            },
-        }
-    }
-}
-
-/// This struct is created by the
-/// [`filter_map()`](ParallelIteratorExt::filter_map) method on
-/// [`ParallelIteratorExt`].
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelIterator`] and [`ParallelIteratorExt`] traits, but
-/// it is nonetheless public because of the `must_use` annotation.
-#[must_use = "iterator adaptors are lazy"]
-pub struct FilterMap<Inner: ParallelIterator, F> {
-    inner: Inner,
-    f: F,
-}
-
-impl<Inner: ParallelIterator, T, F> ParallelAdaptor for FilterMap<Inner, F>
-where
-    F: Fn(Inner::Item) -> Option<T> + Sync,
-{
-    type Item = T;
-    type Inner = Inner;
-
-    fn descriptor(
-        self,
-    ) -> ParallelAdaptorDescriptor<
-        Self::Item,
-        Self::Inner,
-        impl Fn(<Self::Inner as ParallelIterator>::Item) -> Option<Self::Item> + Sync,
-    > {
-        ParallelAdaptorDescriptor {
-            inner: self.inner,
-            transform_item: self.f,
-        }
-    }
-}
-
-/// This struct is created by the [`inspect()`](ParallelIteratorExt::inspect)
-/// method on [`ParallelIteratorExt`].
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelIterator`] and [`ParallelIteratorExt`] traits, but
-/// it is nonetheless public because of the `must_use` annotation.
-#[must_use = "iterator adaptors are lazy"]
-pub struct Inspect<Inner: ParallelIterator, F> {
-    inner: Inner,
-    f: F,
-}
-
-impl<Inner: ParallelIterator, F> ParallelAdaptor for Inspect<Inner, F>
-where
-    F: Fn(&Inner::Item) + Sync,
-{
-    type Item = Inner::Item;
-    type Inner = Inner;
-
-    fn descriptor(
-        self,
-    ) -> ParallelAdaptorDescriptor<
-        Self::Item,
-        Self::Inner,
-        impl Fn(<Self::Inner as ParallelIterator>::Item) -> Option<Self::Item> + Sync,
-    > {
-        ParallelAdaptorDescriptor {
-            inner: self.inner,
-            transform_item: move |item| {
-                (self.f)(&item);
-                Some(item)
-            },
-        }
-    }
-}
-
-/// This struct is created by the [`map()`](ParallelIteratorExt::map) method on
-/// [`ParallelIteratorExt`].
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelIterator`] and [`ParallelIteratorExt`] traits, but
-/// it is nonetheless public because of the `must_use` annotation.
-#[must_use = "iterator adaptors are lazy"]
-pub struct Map<Inner: ParallelIterator, F> {
-    inner: Inner,
-    f: F,
-}
-
-impl<Inner: ParallelIterator, T, F> ParallelAdaptor for Map<Inner, F>
-where
-    F: Fn(Inner::Item) -> T + Sync,
-{
-    type Item = T;
-    type Inner = Inner;
-
-    fn descriptor(
-        self,
-    ) -> ParallelAdaptorDescriptor<
-        Self::Item,
-        Self::Inner,
-        impl Fn(<Self::Inner as ParallelIterator>::Item) -> Option<Self::Item> + Sync,
-    > {
-        ParallelAdaptorDescriptor {
-            inner: self.inner,
-            transform_item: move |item| Some((self.f)(item)),
-        }
-    }
-}
-
-/// This struct is created by the [`map_init()`](ParallelIteratorExt::map_init)
-/// method on [`ParallelIteratorExt`].
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelIterator`] and [`ParallelIteratorExt`] traits, but
-/// it is nonetheless public because of the `must_use` annotation.
-#[must_use = "iterator adaptors are lazy"]
-pub struct MapInit<Inner: ParallelIterator, Init, F> {
-    inner: Inner,
-    init: Init,
-    f: F,
-}
-
-impl<Inner: ParallelIterator, I, Init, T, F> ParallelIterator for MapInit<Inner, Init, F>
-where
-    Init: Fn() -> I + Sync,
-    F: Fn(&mut I, Inner::Item) -> T + Sync,
-{
-    type Item = T;
-
-    fn upper_bounded_pipeline<Output: Send, Accum>(
-        self,
-        init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize, Self::Item) -> ControlFlow<Accum, Accum> + Sync,
-        finalize: impl Fn(Accum) -> Output + Sync,
-        reduce: impl Fn(Output, Output) -> Output,
-    ) -> Output {
-        self.inner.upper_bounded_pipeline(
-            || ((self.init)(), init()),
-            |(mut i, accum), index, item| {
-                let accum = process_item(accum, index, (self.f)(&mut i, item));
-                match accum {
-                    ControlFlow::Continue(accum) => ControlFlow::Continue((i, accum)),
-                    ControlFlow::Break(accum) => ControlFlow::Break((i, accum)),
-                }
-            },
-            |(_, accum)| finalize(accum),
-            reduce,
-        )
-    }
-
-    fn iter_pipeline<Output, Accum: Send>(
-        self,
-        accum: impl Accumulator<Self::Item, Accum> + Sync,
-        reduce: impl ExactSizeAccumulator<Accum, Output>,
-    ) -> Output {
-        let accumulator = MapInitAccumulator {
-            inner: accum,
-            init: self.init,
-            f: self.f,
-        };
-        self.inner.iter_pipeline(accumulator, reduce)
-    }
-}
-
-struct MapInitAccumulator<Inner, Init, F> {
-    inner: Inner,
-    init: Init,
-    f: F,
-}
-
-impl<Item, Output, Inner, I, Init, T, F> Accumulator<Item, Output>
-    for MapInitAccumulator<Inner, Init, F>
-where
-    Inner: Accumulator<T, Output>,
-    Init: Fn() -> I,
-    F: Fn(&mut I, Item) -> T,
-{
-    #[inline(always)]
-    fn accumulate(&self, iter: impl Iterator<Item = Item>) -> Output {
-        let mut i = (self.init)();
-        self.inner
-            .accumulate(iter.map(|item| (self.f)(&mut i, item)))
     }
 }
