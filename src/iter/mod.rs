@@ -107,6 +107,7 @@ pub trait ParallelIterator: Sized {
     /// terminate early.
     ///
     /// ```
+    /// # #![allow(clippy::bool_assert_comparison)]
     /// # use paralight::prelude::*;
     /// # use std::ops::ControlFlow;
     /// # let mut thread_pool = ThreadPoolBuilder {
@@ -2187,6 +2188,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// }
     ///
     /// /// Returns true if the first argument is a subset of the second. Inputs must be sorted.
+    /// # // TODO(MSRV >= 1.82.0): Remove this allowance
+    /// # #[allow(clippy::incompatible_msrv)]
     /// fn is_subset(lhs: &[i32], rhs: &[i32]) -> bool {
     ///     /* Implementation details omitted */
     /// #    assert!(lhs.is_sorted());
@@ -2197,7 +2200,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// #        match (lit.peek(), rit.peek()) {
     /// #            (None, _) => return true,
     /// #            (Some(_), None) => return false,
-    /// #            (Some(a), Some(b)) => match a.cmp(&b) {
+    /// #            (Some(a), Some(b)) => match a.cmp(b) {
     /// #                Ordering::Less => return false,
     /// #                Ordering::Equal => {
     /// #                    lit.next();

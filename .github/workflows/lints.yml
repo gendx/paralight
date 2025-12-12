@@ -12,6 +12,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     env:
       RUSTFLAGS: "-D warnings"
+      RUSTDOCFLAGS: "-Z unstable-options --no-run --no-capture --test-builder clippy-driver"
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
@@ -53,3 +54,8 @@ jobs:
         run: cargo clippy --verbose --all --examples
       - name: Check Clippy lints on examples (all features)
         run: cargo clippy --verbose --all --examples --all-features
+
+      - name: Check Clippy lints on doctests (default features)
+        run: cargo test --verbose --doc
+      - name: Check Clippy lints on doctests (all features)
+        run: cargo test --verbose --doc --all-features
