@@ -12,8 +12,8 @@ mod detail;
 mod source;
 
 use detail::{
-    AdaptorAccumulator, Fuse, IterAccumulator, IterFolder, IterReducer, ProductAccumulator,
-    ShortCircuitingAccumulator, SumAccumulator,
+    AdaptorAccumulator, Fuse, IterAccumulator, IterCollector, IterFolder, IterReducer,
+    ProductAccumulator, ShortCircuitingAccumulator, SumAccumulator,
 };
 pub use detail::{Cloned, Copied, Filter, FilterMap, Inspect, Map, MapInit};
 #[cfg(feature = "nightly")]
@@ -29,6 +29,7 @@ pub use source::{
 };
 use std::cmp::Ordering;
 use std::iter::{Product, Sum};
+use std::marker::PhantomData;
 use std::ops::ControlFlow;
 #[cfg(feature = "nightly")]
 use std::ops::Try;
@@ -848,6 +849,73 @@ pub trait ParallelIteratorExt: ParallelIterator {
         self.cmp_by(|t, u| f(t).cmp(&g(u)))
     }
 
+    /// Collect items from this iterator into a per-thread collection of type
+    /// `C`, then aggregates these into a `Vec<C>` without further
+    /// flattening.
+    ///
+    /// See also [`fold_per_thread()`](Self::fold_per_thread).
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let collection: Vec<Vec<i32>> = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .collect_per_thread();
+    ///
+    /// let mut values: Vec<i32> = collection.into_iter().flatten().collect();
+    /// values.sort_unstable();
+    /// assert_eq!(values, &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    /// ```
+    ///
+    /// The outer type of the result is currently always [`Vec`], but the inner
+    /// type can be anything that implements [`FromIterator`].
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # use std::collections::HashSet;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let collection: Vec<HashSet<i32>> = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .collect_per_thread();
+    ///
+    /// let mut values: Vec<i32> = collection.into_iter().flatten().collect();
+    /// values.sort_unstable();
+    /// assert_eq!(values, &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    /// ```
+    fn collect_per_thread<C>(self) -> Vec<C>
+    where
+        C: FromIterator<Self::Item> + Send,
+    {
+        self.iter_pipeline(
+            IterCollector::<C> {
+                _phantom: PhantomData,
+            },
+            IterFolder {
+                init: Vec::with_capacity,
+                fold: |mut vec: Vec<C>, c| {
+                    vec.push(c);
+                    vec
+                },
+            },
+        )
+    }
+
     /// Returns a parallel iterator that produces items that are copied from the
     /// items of this iterator. This is useful if you have an iterator over
     /// [`&T`](reference) and want an iterator over `T`, when `T` is
@@ -1411,9 +1479,11 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// Per-thread accumulation is done with the `init_per_thread` and
     /// `fold_per_thread` functions, and final accumulation with the
     /// `init_final` and `fold_final` functions. The `init_final`
-    /// function receives the number of threads as input.
-    /// [`Item`](ParallelIterator::Item) and `U` can be non-[`Send`]: only
+    /// function receives the number of threads as input. The
+    /// [`Item`](ParallelIterator::Item) and `U` types can be non-[`Send`]: only
     /// the per-thread accumulator type `T` needs to be [`Send`].
+    ///
+    /// See also [`collect_per_thread()`](Self::collect_per_thread).
     ///
     /// ```
     /// # use paralight::prelude::*;

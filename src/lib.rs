@@ -235,6 +235,7 @@ mod test {
                 test_adaptor_cmp_by,
                 test_adaptor_cmp_by_key,
                 test_adaptor_cmp_by_keys,
+                test_adaptor_collect_per_thread,
                 test_adaptor_copied,
                 test_adaptor_eq,
                 test_adaptor_eq_by_key,
@@ -2397,6 +2398,33 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .cmp_by_keys(|x| x.0, |x| x.1);
         assert_eq!(ordering, Ordering::Greater);
+    }
+
+    fn test_adaptor_collect_per_thread<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let collection: Vec<Vec<u64>> = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .collect_per_thread();
+
+        let mut values: Vec<u64> = collection.into_iter().flatten().collect();
+        values.sort_unstable();
+        assert_eq!(values, input);
+
+        // The inner type can be any collection.
+        let collection: Vec<HashSet<u64>> = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .collect_per_thread();
+
+        let mut values: Vec<u64> = collection.into_iter().flatten().collect();
+        values.sort_unstable();
+        assert_eq!(values, input);
     }
 
     fn test_adaptor_copied<T>(mut thread_pool: T)

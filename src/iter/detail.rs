@@ -13,6 +13,7 @@ use super::{
 };
 use crossbeam_utils::CachePadded;
 use std::iter::{Product, Sum};
+use std::marker::PhantomData;
 use std::ops::ControlFlow;
 use std::sync::atomic::AtomicBool;
 
@@ -165,6 +166,22 @@ where
     #[inline(always)]
     fn accumulate(&self, iter: impl Iterator<Item = InnerItem>) -> Output {
         self.inner.accumulate(iter.filter_map(&self.transform_item))
+    }
+}
+
+// Collect adaptor implementations.
+
+pub struct IterCollector<T> {
+    pub(super) _phantom: PhantomData<fn() -> T>,
+}
+
+impl<Item, T> Accumulator<Item, T> for IterCollector<T>
+where
+    T: FromIterator<Item>,
+{
+    #[inline(always)]
+    fn accumulate(&self, iter: impl Iterator<Item = Item>) -> T {
+        T::from_iter(iter)
     }
 }
 
