@@ -15,6 +15,8 @@ use crossbeam_utils::CachePadded;
 use std::iter::{Product, Sum};
 use std::marker::PhantomData;
 use std::ops::ControlFlow;
+#[cfg(feature = "nightly")]
+use std::ops::Try;
 use std::sync::atomic::AtomicBool;
 
 /// A fuse is an atomic object that starts unset and can transition once to the
@@ -119,6 +121,7 @@ pub struct ShortCircuitingAccumulator<Init, ProcessItem, Finalize> {
     pub(super) finalize: Finalize,
 }
 
+#[cfg(not(feature = "nightly"))]
 impl<Item, Accum, Break, Output, Init, ProcessItem, Finalize> Accumulator<Item, Output>
     for ShortCircuitingAccumulator<Init, ProcessItem, Finalize>
 where
@@ -147,6 +150,41 @@ where
                 }
             }
             ControlFlow::Continue(accumulator)
+        };
+        (self.finalize)(result)
+    }
+}
+
+#[cfg(feature = "nightly")]
+impl<Item, Accum, R, Output, Init, ProcessItem, Finalize> Accumulator<Item, Output>
+    for ShortCircuitingAccumulator<Init, ProcessItem, Finalize>
+where
+    Init: Fn() -> Accum,
+    ProcessItem: Fn(Accum, Item) -> R,
+    Finalize: Fn(R) -> Output,
+    R: Try<Output = Accum>,
+{
+    #[inline(always)]
+    fn accumulate(&self, mut iter: impl Iterator<Item = Item>) -> Output {
+        let mut accumulator = (self.init)();
+        let result = 'outer: {
+            while let FuseState::Unset = self.fuse.load() {
+                let Some(item) = iter.next() else {
+                    break;
+                };
+
+                match (self.process_item)(accumulator, item).branch() {
+                    ControlFlow::Continue(acc) => {
+                        accumulator = acc;
+                        continue;
+                    }
+                    ControlFlow::Break(residual) => {
+                        self.fuse.set();
+                        break 'outer R::from_residual(residual);
+                    }
+                }
+            }
+            R::from_output(accumulator)
         };
         (self.finalize)(result)
     }

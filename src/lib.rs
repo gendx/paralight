@@ -276,6 +276,9 @@ mod test {
                 test_adaptor_try_for_each_init,
                 #[cfg(feature = "nightly")]
                 test_adaptor_try_for_each_init_option,
+                test_adaptor_try_reduce,
+                #[cfg(feature = "nightly")]
+                test_adaptor_try_reduce_option,
             );
         };
     }
@@ -3585,6 +3588,49 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .try_for_each_init(rand::rng, |_, _| None);
         assert!(result.is_none());
+    }
+
+    fn test_adaptor_try_reduce<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let sum = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .try_reduce(|| 0, |x, y| x.checked_add(y).ok_or("integer overflow"));
+        assert_eq!(sum, Ok(INPUT_LEN * (INPUT_LEN + 1) / 2));
+
+        let product = input
+            .par_iter()
+            .skip(1)
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .try_reduce(|| 1, |x, y| x.checked_mul(y).ok_or("integer overflow"));
+        assert_eq!(product, Err("integer overflow"));
+    }
+
+    #[cfg(feature = "nightly")]
+    fn test_adaptor_try_reduce_option<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let sum = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .try_reduce(|| 0, |x, y| x.checked_add(y));
+        assert_eq!(sum, Some(INPUT_LEN * (INPUT_LEN + 1) / 2));
+
+        let product = input
+            .par_iter()
+            .skip(1)
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .try_reduce(|| 1, |x, y| x.checked_mul(y));
+        assert_eq!(product, None);
     }
 
     /* Helper functions */

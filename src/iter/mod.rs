@@ -272,6 +272,69 @@ pub trait ParallelIterator: Sized {
     /// - `finalize` function to transform an accumulator into an output,
     /// - `reduce` function to reduce a pair of outputs into one output.
     ///
+    /// Contrary to
+    /// [`short_circuiting_pipeline()`](Self::short_circuiting_pipeline), the
+    /// `process_item` function can return any type that implements the
+    /// [`Try`] trait to indicate that the pipeline should terminate early
+    /// (failures being represented by the corresponding [`Try::Residual`]
+    /// type).
+    ///
+    /// ```
+    /// # #![allow(clippy::bool_assert_comparison)]
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let any_even = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_short_circuiting_pipeline(
+    ///         || (),
+    ///         |(), x| {
+    ///             if x % 2 == 0 {
+    ///                 Err(x)
+    ///             } else {
+    ///                 Ok(())
+    ///             }
+    ///         },
+    ///         |acc| acc,
+    ///         |x, y| x.and(y),
+    ///     );
+    /// assert!(any_even.is_err());
+    /// assert!(any_even.unwrap_err() % 2 == 0);
+    /// ```
+    #[cfg(feature = "nightly")]
+    fn try_short_circuiting_pipeline<Output: Send, Accum, R: Try<Output = Accum>>(
+        self,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(Accum, Self::Item) -> R + Sync,
+        finalize: impl Fn(R) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+    ) -> Output {
+        self.iter_pipeline(
+            ShortCircuitingAccumulator {
+                fuse: Fuse::new(),
+                init,
+                process_item,
+                finalize,
+            },
+            IterReducer { reduce },
+        )
+    }
+
+    /// Runs the pipeline defined by the given functions on this iterator.
+    ///
+    /// # Parameters
+    ///
+    /// - `init` function to create a new (per-thread) accumulator,
+    /// - `process_item` function to accumulate an item into the accumulator,
+    /// - `finalize` function to transform an accumulator into an output,
+    /// - `reduce` function to reduce a pair of outputs into one output.
+    ///
     /// Contrary to [`pipeline()`](Self::pipeline), the `process_item` function
     /// can return [`ControlFlow::Break`] to indicate that the pipeline should
     /// skip processing items at larger indices.
@@ -2494,6 +2557,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// Reduces the items produced by this iterator into a single item, using
     /// `f` to collapse pairs of items.
     ///
+    /// See also [`try_reduce()`](Self::try_reduce).
+    ///
     /// ```
     /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
@@ -2916,6 +2981,233 @@ pub trait ParallelIteratorExt: ParallelIterator {
             },
             |x, y| match (x.branch(), y.branch()) {
                 (ControlFlow::Continue(()), ControlFlow::Continue(())) => R::from_output(()),
+                (ControlFlow::Break(e), _) | (_, ControlFlow::Break(e)) => R::from_residual(e),
+            },
+        )
+    }
+
+    /// Try reducing the items produced by this iterator into a single item,
+    /// using `f` to collapse pairs of items, breaking early and returning
+    /// the failure if `f` returns a failure.
+    ///
+    /// If multiple failures happen, an arbitrary one is returned.
+    ///
+    /// See also [`reduce()`](Self::reduce).
+    ///
+    /// # Stability blockers
+    ///
+    /// On stable Rust, this adaptor is currently only implemented for
+    /// [`Result`] outputs. Outputs of arbitrary [`Try`] types are only
+    /// available on Rust nightly with the `nightly` feature of Paralight
+    /// enabled. This is because the implementation depends on the
+    /// [`try_trait_v2`](https://github.com/rust-lang/rust/issues/84277) nightly
+    /// Rust feature.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .try_reduce(|| 0i32, |x, y| x.checked_add(y).ok_or("error"));
+    /// assert_eq!(sum, Ok(5 * 11));
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, i32::MAX, 6, 7, 8, 9, 10];
+    /// let sum = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .try_reduce(|| 0i32, |x, y| x.checked_add(y).ok_or("error"));
+    /// assert_eq!(sum, Err("error"));
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let sum = []
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .try_reduce(|| 0i32, |x, y| x.checked_add(y).ok_or("error"));
+    /// assert_eq!(sum, Ok(0));
+    /// ```
+    #[cfg(not(feature = "nightly"))]
+    fn try_reduce<E, Init, F>(self, init: Init, f: F) -> Result<Self::Item, E>
+    where
+        Init: Fn() -> Self::Item + Sync,
+        F: Fn(Self::Item, Self::Item) -> Result<Self::Item, E> + Sync,
+        Self::Item: Send,
+        E: Send,
+    {
+        self.short_circuiting_pipeline(
+            init,
+            |a, b| match f(a, b) {
+                Ok(x) => ControlFlow::Continue(x),
+                Err(e) => ControlFlow::Break(e),
+            },
+            |acc| match acc {
+                ControlFlow::Continue(x) => Ok(x),
+                ControlFlow::Break(e) => Err(e),
+            },
+            |x, y| match (x, y) {
+                (Ok(a), Ok(b)) => f(a, b),
+                (Err(e), _) | (_, Err(e)) => Err(e),
+            },
+        )
+    }
+
+    /// Try reducing the items produced by this iterator into a single item,
+    /// using `f` to collapse pairs of items, breaking early and returning
+    /// the failure if `f` returns a failure.
+    ///
+    /// If multiple failures happen, an arbitrary one is returned.
+    ///
+    /// See also [`reduce()`](Self::reduce).
+    ///
+    /// # Stability blockers
+    ///
+    /// On stable Rust, this adaptor is currently only implemented for
+    /// [`Result`] outputs. Outputs of arbitrary [`Try`] types are only
+    /// available on Rust nightly with the `nightly` feature of Paralight
+    /// enabled. This is because the implementation depends on the
+    /// [`try_trait_v2`](https://github.com/rust-lang/rust/issues/84277) nightly
+    /// Rust feature.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .try_reduce(|| 0i32, |x, y| x.checked_add(y).ok_or("error"));
+    /// assert_eq!(sum, Ok(5 * 11));
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, i32::MAX, 6, 7, 8, 9, 10];
+    /// let sum = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .try_reduce(|| 0i32, |x, y| x.checked_add(y).ok_or("error"));
+    /// assert_eq!(sum, Err("error"));
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let sum = []
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .try_reduce(|| 0i32, |x, y| x.checked_add(y).ok_or("error"));
+    /// assert_eq!(sum, Ok(0));
+    /// ```
+    ///
+    /// With the `nightly` feature on a nightly compiler:
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .try_reduce(|| 0i32, |x, y| x.checked_add(y));
+    /// assert_eq!(sum, Some(5 * 11));
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, i32::MAX, 6, 7, 8, 9, 10];
+    /// let sum = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .try_reduce(|| 0i32, |x, y| x.checked_add(y));
+    /// assert_eq!(sum, None);
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let sum = []
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .try_reduce(|| 0i32, |x, y| x.checked_add(y));
+    /// assert_eq!(sum, Some(0));
+    /// ```
+    #[cfg(feature = "nightly")]
+    fn try_reduce<R, Init, F>(self, init: Init, f: F) -> R
+    where
+        Init: Fn() -> Self::Item + Sync,
+        F: Fn(Self::Item, Self::Item) -> R + Sync,
+        R: Try<Output = Self::Item> + Send,
+    {
+        self.try_short_circuiting_pipeline(
+            init,
+            &f,
+            |acc| acc,
+            |x, y| match (x.branch(), y.branch()) {
+                (ControlFlow::Continue(a), ControlFlow::Continue(b)) => f(a, b),
                 (ControlFlow::Break(e), _) | (_, ControlFlow::Break(e)) => R::from_residual(e),
             },
         )
