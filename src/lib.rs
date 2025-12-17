@@ -270,6 +270,9 @@ mod test {
                 test_adaptor_product,
                 test_adaptor_reduce,
                 test_adaptor_sum,
+                test_adaptor_try_fold_per_thread,
+                #[cfg(feature = "nightly")]
+                test_adaptor_try_fold_per_thread_option,
                 test_adaptor_try_for_each,
                 #[cfg(feature = "nightly")]
                 test_adaptor_try_for_each_option,
@@ -3418,6 +3421,149 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .sum::<u64>();
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_adaptor_try_fold_per_thread<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let collection: Result<Vec<Vec<u64>>, ()> = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .try_fold_per_thread(
+                Vec::new,
+                |mut vec, x| {
+                    vec.push(x);
+                    Ok(vec)
+                },
+                Vec::with_capacity,
+                |mut vecvec, vec| {
+                    vecvec.push(vec?);
+                    Ok(vecvec)
+                },
+            );
+
+        let mut values: Vec<u64> = collection.unwrap().into_iter().flatten().collect();
+        values.sort_unstable();
+        assert_eq!(values, input);
+
+        let collection: Result<Vec<Vec<u64>>, ()> = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .try_fold_per_thread(
+                Vec::new,
+                |mut vec, x| {
+                    if x == INPUT_LEN {
+                        Err(())
+                    } else {
+                        vec.push(x);
+                        Ok(vec)
+                    }
+                },
+                Vec::with_capacity,
+                |mut vecvec, vec| {
+                    vecvec.push(vec?);
+                    Ok(vecvec)
+                },
+            );
+        assert_eq!(collection, Err(()));
+
+        let collection: Result<Vec<Vec<u64>>, ()> = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .try_fold_per_thread(
+                Vec::new,
+                |mut vec, x| {
+                    if x % 2 == 1 {
+                        Err(())
+                    } else {
+                        vec.push(x);
+                        Ok(vec)
+                    }
+                },
+                Vec::with_capacity,
+                |mut vecvec, vec| {
+                    vecvec.push(vec?);
+                    Ok(vecvec)
+                },
+            );
+        assert_eq!(collection, Err(()));
+    }
+
+    #[cfg(feature = "nightly")]
+    fn test_adaptor_try_fold_per_thread_option<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let collection: Option<Vec<Vec<u64>>> = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .try_fold_per_thread(
+                Vec::new,
+                |mut vec, x| {
+                    vec.push(x);
+                    Some(vec)
+                },
+                Vec::with_capacity,
+                |mut vecvec, vec| {
+                    vecvec.push(vec?);
+                    Some(vecvec)
+                },
+            );
+
+        let mut values: Vec<u64> = collection.unwrap().into_iter().flatten().collect();
+        values.sort_unstable();
+        assert_eq!(values, input);
+
+        let collection: Option<Vec<Vec<u64>>> = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .try_fold_per_thread(
+                Vec::new,
+                |mut vec, x| {
+                    if x == INPUT_LEN {
+                        None
+                    } else {
+                        vec.push(x);
+                        Some(vec)
+                    }
+                },
+                Vec::with_capacity,
+                |mut vecvec, vec| {
+                    vecvec.push(vec?);
+                    Some(vecvec)
+                },
+            );
+        assert_eq!(collection, None);
+
+        let collection: Option<Vec<Vec<u64>>> = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .try_fold_per_thread(
+                Vec::new,
+                |mut vec, x| {
+                    if x % 2 == 1 {
+                        None
+                    } else {
+                        vec.push(x);
+                        Some(vec)
+                    }
+                },
+                Vec::with_capacity,
+                |mut vecvec, vec| {
+                    vecvec.push(vec?);
+                    Some(vecvec)
+                },
+            );
+        assert_eq!(collection, None);
     }
 
     fn test_adaptor_try_for_each<T>(mut thread_pool: T)

@@ -89,6 +89,39 @@ where
     }
 }
 
+pub struct TryIterFolder<Init, TryFold> {
+    pub(super) init: Init,
+    pub(super) try_fold: TryFold,
+}
+
+#[cfg(not(feature = "nightly"))]
+impl<Item, Output, E, Init, TryFold> ExactSizeAccumulator<Item, Result<Output, E>>
+    for TryIterFolder<Init, TryFold>
+where
+    Init: Fn(usize) -> Output,
+    TryFold: Fn(Output, Item) -> Result<Output, E>,
+{
+    #[inline(always)]
+    fn accumulate_exact(&self, mut iter: impl ExactSizeIterator<Item = Item>) -> Result<Output, E> {
+        let init = (self.init)(iter.len());
+        iter.try_fold(init, &self.try_fold)
+    }
+}
+
+#[cfg(feature = "nightly")]
+impl<Item, Output, R, Init, TryFold> ExactSizeAccumulator<Item, R> for TryIterFolder<Init, TryFold>
+where
+    Init: Fn(usize) -> Output,
+    TryFold: Fn(Output, Item) -> R,
+    R: Try<Output = Output>,
+{
+    #[inline(always)]
+    fn accumulate_exact(&self, mut iter: impl ExactSizeIterator<Item = Item>) -> R {
+        let init = (self.init)(iter.len());
+        iter.try_fold(init, &self.try_fold)
+    }
+}
+
 // Accumulator implementations.
 
 pub struct IterAccumulator<Init, ProcessItem, Finalize> {
