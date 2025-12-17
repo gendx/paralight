@@ -2822,19 +2822,85 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///     .try_for_each(|&x| Err(x));
     /// assert!(result.is_err());
     /// ```
+    ///
+    /// With the `nightly` feature on a nightly compiler:
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # use std::collections::HashSet;
+    /// # use std::sync::Mutex;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let set = Mutex::new(HashSet::new());
+    /// let result = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_for_each(|&x| {
+    ///         if set.lock().unwrap().insert(x) {
+    ///             Some(())
+    ///         } else {
+    ///             None
+    ///         }
+    ///     });
+    /// assert_eq!(result, Some(()));
+    /// assert_eq!(set.into_inner().unwrap(), (1..=10).collect());
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # use std::collections::HashSet;
+    /// # use std::sync::Mutex;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 1, 1, 1, 1, 6, 7, 8, 9, 10];
+    /// let set = Mutex::new(HashSet::new());
+    /// let result = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_for_each(|&x| {
+    ///         if set.lock().unwrap().insert(x) {
+    ///             Some(())
+    ///         } else {
+    ///             None
+    ///         }
+    ///     });
+    /// assert_eq!(result, None);
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let result = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_for_each(|_| None);
+    /// assert!(result.is_none());
+    /// ```
     #[cfg(feature = "nightly")]
     fn try_for_each<R, F>(self, f: F) -> R
     where
         F: Fn(Self::Item) -> R + Sync,
         R: Try<Output = ()> + Send,
     {
-        self.short_circuiting_pipeline(
+        self.try_short_circuiting_pipeline(
             || (),
-            |_, item| f(item).branch(),
-            |result| match result {
-                ControlFlow::Continue(()) => R::from_output(()),
-                ControlFlow::Break(e) => R::from_residual(e),
-            },
+            |_, item| f(item),
+            |result| result,
             |x, y| match (x.branch(), y.branch()) {
                 (ControlFlow::Continue(()), ControlFlow::Continue(())) => R::from_output(()),
                 (ControlFlow::Break(e), _) | (_, ControlFlow::Break(e)) => R::from_residual(e),
@@ -2960,6 +3026,39 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///     );
     /// // Even a biased random number generator cannot yield more than 256 distinct bytes.
     /// assert!(result.is_err());
+    /// ```
+    ///
+    /// With the `nightly` feature on a nightly compiler:
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// use rand::Rng;
+    ///
+    /// # use std::collections::HashSet;
+    /// # use std::sync::Mutex;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let set = Mutex::new(HashSet::new());
+    /// let result = (0..257)
+    ///     .into_par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_for_each_init(
+    ///         rand::rng, // A thread-local RNG that is neither Send nor Sync.
+    ///         |rng, _| {
+    ///             let byte: u8 = rng.random();
+    ///             if set.lock().unwrap().insert(byte) {
+    ///                 Some(())
+    ///             } else {
+    ///                 None
+    ///             }
+    ///         },
+    ///     );
+    /// // Even a biased random number generator cannot yield more than 256 distinct bytes.
+    /// assert!(result.is_none());
     /// ```
     #[cfg(feature = "nightly")]
     fn try_for_each_init<T, Init, R, F>(self, init: Init, f: F) -> R
