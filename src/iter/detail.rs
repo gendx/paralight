@@ -16,7 +16,7 @@ use std::iter::{Product, Sum};
 use std::marker::PhantomData;
 use std::ops::ControlFlow;
 #[cfg(feature = "nightly")]
-use std::ops::Try;
+use std::ops::{FromResidual, Residual, Try};
 use std::sync::atomic::AtomicBool;
 
 /// A fuse is an atomic object that starts unset and can transition once to the
@@ -253,6 +253,68 @@ where
     #[inline(always)]
     fn accumulate(&self, iter: impl Iterator<Item = Item>) -> T {
         T::from_iter(iter)
+    }
+}
+
+pub struct TryIterCollector<T> {
+    pub(super) fuse: Fuse,
+    pub(super) _phantom: PhantomData<fn() -> T>,
+}
+
+#[cfg(not(feature = "nightly"))]
+impl<Item, C, E> Accumulator<Result<Item, E>, Result<C, E>> for TryIterCollector<C>
+where
+    C: FromIterator<Item>,
+{
+    #[inline(always)]
+    fn accumulate(&self, iter: impl Iterator<Item = Result<Item, E>>) -> Result<C, E> {
+        let mut error = None;
+        let c = C::from_iter(iter.map_while(|item| match item {
+            Err(e) => {
+                self.fuse.set();
+                error = Some(e);
+                None
+            }
+            Ok(x) => match self.fuse.load() {
+                FuseState::Set => None,
+                FuseState::Unset => Some(x),
+            },
+        }));
+        match error {
+            None => Ok(c),
+            Some(e) => Err(e),
+        }
+    }
+}
+
+#[cfg(feature = "nightly")]
+impl<Item, C> Accumulator<Item, <Item::Residual as Residual<C>>::TryType> for TryIterCollector<C>
+where
+    Item: Try,
+    Item::Residual: Residual<C>,
+    C: FromIterator<Item::Output>,
+{
+    #[inline(always)]
+    fn accumulate(
+        &self,
+        iter: impl Iterator<Item = Item>,
+    ) -> <Item::Residual as Residual<C>>::TryType {
+        let mut residual = None;
+        let c = C::from_iter(iter.map_while(|item| match item.branch() {
+            ControlFlow::Break(e) => {
+                self.fuse.set();
+                residual = Some(e);
+                None
+            }
+            ControlFlow::Continue(x) => match self.fuse.load() {
+                FuseState::Set => None,
+                FuseState::Unset => Some(x),
+            },
+        }));
+        match residual {
+            None => Try::from_output(c),
+            Some(e) => FromResidual::from_residual(e),
+        }
     }
 }
 

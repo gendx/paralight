@@ -13,7 +13,8 @@ mod source;
 
 use detail::{
     AdaptorAccumulator, Fuse, IterAccumulator, IterCollector, IterFolder, IterReducer,
-    ProductAccumulator, ShortCircuitingAccumulator, SumAccumulator, TryIterFolder,
+    ProductAccumulator, ShortCircuitingAccumulator, SumAccumulator, TryIterCollector,
+    TryIterFolder,
 };
 pub use detail::{Cloned, Copied, Filter, FilterMap, Inspect, Map, MapInit};
 #[cfg(feature = "nightly")]
@@ -32,7 +33,7 @@ use std::iter::{Product, Sum};
 use std::marker::PhantomData;
 use std::ops::ControlFlow;
 #[cfg(feature = "nightly")]
-use std::ops::Try;
+use std::ops::{FromResidual, Residual, Try};
 
 /// Interface for an operation that accumulates items from an iterator into an
 /// output.
@@ -916,7 +917,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// `C`, then aggregates these into a `Vec<C>` without further
     /// flattening.
     ///
-    /// See also [`fold_per_thread()`](Self::fold_per_thread).
+    /// See also [`try_collect_per_thread()`](Self::try_collect_per_thread) and
+    /// [`fold_per_thread()`](Self::fold_per_thread).
     ///
     /// ```
     /// # use paralight::prelude::*;
@@ -2635,6 +2637,298 @@ pub trait ParallelIteratorExt: ParallelIterator {
         T: Sum<Self::Item> + Sum<T> + Send,
     {
         self.iter_pipeline::<T, T>(SumAccumulator, SumAccumulator)
+    }
+
+    /// Try collecting items from this iterator into a per-thread collection of
+    /// type `C`, then aggregating these into a `Vec<C>` without further
+    /// flattening, breaking early and returning the failure if any item
+    /// contains a failure.
+    ///
+    /// See also [`collect_per_thread()`](Self::collect_per_thread) and
+    /// [`fold_per_thread()`](Self::fold_per_thread).
+    ///
+    /// # Stability blockers
+    ///
+    /// On stable Rust, this adaptor is currently only implemented for
+    /// [`Result`] items. Items of arbitrary [`Try`] types are only available on
+    /// Rust nightly with the `nightly` feature of Paralight enabled. This
+    /// is because the implementation depends on the
+    /// [`try_trait_v2`](https://github.com/rust-lang/rust/issues/84277) and
+    /// [`try_trait_v2_residual`](https://github.com/rust-lang/rust/issues/91285)
+    /// nightly Rust features.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [Ok(1), Ok(2), Ok(3), Ok(4), Ok(5), Ok(6), Ok(7), Ok(8)];
+    /// let collection: Result<Vec<Vec<i32>>, i32> = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .try_collect_per_thread();
+    /// assert!(collection.is_ok());
+    ///
+    /// let mut values: Vec<i32> = collection.unwrap().into_iter().flatten().collect();
+    /// values.sort_unstable();
+    /// assert_eq!(values, &[1, 2, 3, 4, 5, 6, 7, 8]);
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [Ok(1), Err(2), Ok(3), Err(4), Ok(5), Err(6), Ok(7), Err(8)];
+    /// let collection: Result<Vec<Vec<i32>>, i32> = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .try_collect_per_thread();
+    /// assert!(collection.is_err());
+    /// assert!(collection.unwrap_err() % 2 == 0);
+    /// ```
+    ///
+    /// The outer type of the result is currently always [`Vec`], but the inner
+    /// type can be anything that implements [`FromIterator`].
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # use std::collections::HashSet;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [Ok(1), Ok(2), Ok(3), Ok(4), Ok(5), Ok(6), Ok(7), Ok(8)];
+    /// let collection: Result<Vec<HashSet<i32>>, i32> = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .try_collect_per_thread();
+    /// assert!(collection.is_ok());
+    ///
+    /// let mut values: Vec<i32> = collection.unwrap().into_iter().flatten().collect();
+    /// values.sort_unstable();
+    /// assert_eq!(values, &[1, 2, 3, 4, 5, 6, 7, 8]);
+    /// ```
+    #[cfg(not(feature = "nightly"))]
+    fn try_collect_per_thread<T, E, C>(self) -> Result<Vec<C>, E>
+    where
+        Self: ParallelIterator<Item = Result<T, E>>,
+        C: FromIterator<T> + Send,
+        E: Send,
+    {
+        self.iter_pipeline(
+            TryIterCollector::<C> {
+                fuse: Fuse::new(),
+                _phantom: PhantomData,
+            },
+            TryIterFolder {
+                init: |num_threads| Vec::with_capacity(num_threads),
+                try_fold: |mut vec: Vec<C>, c: Result<C, E>| {
+                    c.map(|c| {
+                        vec.push(c);
+                        vec
+                    })
+                },
+            },
+        )
+    }
+
+    /// Try collecting items from this iterator into a per-thread collection of
+    /// type `C`, then aggregating these into a `Vec<C>` without further
+    /// flattening, breaking early and returning the failure if any item
+    /// contains a failure.
+    ///
+    /// See also [`collect_per_thread()`](Self::collect_per_thread) and
+    /// [`fold_per_thread()`](Self::fold_per_thread).
+    ///
+    /// # Stability blockers
+    ///
+    /// On stable Rust, this adaptor is currently only implemented for
+    /// [`Result`] items. Items of arbitrary [`Try`] types are only available on
+    /// Rust nightly with the `nightly` feature of Paralight enabled. This
+    /// is because the implementation depends on the
+    /// [`try_trait_v2`](https://github.com/rust-lang/rust/issues/84277) and
+    /// [`try_trait_v2_residual`](https://github.com/rust-lang/rust/issues/91285)
+    /// nightly Rust features.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [Ok(1), Ok(2), Ok(3), Ok(4), Ok(5), Ok(6), Ok(7), Ok(8)];
+    /// let collection: Result<Vec<Vec<i32>>, i32> = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .try_collect_per_thread();
+    /// assert!(collection.is_ok());
+    ///
+    /// let mut values: Vec<i32> = collection.unwrap().into_iter().flatten().collect();
+    /// values.sort_unstable();
+    /// assert_eq!(values, &[1, 2, 3, 4, 5, 6, 7, 8]);
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [Ok(1), Err(2), Ok(3), Err(4), Ok(5), Err(6), Ok(7), Err(8)];
+    /// let collection: Result<Vec<Vec<i32>>, i32> = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .try_collect_per_thread();
+    /// assert!(collection.is_err());
+    /// assert!(collection.unwrap_err() % 2 == 0);
+    /// ```
+    ///
+    /// The outer type of the result is currently always [`Vec`], but the inner
+    /// type can be anything that implements [`FromIterator`].
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # use std::collections::HashSet;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [Ok(1), Ok(2), Ok(3), Ok(4), Ok(5), Ok(6), Ok(7), Ok(8)];
+    /// let collection: Result<Vec<HashSet<i32>>, i32> = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .try_collect_per_thread();
+    /// assert!(collection.is_ok());
+    ///
+    /// let mut values: Vec<i32> = collection.unwrap().into_iter().flatten().collect();
+    /// values.sort_unstable();
+    /// assert_eq!(values, &[1, 2, 3, 4, 5, 6, 7, 8]);
+    /// ```
+    ///
+    /// With the `nightly` feature on a nightly compiler:
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [Some(1), Some(2), Some(3), Some(4), Some(5), Some(6)];
+    /// let collection: Option<Vec<Vec<i32>>> = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .try_collect_per_thread();
+    /// assert!(collection.is_some());
+    ///
+    /// let mut values: Vec<i32> = collection.unwrap().into_iter().flatten().collect();
+    /// values.sort_unstable();
+    /// assert_eq!(values, &[1, 2, 3, 4, 5, 6]);
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [Some(1), None, Some(3), None, Some(5), None];
+    /// let collection: Option<Vec<Vec<i32>>> = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .try_collect_per_thread();
+    /// assert_eq!(collection, None);
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # use std::collections::HashSet;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [Some(1), Some(2), Some(3), Some(4), Some(5), Some(6)];
+    /// let collection: Option<Vec<HashSet<i32>>> = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .copied()
+    ///     .try_collect_per_thread();
+    /// assert!(collection.is_some());
+    ///
+    /// let mut values: Vec<i32> = collection.unwrap().into_iter().flatten().collect();
+    /// values.sort_unstable();
+    /// assert_eq!(values, &[1, 2, 3, 4, 5, 6]);
+    /// ```
+    #[cfg(feature = "nightly")]
+    fn try_collect_per_thread<C>(
+        self,
+    ) -> <<Self::Item as Try>::Residual as Residual<Vec<C>>>::TryType
+    where
+        // ~ Result<T, E>
+        Self::Item: Try,
+        // ~ Result<!, E>: Result<C, E> + Result<Vec<C>, E>
+        <Self::Item as Try>::Residual: Residual<C> + Residual<Vec<C>>,
+        // ~ C: FromIterator<T> + Send
+        C: FromIterator<<Self::Item as Try>::Output> + Send,
+        // ~ Result<C, E>: Send
+        <<Self::Item as Try>::Residual as Residual<C>>::TryType: Send,
+    {
+        // Helper function instead of a lambda to avoid overlong type annotations.
+        #[inline(always)]
+        fn try_fold<C, R>(
+            mut vec: Vec<C>,
+            c: <R as Residual<C>>::TryType,
+        ) -> <R as Residual<Vec<C>>>::TryType
+        where
+            R: Residual<C> + Residual<Vec<C>>,
+        {
+            match c.branch() {
+                ControlFlow::Continue(c) => {
+                    vec.push(c);
+                    Try::from_output(vec)
+                }
+                ControlFlow::Break(e) => FromResidual::from_residual(e),
+            }
+        }
+
+        self.iter_pipeline(
+            TryIterCollector::<C> {
+                fuse: Fuse::new(),
+                _phantom: PhantomData,
+            },
+            TryIterFolder {
+                init: |num_threads| Vec::with_capacity(num_threads),
+                try_fold: try_fold::<C, <Self::Item as Try>::Residual>,
+            },
+        )
     }
 
     /// Try folding items of this parallel iterator into a per-thread

@@ -25,7 +25,8 @@
         array_ptr_get,
         maybe_uninit_uninit_array_transpose,
         step_trait,
-        try_trait_v2
+        try_trait_v2,
+        try_trait_v2_residual
     )
 )]
 #![cfg_attr(docsrs, feature(doc_cfg))]
@@ -270,6 +271,9 @@ mod test {
                 test_adaptor_product,
                 test_adaptor_reduce,
                 test_adaptor_sum,
+                test_adaptor_try_collect_per_thread,
+                #[cfg(feature = "nightly")]
+                test_adaptor_try_collect_per_thread_option,
                 test_adaptor_try_fold_per_thread,
                 #[cfg(feature = "nightly")]
                 test_adaptor_try_fold_per_thread_option,
@@ -3421,6 +3425,76 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .sum::<u64>();
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_adaptor_try_collect_per_thread<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let collection: Result<Vec<Vec<u64>>, ()> = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .map(|&x| Ok(x))
+            .try_collect_per_thread();
+
+        let mut values: Vec<u64> = collection.unwrap().into_iter().flatten().collect();
+        values.sort_unstable();
+        assert_eq!(values, input);
+
+        // The inner type can be any collection.
+        let collection: Result<Vec<HashSet<u64>>, ()> = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .map(|&x| Ok(x))
+            .try_collect_per_thread();
+
+        let mut values: Vec<u64> = collection.unwrap().into_iter().flatten().collect();
+        values.sort_unstable();
+        assert_eq!(values, input);
+
+        let collection: Result<Vec<Vec<u64>>, u64> = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .map(|&x| if x % 2 == 0 { Ok(x) } else { Err(x) })
+            .try_collect_per_thread();
+        assert!(collection.is_err());
+        assert!(collection.unwrap_err() % 2 == 1);
+    }
+
+    #[cfg(feature = "nightly")]
+    fn test_adaptor_try_collect_per_thread_option<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let collection: Option<Vec<Vec<u64>>> = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .map(|&x| Some(x))
+            .try_collect_per_thread();
+
+        let mut values: Vec<u64> = collection.unwrap().into_iter().flatten().collect();
+        values.sort_unstable();
+        assert_eq!(values, input);
+
+        // The inner type can be any collection.
+        let collection: Option<Vec<HashSet<u64>>> = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .map(|&x| Some(x))
+            .try_collect_per_thread();
+
+        let mut values: Vec<u64> = collection.unwrap().into_iter().flatten().collect();
+        values.sort_unstable();
+        assert_eq!(values, input);
+
+        let collection: Option<Vec<Vec<u64>>> = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .map(|&x| if x % 2 == 0 { Some(x) } else { None })
+            .try_collect_per_thread();
+        assert!(collection.is_none());
     }
 
     fn test_adaptor_try_fold_per_thread<T>(mut thread_pool: T)
