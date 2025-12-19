@@ -3086,6 +3086,94 @@ mod test {
         assert_eq!(min_empty, None);
     }
 
+    #[cfg(feature = "default-thread-pool")]
+    #[test]
+    fn test_min_max_stability() {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy: RangeStrategy::Fixed,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..INPUT_LEN).map(|_| 0).collect::<Vec<u64>>();
+
+        let min = input.par_iter().with_thread_pool(&mut thread_pool).min();
+        assert_eq!(min, Some(&0));
+        assert_eq!(
+            min.unwrap() as *const u64,
+            input.first().unwrap() as *const u64
+        );
+
+        let max = input.par_iter().with_thread_pool(&mut thread_pool).max();
+        assert_eq!(max, Some(&0));
+        assert_eq!(
+            max.unwrap() as *const u64,
+            input.last().unwrap() as *const u64
+        );
+    }
+
+    #[cfg(feature = "default-thread-pool")]
+    #[test]
+    fn test_min_max_by_stability() {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy: RangeStrategy::Fixed,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..INPUT_LEN).map(|_| 0).collect::<Vec<u64>>();
+        let cmp = |x: &&u64, y: &&u64| (**x % 2).cmp(&(**y % 2)).then(x.cmp(y));
+
+        let min = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .min_by(cmp);
+        assert_eq!(min, Some(&0));
+        assert_eq!(
+            min.unwrap() as *const u64,
+            input.first().unwrap() as *const u64
+        );
+
+        let max = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .max_by(cmp);
+        assert_eq!(max, Some(&0));
+        assert_eq!(
+            max.unwrap() as *const u64,
+            input.last().unwrap() as *const u64
+        );
+    }
+
+    #[cfg(feature = "default-thread-pool")]
+    #[test]
+    fn test_min_max_by_key_stability() {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy: RangeStrategy::Fixed,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = (0..=INPUT_LEN).map(|i| (i, 0)).collect::<Vec<(u64, u64)>>();
+
+        let min = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .min_by_key(|pair| pair.1);
+        assert_eq!(min, Some((0, 0)));
+
+        let max = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .max_by_key(|pair| pair.1);
+        assert_eq!(max, Some((INPUT_LEN, 0)));
+    }
+
     fn test_adaptor_ne<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,

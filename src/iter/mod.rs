@@ -1827,6 +1827,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// Returns the maximal item of this iterator, or [`None`] if this iterator
     /// is empty.
     ///
+    /// If there are several maximal items, an arbitrary one is returned.
+    ///
     /// ```
     /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
@@ -1861,6 +1863,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// Returns the maximal item of this iterator according to the comparison
     /// function `f`, or [`None`] if this iterator is empty.
     ///
+    /// If there are several maximal items, an arbitrary one is returned.
+    ///
     /// ```
     /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
@@ -1887,8 +1891,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
             |max, x| match max {
                 None => Some(x),
                 Some(max) => match f(&max, &x) {
-                    Ordering::Greater | Ordering::Equal => Some(max),
-                    Ordering::Less => Some(x),
+                    Ordering::Greater => Some(max),
+                    Ordering::Less | Ordering::Equal => Some(x),
                 },
             },
             |max| max,
@@ -1896,8 +1900,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
                 (None, None) => None,
                 (Some(a), None) | (None, Some(a)) => Some(a),
                 (Some(a), Some(b)) => match f(&a, &b) {
-                    Ordering::Greater | Ordering::Equal => Some(a),
-                    Ordering::Less => Some(b),
+                    Ordering::Greater => Some(a),
+                    Ordering::Less | Ordering::Equal => Some(b),
                 },
             },
         )
@@ -1906,6 +1910,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// Returns the maximal item of this iterator according to the keys derived
     /// from the mapping function `f`, or [`None`] if this iterator is
     /// empty.
+    ///
+    /// If there are several maximal items, an arbitrary one is returned.
     ///
     /// ```
     /// # use paralight::prelude::*;
@@ -1940,6 +1946,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// Returns the minimal item of this iterator, or [`None`] if this iterator
     /// is empty.
     ///
+    /// If there are several minimal items, an arbitrary one is returned.
+    ///
     /// ```
     /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
@@ -1973,6 +1981,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
 
     /// Returns the minimal item of this iterator according to the comparison
     /// function `f`, or [`None`] if this iterator is empty.
+    ///
+    /// If there are several minimal items, an arbitrary one is returned.
     ///
     /// ```
     /// # use paralight::prelude::*;
@@ -2019,6 +2029,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// Returns the minimal item of this iterator according to the keys derived
     /// from the mapping function `f`, or [`None`] if this iterator is
     /// empty.
+    ///
+    /// If there are several minimal items, an arbitrary one is returned.
     ///
     /// ```
     /// # use paralight::prelude::*;
