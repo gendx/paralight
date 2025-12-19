@@ -13,10 +13,10 @@ mod source;
 
 use detail::{
     AdaptorAccumulator, Fuse, IterAccumulator, IterCollector, IterFolder, IterReducer,
-    ProductAccumulator, ShortCircuitingAccumulator, SumAccumulator, TryIterCollector,
-    TryIterFolder,
+    MinMaxAccumulator, ProductAccumulator, ShortCircuitingAccumulator, SumAccumulator,
+    TryIterCollector, TryIterFolder,
 };
-pub use detail::{Cloned, Copied, Filter, FilterMap, Inspect, Map, MapInit};
+pub use detail::{Cloned, Copied, Filter, FilterMap, Inspect, Map, MapInit, MinMaxResult};
 #[cfg(feature = "nightly")]
 pub use source::array::ArrayParallelSource;
 pub use source::range::{RangeInclusiveParallelSource, RangeParallelSource};
@@ -1829,6 +1829,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// If there are several maximal items, an arbitrary one is returned.
     ///
+    /// See also [`minmax()`](Self::minmax).
+    ///
     /// ```
     /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
@@ -1864,6 +1866,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// function `f`, or [`None`] if this iterator is empty.
     ///
     /// If there are several maximal items, an arbitrary one is returned.
+    ///
+    /// See also [`minmax_by()`](Self::minmax_by).
     ///
     /// ```
     /// # use paralight::prelude::*;
@@ -1913,6 +1917,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// If there are several maximal items, an arbitrary one is returned.
     ///
+    /// See also [`minmax_by_key()`](Self::minmax_by_key).
+    ///
     /// ```
     /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
@@ -1947,6 +1953,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// is empty.
     ///
     /// If there are several minimal items, an arbitrary one is returned.
+    ///
+    /// See also [`minmax()`](Self::minmax).
     ///
     /// ```
     /// # use paralight::prelude::*;
@@ -1983,6 +1991,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// function `f`, or [`None`] if this iterator is empty.
     ///
     /// If there are several minimal items, an arbitrary one is returned.
+    ///
+    /// See also [`minmax_by()`](Self::minmax_by).
     ///
     /// ```
     /// # use paralight::prelude::*;
@@ -2032,6 +2042,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// If there are several minimal items, an arbitrary one is returned.
     ///
+    /// See also [`minmax_by_key()`](Self::minmax_by_key).
+    ///
     /// ```
     /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
@@ -2059,6 +2071,136 @@ pub trait ParallelIteratorExt: ParallelIterator {
     {
         self.map(|x| (f(&x), x))
             .min_by(|a, b| a.0.cmp(&b.0))
+            .map(|(_, x)| x)
+    }
+
+    /// Returns the minimal and maximal items of this iterator.
+    ///
+    /// If there are several minimal and/or maximal items, arbirary ones are
+    /// returned.
+    ///
+    /// This performs only `1.5 * n` comparisons for an iterator of length `n`,
+    /// which is more efficient than calling [`min()`](Self::min) and
+    /// [`max()`](Self::max) separately.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// use paralight::iter::MinMaxResult;
+    ///
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let minmax = input.par_iter().with_thread_pool(&mut thread_pool).minmax();
+    /// assert_eq!(minmax, MinMaxResult::MinMax { min: &1, max: &10 });
+    ///
+    /// let input = [1];
+    /// let minmax = input.par_iter().with_thread_pool(&mut thread_pool).minmax();
+    /// assert_eq!(minmax, MinMaxResult::OneElement(&1));
+    ///
+    /// let input: [i32; 0] = [];
+    /// let minmax = input.par_iter().with_thread_pool(&mut thread_pool).minmax();
+    /// assert_eq!(minmax, MinMaxResult::NoElements);
+    /// ```
+    fn minmax(self) -> MinMaxResult<Self::Item>
+    where
+        Self::Item: Ord + Send,
+    {
+        self.minmax_by(Self::Item::cmp)
+    }
+
+    /// Returns the minimal and maximal items of this iterator according to the
+    /// comparison function `f`.
+    ///
+    /// If there are several minimal and/or maximal items, arbirary ones are
+    /// returned.
+    ///
+    /// This performs only `1.5 * n` comparisons for an iterator of length `n`,
+    /// which is more efficient than calling [`min_by()`](Self::min_by) and
+    /// [`max_by()`](Self::max_by) separately.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// use paralight::iter::MinMaxResult;
+    ///
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let minmax = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     // Custom comparison function where even numbers are smaller than all odd numbers.
+    ///     .minmax_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
+    /// assert_eq!(minmax, MinMaxResult::MinMax { min: &2, max: &9 });
+    /// ```
+    fn minmax_by<F>(self, f: F) -> MinMaxResult<Self::Item>
+    where
+        F: Fn(&Self::Item, &Self::Item) -> Ordering + Sync,
+        Self::Item: Send,
+    {
+        let accumulator = MinMaxAccumulator { f };
+        self.iter_pipeline(&accumulator, &accumulator)
+    }
+
+    /// Returns the minimal and maximal items of this iterator according to the
+    /// keys derived from the mapping function `f`.
+    ///
+    /// If there are several minimal and/or maximal items, arbirary ones are
+    /// returned.
+    ///
+    /// This performs only `1.5 * n` comparisons for an iterator of length `n`,
+    /// which is more efficient than calling
+    /// [`min_by_key()`](Self::min_by_key) and
+    /// [`max_by_key()`](Self::max_by_key) separately.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// use paralight::iter::MinMaxResult;
+    ///
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = ["ccc", "aaaaa", "dd", "e", "bbbb"];
+    ///
+    /// let minmax = input.par_iter().with_thread_pool(&mut thread_pool).minmax();
+    /// assert_eq!(
+    ///     minmax,
+    ///     MinMaxResult::MinMax {
+    ///         min: &"aaaaa",
+    ///         max: &"e"
+    ///     }
+    /// );
+    ///
+    /// let minmax_by_len = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .minmax_by_key(|x| x.len());
+    /// assert_eq!(
+    ///     minmax_by_len,
+    ///     MinMaxResult::MinMax {
+    ///         min: &"e",
+    ///         max: &"aaaaa"
+    ///     }
+    /// );
+    /// ```
+    fn minmax_by_key<T, F>(self, f: F) -> MinMaxResult<Self::Item>
+    where
+        F: Fn(&Self::Item) -> T + Sync,
+        T: Ord + Send,
+        Self::Item: Send,
+    {
+        self.map(|x| (f(&x), x))
+            .minmax_by(|a, b| a.0.cmp(&b.0))
             .map(|(_, x)| x)
     }
 

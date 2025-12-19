@@ -12,6 +12,7 @@ use super::{
     Accumulator, ExactSizeAccumulator, ParallelAdaptor, ParallelAdaptorDescriptor, ParallelIterator,
 };
 use crossbeam_utils::CachePadded;
+use std::cmp::Ordering;
 use std::iter::{Product, Sum};
 use std::marker::PhantomData;
 use std::ops::ControlFlow;
@@ -362,6 +363,273 @@ where
     #[inline(always)]
     fn accumulate_exact(&self, iter: impl ExactSizeIterator<Item = Item>) -> Output {
         iter.product()
+    }
+}
+
+/// The result of the [`minmax()`](super::ParallelIteratorExt::minmax) and
+/// related iterator adaptors.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MinMaxResult<T> {
+    /// The iterator was empty.
+    NoElements,
+    /// The iterator only had one item.
+    OneElement(T),
+    /// The iterator had at least two items.
+    MinMax {
+        /// The minimal item.
+        min: T,
+        /// The maximal item.
+        max: T,
+    },
+}
+
+impl<T> MinMaxResult<T> {
+    pub(super) fn map<U, F>(self, f: F) -> MinMaxResult<U>
+    where
+        F: Fn(T) -> U,
+    {
+        match self {
+            MinMaxResult::NoElements => MinMaxResult::NoElements,
+            MinMaxResult::OneElement(x) => MinMaxResult::OneElement(f(x)),
+            MinMaxResult::MinMax { min, max } => MinMaxResult::MinMax {
+                min: f(min),
+                max: f(max),
+            },
+        }
+    }
+
+    /// Returns a reference to the minimal element, if this result isn't empty.
+    ///
+    /// ```
+    /// # use paralight::iter::MinMaxResult;
+    /// assert_eq!(MinMaxResult::<i32>::NoElements.min(), None);
+    /// assert_eq!(MinMaxResult::OneElement(42).min(), Some(&42));
+    /// assert_eq!(MinMaxResult::MinMax { min: 42, max: 123 }.min(), Some(&42));
+    /// ```
+    pub fn min(&self) -> Option<&T> {
+        match self {
+            MinMaxResult::NoElements => None,
+            MinMaxResult::OneElement(x) => Some(x),
+            MinMaxResult::MinMax { min, max: _ } => Some(min),
+        }
+    }
+
+    /// Returns the minimal element, if this result isn't empty.
+    ///
+    /// ```
+    /// # use paralight::iter::MinMaxResult;
+    /// assert_eq!(MinMaxResult::<i32>::NoElements.into_min(), None);
+    /// assert_eq!(MinMaxResult::OneElement(42).into_min(), Some(42));
+    /// assert_eq!(
+    ///     MinMaxResult::MinMax { min: 42, max: 123 }.into_min(),
+    ///     Some(42)
+    /// );
+    /// ```
+    pub fn into_min(self) -> Option<T> {
+        match self {
+            MinMaxResult::NoElements => None,
+            MinMaxResult::OneElement(x) => Some(x),
+            MinMaxResult::MinMax { min, max: _ } => Some(min),
+        }
+    }
+
+    /// Returns a reference to the maximal element, if this result isn't empty.
+    ///
+    /// ```
+    /// # use paralight::iter::MinMaxResult;
+    /// assert_eq!(MinMaxResult::<i32>::NoElements.max(), None);
+    /// assert_eq!(MinMaxResult::OneElement(42).max(), Some(&42));
+    /// assert_eq!(MinMaxResult::MinMax { min: 42, max: 123 }.max(), Some(&123));
+    /// ```
+    pub fn max(&self) -> Option<&T> {
+        match self {
+            MinMaxResult::NoElements => None,
+            MinMaxResult::OneElement(x) => Some(x),
+            MinMaxResult::MinMax { min: _, max } => Some(max),
+        }
+    }
+
+    /// Returns the maximal element, if this result isn't empty.
+    ///
+    /// ```
+    /// # use paralight::iter::MinMaxResult;
+    /// assert_eq!(MinMaxResult::<i32>::NoElements.into_max(), None);
+    /// assert_eq!(MinMaxResult::OneElement(42).into_max(), Some(42));
+    /// assert_eq!(
+    ///     MinMaxResult::MinMax { min: 42, max: 123 }.into_max(),
+    ///     Some(123)
+    /// );
+    /// ```
+    pub fn into_max(self) -> Option<T> {
+        match self {
+            MinMaxResult::NoElements => None,
+            MinMaxResult::OneElement(x) => Some(x),
+            MinMaxResult::MinMax { min: _, max } => Some(max),
+        }
+    }
+
+    /// Returns references to the minimal-maximal elements, if this result isn't
+    /// empty.
+    ///
+    /// ```
+    /// # use paralight::iter::MinMaxResult;
+    /// assert_eq!(MinMaxResult::<i32>::NoElements.as_option(), None);
+    /// assert_eq!(MinMaxResult::OneElement(42).as_option(), Some((&42, &42)));
+    /// assert_eq!(
+    ///     MinMaxResult::MinMax { min: 42, max: 123 }.as_option(),
+    ///     Some((&42, &123))
+    /// );
+    /// ```
+    pub fn as_option(&self) -> Option<(&T, &T)>
+    where
+        T: Clone,
+    {
+        match self {
+            MinMaxResult::NoElements => None,
+            MinMaxResult::OneElement(x) => Some((x, x)),
+            MinMaxResult::MinMax { min, max } => Some((min, max)),
+        }
+    }
+
+    /// Returns the minimal-maximal pair, if this result isn't empty.
+    ///
+    /// ```
+    /// # use paralight::iter::MinMaxResult;
+    /// assert_eq!(MinMaxResult::<i32>::NoElements.into_option(), None);
+    /// assert_eq!(MinMaxResult::OneElement(42).into_option(), Some((42, 42)));
+    /// assert_eq!(
+    ///     MinMaxResult::MinMax { min: 42, max: 123 }.into_option(),
+    ///     Some((42, 123))
+    /// );
+    /// ```
+    pub fn into_option(self) -> Option<(T, T)>
+    where
+        T: Clone,
+    {
+        match self {
+            MinMaxResult::NoElements => None,
+            MinMaxResult::OneElement(x) => Some((x.clone(), x)),
+            MinMaxResult::MinMax { min, max } => Some((min, max)),
+        }
+    }
+}
+
+pub struct MinMaxAccumulator<F> {
+    pub(super) f: F,
+}
+
+impl<Item, F> Accumulator<Item, MinMaxResult<Item>> for &MinMaxAccumulator<F>
+where
+    F: Fn(&Item, &Item) -> Ordering,
+{
+    #[inline(always)]
+    fn accumulate(&self, mut iter: impl Iterator<Item = Item>) -> MinMaxResult<Item> {
+        let (mut min, mut max) = match iter.next() {
+            None => return MinMaxResult::NoElements,
+            Some(x) => match iter.next() {
+                None => return MinMaxResult::OneElement(x),
+                Some(y) => match (self.f)(&x, &y) {
+                    Ordering::Less | Ordering::Equal => (x, y),
+                    Ordering::Greater => (y, x),
+                },
+            },
+        };
+
+        loop {
+            let a = match iter.next() {
+                Some(a) => a,
+                None => break,
+            };
+            let b = match iter.next() {
+                Some(b) => b,
+                None => {
+                    if let Ordering::Less = (self.f)(&a, &min) {
+                        min = a;
+                    } else if let Ordering::Greater | Ordering::Equal = (self.f)(&a, &max) {
+                        max = a;
+                    }
+                    break;
+                }
+            };
+
+            match (self.f)(&a, &b) {
+                Ordering::Less | Ordering::Equal => {
+                    if let Ordering::Less = (self.f)(&a, &min) {
+                        min = a;
+                    }
+                    if let Ordering::Greater | Ordering::Equal = (self.f)(&b, &max) {
+                        max = b;
+                    }
+                }
+                Ordering::Greater => {
+                    if let Ordering::Less = (self.f)(&b, &min) {
+                        min = b;
+                    }
+                    if let Ordering::Greater | Ordering::Equal = (self.f)(&a, &max) {
+                        max = a;
+                    }
+                }
+            }
+        }
+
+        MinMaxResult::MinMax { min, max }
+    }
+}
+
+impl<Item, F> ExactSizeAccumulator<MinMaxResult<Item>, MinMaxResult<Item>> for &MinMaxAccumulator<F>
+where
+    F: Fn(&Item, &Item) -> Ordering,
+{
+    #[inline(always)]
+    fn accumulate_exact(
+        &self,
+        iter: impl ExactSizeIterator<Item = MinMaxResult<Item>>,
+    ) -> MinMaxResult<Item> {
+        iter.fold(MinMaxResult::NoElements, |x, y| match (x, y) {
+            (MinMaxResult::NoElements, z) | (z, MinMaxResult::NoElements) => z,
+            (MinMaxResult::OneElement(a), MinMaxResult::OneElement(b)) => match (self.f)(&a, &b) {
+                Ordering::Less | Ordering::Equal => MinMaxResult::MinMax { min: a, max: b },
+                Ordering::Greater => MinMaxResult::MinMax { min: b, max: a },
+            },
+            (MinMaxResult::OneElement(z), MinMaxResult::MinMax { min, max }) => {
+                if let Ordering::Less | Ordering::Equal = (self.f)(&z, &min) {
+                    MinMaxResult::MinMax { min: z, max }
+                } else if let Ordering::Greater = (self.f)(&z, &max) {
+                    MinMaxResult::MinMax { min, max: z }
+                } else {
+                    MinMaxResult::MinMax { min, max }
+                }
+            }
+            (MinMaxResult::MinMax { min, max }, MinMaxResult::OneElement(z)) => {
+                if let Ordering::Less = (self.f)(&z, &min) {
+                    MinMaxResult::MinMax { min: z, max }
+                } else if let Ordering::Greater | Ordering::Equal = (self.f)(&z, &max) {
+                    MinMaxResult::MinMax { min, max: z }
+                } else {
+                    MinMaxResult::MinMax { min, max }
+                }
+            }
+            (
+                MinMaxResult::MinMax {
+                    min: min1,
+                    max: max1,
+                },
+                MinMaxResult::MinMax {
+                    min: min2,
+                    max: max2,
+                },
+            ) => {
+                let min = match (self.f)(&min1, &min2) {
+                    Ordering::Less | Ordering::Equal => min1,
+                    Ordering::Greater => min2,
+                };
+                let max = match (self.f)(&max1, &max2) {
+                    Ordering::Greater => max1,
+                    Ordering::Less | Ordering::Equal => max2,
+                };
+                MinMaxResult::MinMax { min, max }
+            }
+        })
     }
 }
 

@@ -44,7 +44,7 @@ pub mod threads;
 pub mod prelude {
     pub use crate::iter::{
         GenericThreadPool, IntoParallelRefMutSource, IntoParallelRefSource, IntoParallelSource,
-        ParallelIterator, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+        MinMaxResult, ParallelIterator, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
     };
     #[cfg(feature = "rayon")]
     pub use crate::threads::RayonThreadPool;
@@ -261,6 +261,9 @@ mod test {
                 test_adaptor_min,
                 test_adaptor_min_by,
                 test_adaptor_min_by_key,
+                test_adaptor_minmax,
+                test_adaptor_minmax_by,
+                test_adaptor_minmax_by_key,
                 test_adaptor_ne,
                 test_adaptor_ne_by_key,
                 test_adaptor_ne_by_keys,
@@ -3086,6 +3089,118 @@ mod test {
         assert_eq!(min_empty, None);
     }
 
+    fn test_adaptor_minmax<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let mut input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let minmax = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .minmax();
+        assert_eq!(
+            minmax,
+            MinMaxResult::MinMax {
+                min: 0,
+                max: INPUT_LEN
+            }
+        );
+
+        input.truncate(1);
+        let minmax_one = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .minmax();
+        assert_eq!(minmax_one, MinMaxResult::OneElement(0));
+
+        input.clear();
+        let minmax_empty = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .minmax();
+        assert_eq!(minmax_empty, MinMaxResult::NoElements);
+    }
+
+    fn test_adaptor_minmax_by<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        // Custom comparison function where even numbers are smaller than all odd
+        // numbers.
+        let mut input = (1..=INPUT_LEN).collect::<Vec<u64>>();
+        let minmax = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .minmax_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
+
+        let first_even = 2;
+        let last_odd = ((INPUT_LEN - 1) / 2) * 2 + 1;
+        assert_eq!(
+            minmax,
+            MinMaxResult::MinMax {
+                min: first_even,
+                max: last_odd
+            }
+        );
+
+        input.truncate(1);
+        let minmax_one = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .minmax_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
+        assert_eq!(minmax_one, MinMaxResult::OneElement(1));
+
+        input.clear();
+        let minmax_empty = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .minmax_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
+        assert_eq!(minmax_empty, MinMaxResult::NoElements);
+    }
+
+    fn test_adaptor_minmax_by_key<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let mut input = (0..=INPUT_LEN)
+            .map(|x| (x, INPUT_LEN - x))
+            .collect::<Vec<(u64, u64)>>();
+        let minmax = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .minmax_by_key(|pair| pair.1);
+        assert_eq!(
+            minmax,
+            MinMaxResult::MinMax {
+                min: (INPUT_LEN, 0),
+                max: (0, INPUT_LEN)
+            }
+        );
+
+        input.truncate(1);
+        let minmax_one = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .minmax_by_key(|pair| pair.1);
+        assert_eq!(minmax_one, MinMaxResult::OneElement((0, INPUT_LEN)));
+
+        input.clear();
+        let minmax_empty = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .minmax_by_key(|pair| pair.1);
+        assert_eq!(minmax_empty, MinMaxResult::NoElements);
+    }
+
     #[cfg(feature = "default-thread-pool")]
     #[test]
     fn test_min_max_stability() {
@@ -3111,6 +3226,13 @@ mod test {
             max.unwrap() as *const u64,
             input.last().unwrap() as *const u64
         );
+
+        let minmax = input.par_iter().with_thread_pool(&mut thread_pool).minmax();
+        assert_eq!(minmax, MinMaxResult::MinMax { min: &0, max: &0 });
+        if let MinMaxResult::MinMax { min, max } = minmax {
+            assert_eq!(min as *const u64, input.first().unwrap() as *const u64);
+            assert_eq!(max as *const u64, input.last().unwrap() as *const u64);
+        }
     }
 
     #[cfg(feature = "default-thread-pool")]
@@ -3145,6 +3267,16 @@ mod test {
             max.unwrap() as *const u64,
             input.last().unwrap() as *const u64
         );
+
+        let minmax = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .minmax_by(cmp);
+        assert_eq!(minmax, MinMaxResult::MinMax { min: &0, max: &0 });
+        if let MinMaxResult::MinMax { min, max } = minmax {
+            assert_eq!(min as *const u64, input.first().unwrap() as *const u64);
+            assert_eq!(max as *const u64, input.last().unwrap() as *const u64);
+        }
     }
 
     #[cfg(feature = "default-thread-pool")]
@@ -3172,6 +3304,19 @@ mod test {
             .copied()
             .max_by_key(|pair| pair.1);
         assert_eq!(max, Some((INPUT_LEN, 0)));
+
+        let minmax = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .minmax_by_key(|pair| pair.1);
+        assert_eq!(
+            minmax,
+            MinMaxResult::MinMax {
+                min: (0, 0),
+                max: (INPUT_LEN, 0)
+            }
+        );
     }
 
     fn test_adaptor_ne<T>(mut thread_pool: T)
