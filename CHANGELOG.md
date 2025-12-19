@@ -6,16 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.0.9 - 2025-12-19
+
+### Added
+
+- 8 additional adaptors on `ParallelIteratorExt`: `collect_per_thread()`,
+  `fold_per_thread()`, `minmax()`, `minmax_by()`, `minmax_by_key()`,
+  `try_collect_per_thread()`, `try_fold_per_thread()` and `try_reduce()`.
+- CPU pinning support on Windows (https://github.com/gendx/paralight/pull/20).
+- A new `prelude` module gathering common items.
+- A new `ExactSizeAccumulator` trait, similar to `Accumulator` but modeling
+  functions that consume an `ExactSizeIterator`.
+
+### Changed
+
+- Moved top-level items to a new `threads` module, re-exported by the `prelude`
+  module.
+- The `iter_pipeline()` method in the `GenericThreadPool` and `ParallelIterator`
+  traits has a new signature, allowing to use an intermediate type as a
+  per-thread accumulator and using a new `ExactSizeAccumulator` trait for the
+  final pass over all the threads (as the exact number of threads is known).
+- Clarified that the `min()`, `max()` and related adaptors offer no stability
+  guarantees about which element is returned if there are several equal minimal
+  or maximal elements.
+
 ## 0.0.8 - 2025-11-03
 
 ### Added
 
 - An implementation of `GenericThreadPool` for thread pools provided by the
-  `rayon-core` crate. This is available under the `rayon` feature.
+  [rayon-core](https://docs.rs/rayon-core) crate. This is available under the
+  `rayon` feature.
 
 ### Changed
 
-- The minimum supported Rust version (MSRV) is now 1.80.0.
+- The minimum supported Rust version (MSRV) is now
+  [1.80.0](https://releases.rs/docs/1.80.0/).
 - The default `ThreadPool` implementation is now gated by the
   `default-thread-pool` feature. It is still enabled by default but can be
   disabled if you don't need it.
@@ -63,7 +89,8 @@ and this project adheres to
 
 ### Changed
 
-- The minimum supported Rust version (MSRV) is now 1.77.0.
+- The minimum supported Rust version (MSRV) is now
+  [1.77.0](https://releases.rs/docs/1.77.0/).
 - The `IntoParallelRefSource` and `IntoParallelRefMutSource` traits aren't
   implemented anymore for all `&impl IntoParallelSource` and
   `&mut impl IntoParallelSource` respectively. Additionally,
