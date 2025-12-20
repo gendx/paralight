@@ -6,8 +6,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[cfg(feature = "parking_lot")]
+use parking_lot::{Condvar, Mutex, MutexGuard};
 use std::ptr::NonNull;
-use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
+use std::sync::PoisonError;
+#[cfg(not(feature = "parking_lot"))]
+use std::sync::{Condvar, Mutex, MutexGuard};
 
 /// An ergonomic wrapper around a [`Mutex`]-[`Condvar`] pair.
 pub struct Status<T> {
@@ -29,15 +33,32 @@ impl<T> Status<T> {
     ///
     /// Fails if the [`Mutex`] is poisoned.
     pub fn try_notify_one(&self, t: T) -> Result<(), PoisonError<MutexGuard<'_, T>>> {
-        *self.mutex.lock()? = t;
-        self.condvar.notify_one();
-        Ok(())
+        #[cfg(not(feature = "parking_lot"))]
+        {
+            *self.mutex.lock()? = t;
+            self.condvar.notify_one();
+            Ok(())
+        }
+        #[cfg(feature = "parking_lot")]
+        {
+            *self.mutex.lock() = t;
+            self.condvar.notify_one();
+            Ok(())
+        }
     }
 
     /// Sets the status to the given value and notifies all waiting threads.
     pub fn notify_all(&self, t: T) {
-        *self.mutex.lock().unwrap() = t;
-        self.condvar.notify_all();
+        #[cfg(not(feature = "parking_lot"))]
+        {
+            *self.mutex.lock().unwrap() = t;
+            self.condvar.notify_all();
+        }
+        #[cfg(feature = "parking_lot")]
+        {
+            *self.mutex.lock() = t;
+            self.condvar.notify_all();
+        }
     }
 
     /// Waits until the predicate is true on this status.
@@ -45,9 +66,18 @@ impl<T> Status<T> {
     /// This returns a [`MutexGuard`], allowing to further inspect or modify the
     /// status.
     pub fn wait_while(&self, predicate: impl FnMut(&mut T) -> bool) -> MutexGuard<'_, T> {
-        self.condvar
-            .wait_while(self.mutex.lock().unwrap(), predicate)
-            .unwrap()
+        #[cfg(not(feature = "parking_lot"))]
+        {
+            self.condvar
+                .wait_while(self.mutex.lock().unwrap(), predicate)
+                .unwrap()
+        }
+        #[cfg(feature = "parking_lot")]
+        {
+            let mut guard = self.mutex.lock();
+            self.condvar.wait_while(&mut guard, predicate);
+            guard
+        }
     }
 }
 
