@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2025-2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -75,6 +75,10 @@ struct ArraySourceDescriptor<T, const N: usize> {
 impl<T: Send, const N: usize> SourceCleanup for ArraySourceDescriptor<T, N> {
     const NEEDS_CLEANUP: bool = std::mem::needs_drop::<T>();
 
+    fn len(&self) -> usize {
+        N
+    }
+
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
             debug_assert!(range.start <= range.end);
@@ -116,10 +120,6 @@ impl<T: Send, const N: usize> SourceCleanup for ArraySourceDescriptor<T, N> {
 
 impl<T: Send, const N: usize> SourceDescriptor for ArraySourceDescriptor<T, N> {
     type Item = T;
-
-    fn len(&self) -> usize {
-        N
-    }
 
     unsafe fn fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < N);

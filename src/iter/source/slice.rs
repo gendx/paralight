@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Google LLC
+// Copyright 2024-2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -66,6 +66,10 @@ struct SliceSourceDescriptor<'data, T: Sync> {
 impl<T: Sync> SourceCleanup for SliceSourceDescriptor<'_, T> {
     const NEEDS_CLEANUP: bool = false;
 
+    fn len(&self) -> usize {
+        self.slice.len()
+    }
+
     unsafe fn cleanup_item_range(&self, _range: std::ops::Range<usize>) {
         // Nothing to cleanup
     }
@@ -73,10 +77,6 @@ impl<T: Sync> SourceCleanup for SliceSourceDescriptor<'_, T> {
 
 impl<'data, T: Sync> SourceDescriptor for SliceSourceDescriptor<'data, T> {
     type Item = &'data T;
-
-    fn len(&self) -> usize {
-        self.slice.len()
-    }
 
     unsafe fn fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.slice.len());
@@ -149,6 +149,10 @@ struct MutSliceSourceDescriptor<'data, T: Send + 'data> {
 impl<'data, T: Send + 'data> SourceCleanup for MutSliceSourceDescriptor<'data, T> {
     const NEEDS_CLEANUP: bool = false;
 
+    fn len(&self) -> usize {
+        self.len
+    }
+
     unsafe fn cleanup_item_range(&self, _range: std::ops::Range<usize>) {
         // Nothing to cleanup
     }
@@ -156,10 +160,6 @@ impl<'data, T: Send + 'data> SourceCleanup for MutSliceSourceDescriptor<'data, T
 
 impl<'data, T: Send + 'data> SourceDescriptor for MutSliceSourceDescriptor<'data, T> {
     type Item = &'data mut T;
-
-    fn len(&self) -> usize {
-        self.len
-    }
 
     unsafe fn fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.len);

@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Google LLC
+// Copyright 2024-2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -19,6 +19,10 @@ struct RangeSourceDescriptor<T> {
 impl<T> SourceCleanup for RangeSourceDescriptor<T> {
     const NEEDS_CLEANUP: bool = false;
 
+    fn len(&self) -> usize {
+        self.len
+    }
+
     unsafe fn cleanup_item_range(&self, _range: Range<usize>) {
         // Nothing to cleanup
     }
@@ -27,10 +31,6 @@ impl<T> SourceCleanup for RangeSourceDescriptor<T> {
 #[cfg(feature = "nightly")]
 impl<T: Step + Copy + Send + Sync> SourceDescriptor for RangeSourceDescriptor<T> {
     type Item = T;
-
-    fn len(&self) -> usize {
-        self.len
-    }
 
     unsafe fn fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.len);
@@ -41,10 +41,6 @@ impl<T: Step + Copy + Send + Sync> SourceDescriptor for RangeSourceDescriptor<T>
 #[cfg(not(feature = "nightly"))]
 impl SourceDescriptor for RangeSourceDescriptor<usize> {
     type Item = usize;
-
-    fn len(&self) -> usize {
-        self.len
-    }
 
     unsafe fn fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.len);

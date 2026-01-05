@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Google LLC
+// Copyright 2024-2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -20,19 +20,16 @@ use super::{Accumulator, ExactSizeAccumulator, GenericThreadPool, ParallelIterat
 use std::ops::ControlFlow;
 
 /// An interface describing how to fetch items from a [`ParallelSource`].
-#[allow(clippy::len_without_is_empty)]
 pub trait SourceDescriptor: SourceCleanup {
     /// The type of items that this parallel source produces.
     type Item: Send;
-
-    /// Returns the number of items that this source produces.
-    fn len(&self) -> usize;
 
     /// Fetch the item at the given index.
     ///
     /// # Safety
     ///
-    /// Given the length `len` returned by [`len()`](Self::len):
+    /// Given the length `len` returned by [`len()`](SourceCleanup::len) in
+    /// [`SourceCleanup`]:
     /// - indices passed to [`fetch_item()`](Self::fetch_item) must be in the
     ///   `0..len` range,
     /// - each index in `0..len` must be present at most once in all indices
@@ -64,6 +61,7 @@ pub trait SourceDescriptor: SourceCleanup {
 /// A non-trivial cleanup is needed for parallel sources that drain items, such
 /// as calling [`into_par_iter()`](IntoParallelSource::into_par_iter) on a
 /// [`Vec`], and must correspond to [`drop()`]-ing items.
+#[allow(clippy::len_without_is_empty)]
 pub trait SourceCleanup {
     /// Set to [`false`] if the cleanup function is guaranteed to be a noop.
     ///
@@ -72,6 +70,9 @@ pub trait SourceCleanup {
     /// [`std::mem::needs_drop()`] hint.
     const NEEDS_CLEANUP: bool;
 
+    /// Returns the number of items that this source produces.
+    fn len(&self) -> usize;
+
     /// Clean up the given range of items from the source.
     ///
     /// As with [`Drop`], this should not panic (but that's not a safety
@@ -79,8 +80,7 @@ pub trait SourceCleanup {
     ///
     /// # Safety
     ///
-    /// Given the length `len` returned by [`len()`](SourceDescriptor::len) in
-    /// [`SourceDescriptor`]:
+    /// Given the length `len` returned by [`len()`](Self::len):
     /// - ranges passed to [`cleanup_item_range()`](Self::cleanup_item_range)
     ///   must be included in the `0..len` range,
     /// - each index in `0..len` must be present at most once in all indices
@@ -634,6 +634,10 @@ where
 {
     const NEEDS_CLEANUP: bool = First::NEEDS_CLEANUP || Second::NEEDS_CLEANUP;
 
+    fn len(&self) -> usize {
+        self.len
+    }
+
     // For safety comments: given two sources of lengths `len1` and `len2`, the
     // `ChainSourceDescriptor` creates a bijection of indices between `0..len1 +
     // len2` and `0..len1 | 0..len2`.
@@ -690,10 +694,6 @@ where
 {
     type Item = T;
 
-    fn len(&self) -> usize {
-        self.len
-    }
-
     // For safety comments: given two sources of lengths `len1` and `len2`, the
     // `ChainSourceDescriptor` creates a bijection of indices between `0..len1 +
     // len2` and `0..len1 | 0..len2`.
@@ -747,6 +747,10 @@ struct EnumerateSourceDescriptor<Inner> {
 impl<Inner: SourceCleanup> SourceCleanup for EnumerateSourceDescriptor<Inner> {
     const NEEDS_CLEANUP: bool = Inner::NEEDS_CLEANUP;
 
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
             // SAFETY: The `EnumerateSourceDescriptor` only implements a mapping of items,
@@ -767,10 +771,6 @@ impl<Inner: SourceCleanup> SourceCleanup for EnumerateSourceDescriptor<Inner> {
 
 impl<Inner: SourceDescriptor> SourceDescriptor for EnumerateSourceDescriptor<Inner> {
     type Item = (usize, Inner::Item);
-
-    fn len(&self) -> usize {
-        self.inner.len()
-    }
 
     unsafe fn fetch_item(&self, index: usize) -> Self::Item {
         // SAFETY: The `EnumerateSourceDescriptor` only implements a mapping of items,
@@ -817,6 +817,10 @@ struct RevSourceDescriptor<Inner> {
 impl<Inner: SourceCleanup> SourceCleanup for RevSourceDescriptor<Inner> {
     const NEEDS_CLEANUP: bool = Inner::NEEDS_CLEANUP;
 
+    fn len(&self) -> usize {
+        self.len
+    }
+
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
             debug_assert!(range.start <= range.end);
@@ -845,10 +849,6 @@ impl<Inner: SourceCleanup> SourceCleanup for RevSourceDescriptor<Inner> {
 
 impl<Inner: SourceDescriptor> SourceDescriptor for RevSourceDescriptor<Inner> {
     type Item = Inner::Item;
-
-    fn len(&self) -> usize {
-        self.len
-    }
 
     unsafe fn fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.len);
@@ -892,14 +892,18 @@ impl<Inner: ParallelSource> ParallelSource for Skip<Inner> {
     }
 }
 
-struct SkipSourceDescriptor<Inner: SourceDescriptor> {
+struct SkipSourceDescriptor<Inner: SourceCleanup> {
     inner: Inner,
     len: usize,
     count: usize,
 }
 
-impl<Inner: SourceDescriptor> SourceCleanup for SkipSourceDescriptor<Inner> {
+impl<Inner: SourceCleanup> SourceCleanup for SkipSourceDescriptor<Inner> {
     const NEEDS_CLEANUP: bool = Inner::NEEDS_CLEANUP;
+
+    fn len(&self) -> usize {
+        self.len
+    }
 
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
@@ -928,10 +932,6 @@ impl<Inner: SourceDescriptor> SourceCleanup for SkipSourceDescriptor<Inner> {
 impl<Inner: SourceDescriptor> SourceDescriptor for SkipSourceDescriptor<Inner> {
     type Item = Inner::Item;
 
-    fn len(&self) -> usize {
-        self.len
-    }
-
     unsafe fn fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.len);
         // SAFETY: Given an inner descriptor of length `len` as well as a parameter
@@ -948,7 +948,7 @@ impl<Inner: SourceDescriptor> SourceDescriptor for SkipSourceDescriptor<Inner> {
     }
 }
 
-impl<Inner: SourceDescriptor> Drop for SkipSourceDescriptor<Inner> {
+impl<Inner: SourceCleanup> Drop for SkipSourceDescriptor<Inner> {
     fn drop(&mut self) {
         if Self::NEEDS_CLEANUP && self.count != 0 {
             // SAFETY: Given an inner descriptor of length `len` as well as a parameter
@@ -1027,15 +1027,19 @@ impl<Inner: ParallelSource> ParallelSource for StepBy<Inner> {
     }
 }
 
-struct StepBySourceDescriptor<Inner: SourceDescriptor> {
+struct StepBySourceDescriptor<Inner: SourceCleanup> {
     inner: Inner,
     len: usize,
     step: usize,
     inner_len: usize,
 }
 
-impl<Inner: SourceDescriptor> SourceCleanup for StepBySourceDescriptor<Inner> {
+impl<Inner: SourceCleanup> SourceCleanup for StepBySourceDescriptor<Inner> {
     const NEEDS_CLEANUP: bool = Inner::NEEDS_CLEANUP;
+
+    fn len(&self) -> usize {
+        self.len
+    }
 
     // For safety comments: given an inner descriptor of length `len` as well as a
     // parameter `step != 0`, if we set `len' := ceil(len / step)` the
@@ -1077,10 +1081,6 @@ impl<Inner: SourceDescriptor> SourceCleanup for StepBySourceDescriptor<Inner> {
 impl<Inner: SourceDescriptor> SourceDescriptor for StepBySourceDescriptor<Inner> {
     type Item = Inner::Item;
 
-    fn len(&self) -> usize {
-        self.len
-    }
-
     unsafe fn fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.len);
         // SAFETY: See the function comment in `Self::cleanup_item_range`. This
@@ -1089,7 +1089,7 @@ impl<Inner: SourceDescriptor> SourceDescriptor for StepBySourceDescriptor<Inner>
     }
 }
 
-impl<Inner: SourceDescriptor> Drop for StepBySourceDescriptor<Inner> {
+impl<Inner: SourceCleanup> Drop for StepBySourceDescriptor<Inner> {
     // For safety comments: see the function comment in `Self::cleanup_item_range`.
     // This drop implementation is the only one to invoke items that aren't
     // multiples of `step`.
@@ -1146,14 +1146,18 @@ impl<Inner: ParallelSource> ParallelSource for Take<Inner> {
     }
 }
 
-struct TakeSourceDescriptor<Inner: SourceDescriptor> {
+struct TakeSourceDescriptor<Inner: SourceCleanup> {
     inner: Inner,
     count: usize,
     inner_len: usize,
 }
 
-impl<Inner: SourceDescriptor> SourceCleanup for TakeSourceDescriptor<Inner> {
+impl<Inner: SourceCleanup> SourceCleanup for TakeSourceDescriptor<Inner> {
     const NEEDS_CLEANUP: bool = Inner::NEEDS_CLEANUP;
+
+    fn len(&self) -> usize {
+        self.count
+    }
 
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
@@ -1180,10 +1184,6 @@ impl<Inner: SourceDescriptor> SourceCleanup for TakeSourceDescriptor<Inner> {
 impl<Inner: SourceDescriptor> SourceDescriptor for TakeSourceDescriptor<Inner> {
     type Item = Inner::Item;
 
-    fn len(&self) -> usize {
-        self.count
-    }
-
     unsafe fn fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.count);
         // SAFETY: Given an inner descriptor of length `len` as well as a parameter
@@ -1200,7 +1200,7 @@ impl<Inner: SourceDescriptor> SourceDescriptor for TakeSourceDescriptor<Inner> {
     }
 }
 
-impl<Inner: SourceDescriptor> Drop for TakeSourceDescriptor<Inner> {
+impl<Inner: SourceCleanup> Drop for TakeSourceDescriptor<Inner> {
     fn drop(&mut self) {
         if Self::NEEDS_CLEANUP && self.count != self.inner_len {
             // SAFETY: Given an inner descriptor of length `len` as well as a parameter

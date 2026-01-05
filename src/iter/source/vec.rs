@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2025-2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -87,6 +87,10 @@ struct VecSourceDescriptor<T> {
 impl<T: Send> SourceCleanup for VecSourceDescriptor<T> {
     const NEEDS_CLEANUP: bool = std::mem::needs_drop::<T>();
 
+    fn len(&self) -> usize {
+        self.len
+    }
+
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
             debug_assert!(range.start <= range.end);
@@ -129,10 +133,6 @@ impl<T: Send> SourceCleanup for VecSourceDescriptor<T> {
 
 impl<T: Send> SourceDescriptor for VecSourceDescriptor<T> {
     type Item = T;
-
-    fn len(&self) -> usize {
-        self.len
-    }
 
     unsafe fn fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.len);

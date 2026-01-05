@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Google LLC
+// Copyright 2024-2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -278,6 +278,10 @@ macro_rules! zipable_tuple {
         where $($tuple: SourceCleanup,)+ {
             const NEEDS_CLEANUP: bool = or_bools!( $($tuple::NEEDS_CLEANUP),+ );
 
+            fn len(&self) -> usize {
+                self.len
+            }
+
             unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
                 if Self::NEEDS_CLEANUP {
                     debug_assert!(range.start <= range.end);
@@ -306,10 +310,6 @@ macro_rules! zipable_tuple {
         where $($tuple: SourceDescriptor,)+ {
             type Item = ( $($tuple::Item,)+ );
 
-            fn len(&self) -> usize {
-                self.len
-            }
-
             unsafe fn fetch_item(&self, index: usize) -> Self::Item {
                 debug_assert!(index < self.len);
                 ( $(
@@ -330,8 +330,12 @@ macro_rules! zipable_tuple {
         }
 
         impl<$($tuple,)+> SourceCleanup for ZipMaxSourceDescriptor<($($tuple,)+)>
-        where $($tuple: SourceDescriptor,)+ {
+        where $($tuple: SourceCleanup,)+ {
             const NEEDS_CLEANUP: bool = or_bools!( $($tuple::NEEDS_CLEANUP),+ );
+
+            fn len(&self) -> usize {
+                self.len
+            }
 
             unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
                 if Self::NEEDS_CLEANUP {
@@ -365,10 +369,6 @@ macro_rules! zipable_tuple {
         impl<$($tuple,)+> SourceDescriptor for ZipMaxSourceDescriptor<($($tuple,)+)>
         where $($tuple: SourceDescriptor,)+ {
             type Item = ( $(Option<$tuple::Item>,)+ );
-
-            fn len(&self) -> usize {
-                self.len
-            }
 
             unsafe fn fetch_item(&self, index: usize) -> Self::Item {
                 debug_assert!(index < self.len);
@@ -405,14 +405,18 @@ macro_rules! zipable_tuple {
             use super::*;
 
             pub struct ZipMinSourceDescriptor<$($tuple,)+>
-            where $($tuple: SourceDescriptor,)+ {
+            where $($tuple: SourceCleanup,)+ {
                 pub descriptors: ($($tuple,)+),
                 pub len: usize,
             }
 
             impl<$($tuple,)+> SourceCleanup for ZipMinSourceDescriptor<$($tuple,)+>
-            where $($tuple: SourceDescriptor,)+ {
+            where $($tuple: SourceCleanup,)+ {
                 const NEEDS_CLEANUP: bool = or_bools!( $($tuple::NEEDS_CLEANUP),+ );
+
+                fn len(&self) -> usize {
+                    self.len
+                }
 
                 unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
                     if Self::NEEDS_CLEANUP {
@@ -444,10 +448,6 @@ macro_rules! zipable_tuple {
             where $($tuple: SourceDescriptor,)+ {
                 type Item = ( $($tuple::Item,)+ );
 
-                fn len(&self) -> usize {
-                    self.len
-                }
-
                 unsafe fn fetch_item(&self, index: usize) -> Self::Item {
                     debug_assert!(index < self.len);
                     ( $(
@@ -470,7 +470,7 @@ macro_rules! zipable_tuple {
             }
 
             impl<$($tuple,)+> Drop for ZipMinSourceDescriptor<$($tuple,)+>
-            where $($tuple: SourceDescriptor,)+ {
+            where $($tuple: SourceCleanup,)+ {
                 fn drop(&mut self) {
                     if Self::NEEDS_CLEANUP {
                         $(
@@ -573,6 +573,10 @@ where
 {
     const NEEDS_CLEANUP: bool = T::NEEDS_CLEANUP;
 
+    fn len(&self) -> usize {
+        self.len
+    }
+
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
             debug_assert!(range.start <= range.end);
@@ -601,10 +605,6 @@ where
 {
     type Item = [T::Item; N];
 
-    fn len(&self) -> usize {
-        self.len
-    }
-
     unsafe fn fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.len);
         self.descriptors.each_ref().map(|desc| {
@@ -624,9 +624,13 @@ where
 
 impl<T, const N: usize> SourceCleanup for ZipMaxSourceDescriptor<[T; N]>
 where
-    T: SourceDescriptor,
+    T: SourceCleanup,
 {
     const NEEDS_CLEANUP: bool = T::NEEDS_CLEANUP;
+
+    fn len(&self) -> usize {
+        self.len
+    }
 
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
@@ -663,10 +667,6 @@ where
 {
     type Item = [Option<T::Item>; N];
 
-    fn len(&self) -> usize {
-        self.len
-    }
-
     unsafe fn fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.len);
         self.descriptors.each_ref().map(|desc| {
@@ -694,7 +694,7 @@ where
 
 struct ZipMinArraySourceDescriptor<T, const N: usize>
 where
-    T: SourceDescriptor,
+    T: SourceCleanup,
 {
     descriptors: [T; N],
     len: usize,
@@ -702,9 +702,13 @@ where
 
 impl<T, const N: usize> SourceCleanup for ZipMinArraySourceDescriptor<T, N>
 where
-    T: SourceDescriptor,
+    T: SourceCleanup,
 {
     const NEEDS_CLEANUP: bool = T::NEEDS_CLEANUP;
+
+    fn len(&self) -> usize {
+        self.len
+    }
 
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
@@ -738,10 +742,6 @@ where
 {
     type Item = [T::Item; N];
 
-    fn len(&self) -> usize {
-        self.len
-    }
-
     unsafe fn fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.len);
         self.descriptors.each_ref().map(|desc| {
@@ -763,7 +763,7 @@ where
 
 impl<T, const N: usize> Drop for ZipMinArraySourceDescriptor<T, N>
 where
-    T: SourceDescriptor,
+    T: SourceCleanup,
 {
     fn drop(&mut self) {
         if Self::NEEDS_CLEANUP {
