@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Google LLC
+// Copyright 2024-2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -928,5 +928,231 @@ where
         let mut i = (self.init)();
         self.inner
             .accumulate(iter.map(|item| (self.f)(&mut i, item)))
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn minmaxresult_min() {
+        assert_eq!(MinMaxResult::<i32>::NoElements.min(), None);
+        assert_eq!(MinMaxResult::OneElement(42).min(), Some(&42));
+        assert_eq!(MinMaxResult::MinMax { min: 42, max: 123 }.min(), Some(&42));
+    }
+
+    #[test]
+    fn minmaxresult_into_min() {
+        assert_eq!(MinMaxResult::<i32>::NoElements.into_min(), None);
+        assert_eq!(MinMaxResult::OneElement(42).into_min(), Some(42));
+        assert_eq!(
+            MinMaxResult::MinMax { min: 42, max: 123 }.into_min(),
+            Some(42)
+        );
+    }
+
+    #[test]
+    fn minmaxresult_max() {
+        assert_eq!(MinMaxResult::<i32>::NoElements.max(), None);
+        assert_eq!(MinMaxResult::OneElement(42).max(), Some(&42));
+        assert_eq!(MinMaxResult::MinMax { min: 42, max: 123 }.max(), Some(&123));
+    }
+
+    #[test]
+    fn minmaxresult_into_max() {
+        assert_eq!(MinMaxResult::<i32>::NoElements.into_max(), None);
+        assert_eq!(MinMaxResult::OneElement(42).into_max(), Some(42));
+        assert_eq!(
+            MinMaxResult::MinMax { min: 42, max: 123 }.into_max(),
+            Some(123)
+        );
+    }
+
+    #[test]
+    fn minmaxresult_as_option() {
+        assert_eq!(MinMaxResult::<i32>::NoElements.as_option(), None);
+        assert_eq!(MinMaxResult::OneElement(42).as_option(), Some((&42, &42)));
+        assert_eq!(
+            MinMaxResult::MinMax { min: 42, max: 123 }.as_option(),
+            Some((&42, &123))
+        );
+    }
+
+    #[test]
+    fn minmaxresult_into_option() {
+        assert_eq!(MinMaxResult::<i32>::NoElements.into_option(), None);
+        assert_eq!(MinMaxResult::OneElement(42).into_option(), Some((42, 42)));
+        assert_eq!(
+            MinMaxResult::MinMax { min: 42, max: 123 }.into_option(),
+            Some((42, 123))
+        );
+    }
+
+    #[test]
+    fn minmax_accumulator_edge_cases() {
+        let accumulator = &MinMaxAccumulator {
+            f: |x: &(i32, i32), y: &(i32, i32)| x.0.cmp(&y.0),
+        };
+
+        // OneElement + OneElement
+        assert_eq!(
+            accumulator.accumulate_exact(
+                [
+                    MinMaxResult::OneElement((0, 0)),
+                    MinMaxResult::OneElement((0, 1))
+                ]
+                .into_iter()
+            ),
+            MinMaxResult::MinMax {
+                min: (0, 0),
+                max: (0, 1),
+            }
+        );
+        assert_eq!(
+            accumulator.accumulate_exact(
+                [
+                    MinMaxResult::OneElement((1, 0)),
+                    MinMaxResult::OneElement((0, 1))
+                ]
+                .into_iter()
+            ),
+            MinMaxResult::MinMax {
+                min: (0, 1),
+                max: (1, 0),
+            }
+        );
+
+        // OneElement + MinMax
+        assert_eq!(
+            accumulator.accumulate_exact(
+                [
+                    MinMaxResult::OneElement((0, 0)),
+                    MinMaxResult::MinMax {
+                        min: (0, 1),
+                        max: (0, 2),
+                    }
+                ]
+                .into_iter()
+            ),
+            MinMaxResult::MinMax {
+                min: (0, 0),
+                max: (0, 2),
+            }
+        );
+        assert_eq!(
+            accumulator.accumulate_exact(
+                [
+                    MinMaxResult::OneElement((1, 0)),
+                    MinMaxResult::MinMax {
+                        min: (0, 1),
+                        max: (2, 2),
+                    }
+                ]
+                .into_iter()
+            ),
+            MinMaxResult::MinMax {
+                min: (0, 1),
+                max: (2, 2),
+            }
+        );
+        assert_eq!(
+            accumulator.accumulate_exact(
+                [
+                    MinMaxResult::OneElement((0, 0)),
+                    MinMaxResult::MinMax {
+                        min: (1, 1),
+                        max: (2, 2),
+                    }
+                ]
+                .into_iter()
+            ),
+            MinMaxResult::MinMax {
+                min: (0, 0),
+                max: (2, 2),
+            }
+        );
+        assert_eq!(
+            accumulator.accumulate_exact(
+                [
+                    MinMaxResult::OneElement((2, 0)),
+                    MinMaxResult::MinMax {
+                        min: (0, 1),
+                        max: (1, 2),
+                    }
+                ]
+                .into_iter()
+            ),
+            MinMaxResult::MinMax {
+                min: (0, 1),
+                max: (2, 0),
+            }
+        );
+
+        // MinMax + OneElement
+        assert_eq!(
+            accumulator.accumulate_exact(
+                [
+                    MinMaxResult::MinMax {
+                        min: (0, 0),
+                        max: (0, 1),
+                    },
+                    MinMaxResult::OneElement((0, 2)),
+                ]
+                .into_iter()
+            ),
+            MinMaxResult::MinMax {
+                min: (0, 0),
+                max: (0, 2),
+            }
+        );
+        assert_eq!(
+            accumulator.accumulate_exact(
+                [
+                    MinMaxResult::MinMax {
+                        min: (0, 0),
+                        max: (2, 1),
+                    },
+                    MinMaxResult::OneElement((1, 2)),
+                ]
+                .into_iter()
+            ),
+            MinMaxResult::MinMax {
+                min: (0, 0),
+                max: (2, 1),
+            }
+        );
+        assert_eq!(
+            accumulator.accumulate_exact(
+                [
+                    MinMaxResult::MinMax {
+                        min: (1, 0),
+                        max: (2, 1),
+                    },
+                    MinMaxResult::OneElement((0, 2)),
+                ]
+                .into_iter()
+            ),
+            MinMaxResult::MinMax {
+                min: (0, 2),
+                max: (2, 1),
+            }
+        );
+        assert_eq!(
+            accumulator.accumulate_exact(
+                [
+                    MinMaxResult::MinMax {
+                        min: (0, 0),
+                        max: (1, 1),
+                    },
+                    MinMaxResult::OneElement((2, 2)),
+                ]
+                .into_iter()
+            ),
+            MinMaxResult::MinMax {
+                min: (0, 0),
+                max: (2, 2),
+            }
+        );
     }
 }
