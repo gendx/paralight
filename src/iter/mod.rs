@@ -25,8 +25,9 @@ pub use source::vec::VecParallelSource;
 pub use source::vec_deque::{VecDequeRefMutParallelSource, VecDequeRefParallelSource};
 pub use source::zip::{ZipEq, ZipMax, ZipMin, ZipableSource};
 pub use source::{
-    BaseParallelIterator, IntoParallelRefMutSource, IntoParallelRefSource, IntoParallelSource,
-    ParallelSource, ParallelSourceExt, SourceCleanup, SourceDescriptor,
+    BaseParallelIterator, Chain, Enumerate, IntoParallelRefMutSource, IntoParallelRefSource,
+    IntoParallelSource, ParallelSource, ParallelSourceExt, Rev, Skip, SkipExact, SourceCleanup,
+    SourceDescriptor, StepBy, Take, TakeExact,
 };
 use std::cmp::Ordering;
 use std::iter::{Product, Sum};
