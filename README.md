@@ -11,9 +11,9 @@
 [![Test Status](https://github.com/gendx/paralight/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/gendx/paralight/actions/workflows/tests.yml)
 
 This library allows you to distribute computation over *indexed* sources
-([slices](slice), [ranges](std::ops::Range), [`Vec`](std::vec::Vec), etc.) among
-multiple threads. It aims to uphold the highest standards of documentation,
-testing and safety, see the [FAQ](#faq) below.
+([slices](slice), [ranges](std::ops::Range), [`Vec`](Vec), etc.) among multiple
+threads. It aims to uphold the highest standards of documentation, testing and
+safety, see the [FAQ](#faq) below.
 
 It is designed to be as lightweight as possible, following the principles
 outlined in the blog post

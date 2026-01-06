@@ -1517,8 +1517,9 @@ impl<Inner: ExactParallelSource> ExactParallelSource for TakeExact<Inner> {
 /// [`ParallelSourceExt`].
 ///
 /// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelSource`] and [`ParallelSourceExt`] traits, but it
-/// is nonetheless public because of the `must_use` annotation.
+/// implements the [`ParallelIterator`] and
+/// [`ParallelIteratorExt`](super::ParallelIteratorExt) traits, but
+/// it is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct BaseParallelIterator<T: GenericThreadPool, S: ParallelSource> {
     thread_pool: T,
@@ -1530,8 +1531,9 @@ pub struct BaseParallelIterator<T: GenericThreadPool, S: ParallelSource> {
 /// [`ExactParallelSourceExt`].
 ///
 /// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ExactParallelSource`] and [`ExactParallelSourceExt`]
-/// traits, but it is nonetheless public because of the `must_use` annotation.
+/// implements the [`ParallelIterator`] and
+/// [`ParallelIteratorExt`](super::ParallelIteratorExt) traits, but
+/// it is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct BaseExactParallelIterator<T: GenericThreadPool, S: ExactParallelSource> {
     thread_pool: T,
