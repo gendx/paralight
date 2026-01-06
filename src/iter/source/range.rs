@@ -6,12 +6,12 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use super::{IntoParallelSource, ParallelSource, SourceCleanup, SourceDescriptor};
+use super::{ExactParallelSource, ExactSourceDescriptor, IntoExactParallelSource, SourceCleanup};
 #[cfg(feature = "nightly")]
 use std::iter::Step;
 use std::ops::{Range, RangeInclusive};
 
-struct RangeSourceDescriptor<T> {
+pub struct RangeSourceDescriptor<T> {
     start: T,
     len: usize,
 }
@@ -29,32 +29,32 @@ impl<T> SourceCleanup for RangeSourceDescriptor<T> {
 }
 
 #[cfg(feature = "nightly")]
-impl<T: Step + Copy + Send + Sync> SourceDescriptor for RangeSourceDescriptor<T> {
+impl<T: Step + Copy + Send + Sync> ExactSourceDescriptor for RangeSourceDescriptor<T> {
     type Item = T;
 
-    unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.len);
         T::forward(self.start, index)
     }
 }
 
 #[cfg(not(feature = "nightly"))]
-impl SourceDescriptor for RangeSourceDescriptor<usize> {
+impl ExactSourceDescriptor for RangeSourceDescriptor<usize> {
     type Item = usize;
 
-    unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.len);
         self.start + index
     }
 }
 
 /// A parallel source over a [`Range`]. This struct is created by the
-/// [`into_par_iter()`](IntoParallelSource::into_par_iter) method on
-/// [`IntoParallelSource`].
+/// [`into_par_iter()`](IntoExactParallelSource::into_par_iter) method on
+/// [`IntoExactParallelSource`].
 ///
 /// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelSource`] and
-/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it is
+/// implements the [`ExactParallelSource`] and
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt) traits, but it is
 /// nonetheless public because of the `must_use` annotation.
 ///
 /// See also [`RangeInclusiveParallelSource`].
@@ -87,7 +87,7 @@ pub struct RangeParallelSource<T> {
 }
 
 #[cfg(feature = "nightly")]
-impl<T: Step + Copy + Send + Sync> IntoParallelSource for Range<T> {
+impl<T: Step + Copy + Send + Sync> IntoExactParallelSource for Range<T> {
     type Item = T;
     type Source = RangeParallelSource<T>;
 
@@ -97,10 +97,10 @@ impl<T: Step + Copy + Send + Sync> IntoParallelSource for Range<T> {
 }
 
 #[cfg(feature = "nightly")]
-impl<T: Step + Copy + Send + Sync> ParallelSource for RangeParallelSource<T> {
+impl<T: Step + Copy + Send + Sync> ExactParallelSource for RangeParallelSource<T> {
     type Item = T;
 
-    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
         let range = self.range;
         let (len_hint, len) = T::steps_between(&range.start, &range.end);
         let len = len.unwrap_or_else(|| {
@@ -121,7 +121,7 @@ impl<T: Step + Copy + Send + Sync> ParallelSource for RangeParallelSource<T> {
 }
 
 #[cfg(not(feature = "nightly"))]
-impl IntoParallelSource for Range<usize> {
+impl IntoExactParallelSource for Range<usize> {
     type Item = usize;
     type Source = RangeParallelSource<usize>;
 
@@ -131,10 +131,10 @@ impl IntoParallelSource for Range<usize> {
 }
 
 #[cfg(not(feature = "nightly"))]
-impl ParallelSource for RangeParallelSource<usize> {
+impl ExactParallelSource for RangeParallelSource<usize> {
     type Item = usize;
 
-    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
         let range = self.range;
         let len = range
             .end
@@ -148,12 +148,12 @@ impl ParallelSource for RangeParallelSource<usize> {
 }
 
 /// A parallel source over a [`RangeInclusive`]. This struct is created by the
-/// [`into_par_iter()`](IntoParallelSource::into_par_iter) method on
-/// [`IntoParallelSource`].
+/// [`into_par_iter()`](IntoExactParallelSource::into_par_iter) method on
+/// [`IntoExactParallelSource`].
 ///
 /// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelSource`] and
-/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it is
+/// implements the [`ExactParallelSource`] and
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt) traits, but it is
 /// nonetheless public because of the `must_use` annotation.
 ///
 /// See also [`RangeParallelSource`].
@@ -186,7 +186,7 @@ pub struct RangeInclusiveParallelSource<T> {
 }
 
 #[cfg(feature = "nightly")]
-impl<T: Step + Copy + Send + Sync> IntoParallelSource for RangeInclusive<T> {
+impl<T: Step + Copy + Send + Sync> IntoExactParallelSource for RangeInclusive<T> {
     type Item = T;
     type Source = RangeInclusiveParallelSource<T>;
 
@@ -196,10 +196,10 @@ impl<T: Step + Copy + Send + Sync> IntoParallelSource for RangeInclusive<T> {
 }
 
 #[cfg(feature = "nightly")]
-impl<T: Step + Copy + Send + Sync> ParallelSource for RangeInclusiveParallelSource<T> {
+impl<T: Step + Copy + Send + Sync> ExactParallelSource for RangeInclusiveParallelSource<T> {
     type Item = T;
 
-    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
         let (start, end) = self.range.into_inner();
         let (len_hint, len) = T::steps_between(&start, &end);
         let len = len.unwrap_or_else(|| {
@@ -223,7 +223,7 @@ impl<T: Step + Copy + Send + Sync> ParallelSource for RangeInclusiveParallelSour
 }
 
 #[cfg(not(feature = "nightly"))]
-impl IntoParallelSource for RangeInclusive<usize> {
+impl IntoExactParallelSource for RangeInclusive<usize> {
     type Item = usize;
     type Source = RangeInclusiveParallelSource<usize>;
 
@@ -233,10 +233,10 @@ impl IntoParallelSource for RangeInclusive<usize> {
 }
 
 #[cfg(not(feature = "nightly"))]
-impl ParallelSource for RangeInclusiveParallelSource<usize> {
+impl ExactParallelSource for RangeInclusiveParallelSource<usize> {
     type Item = usize;
 
-    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
         let (start, end) = self.range.into_inner();
         let len = end
             .checked_sub(start)

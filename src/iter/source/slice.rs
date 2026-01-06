@@ -7,18 +7,18 @@
 // except according to those terms.
 
 use super::{
-    IntoParallelRefMutSource, IntoParallelRefSource, ParallelSource, SourceCleanup,
-    SourceDescriptor,
+    ExactParallelSource, ExactSourceDescriptor, IntoExactParallelRefMutSource,
+    IntoExactParallelRefSource, SourceCleanup,
 };
 use std::marker::PhantomData;
 
 /// A parallel source over a [slice](slice). This struct is created by the
-/// [`par_iter()`](IntoParallelRefSource::par_iter) method on
-/// [`IntoParallelRefSource`].
+/// [`par_iter()`](IntoExactParallelRefSource::par_iter) method on
+/// [`IntoExactParallelRefSource`].
 ///
 /// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelSource`] and
-/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it is
+/// implements the [`ExactParallelSource`] and
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt) traits, but it is
 /// nonetheless public because of the `must_use` annotation.
 ///
 /// See also [`MutSliceParallelSource`].
@@ -42,7 +42,7 @@ pub struct SliceParallelSource<'data, T> {
     slice: &'data [T],
 }
 
-impl<'data, T: Sync + 'data> IntoParallelRefSource<'data> for [T] {
+impl<'data, T: Sync + 'data> IntoExactParallelRefSource<'data> for [T] {
     type Item = &'data T;
     type Source = SliceParallelSource<'data, T>;
 
@@ -51,10 +51,10 @@ impl<'data, T: Sync + 'data> IntoParallelRefSource<'data> for [T] {
     }
 }
 
-impl<'data, T: Sync> ParallelSource for SliceParallelSource<'data, T> {
+impl<'data, T: Sync> ExactParallelSource for SliceParallelSource<'data, T> {
     type Item = &'data T;
 
-    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
         SliceSourceDescriptor { slice: self.slice }
     }
 }
@@ -75,24 +75,24 @@ impl<T: Sync> SourceCleanup for SliceSourceDescriptor<'_, T> {
     }
 }
 
-impl<'data, T: Sync> SourceDescriptor for SliceSourceDescriptor<'data, T> {
+impl<'data, T: Sync> ExactSourceDescriptor for SliceSourceDescriptor<'data, T> {
     type Item = &'data T;
 
-    unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.slice.len());
         // SAFETY: The index is smaller than the length of the input slice, due to the
-        // safety pre-conditions of the `fetch_item()` function.
+        // safety pre-conditions of the `exact_fetch_item()` function.
         unsafe { self.slice.get_unchecked(index) }
     }
 }
 
 /// A parallel source over a [mutable slice](slice). This struct is created by
-/// the [`par_iter_mut()`](IntoParallelRefMutSource::par_iter_mut) method on
-/// [`IntoParallelRefMutSource`].
+/// the [`par_iter_mut()`](IntoExactParallelRefMutSource::par_iter_mut) method
+/// on [`IntoExactParallelRefMutSource`].
 ///
 /// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelSource`] and
-/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it is
+/// implements the [`ExactParallelSource`] and
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt) traits, but it is
 /// nonetheless public because of the `must_use` annotation.
 ///
 /// See also [`SliceParallelSource`].
@@ -117,7 +117,7 @@ pub struct MutSliceParallelSource<'data, T> {
     slice: &'data mut [T],
 }
 
-impl<'data, T: Send + 'data> IntoParallelRefMutSource<'data> for [T] {
+impl<'data, T: Send + 'data> IntoExactParallelRefMutSource<'data> for [T] {
     type Item = &'data mut T;
     type Source = MutSliceParallelSource<'data, T>;
 
@@ -126,10 +126,10 @@ impl<'data, T: Send + 'data> IntoParallelRefMutSource<'data> for [T] {
     }
 }
 
-impl<'data, T: Send> ParallelSource for MutSliceParallelSource<'data, T> {
+impl<'data, T: Send> ExactParallelSource for MutSliceParallelSource<'data, T> {
     type Item = &'data mut T;
 
-    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
         let len = self.slice.len();
         let ptr = MutPtrWrapper(self.slice.as_mut_ptr());
         MutSliceSourceDescriptor {
@@ -158,18 +158,18 @@ impl<'data, T: Send + 'data> SourceCleanup for MutSliceSourceDescriptor<'data, T
     }
 }
 
-impl<'data, T: Send + 'data> SourceDescriptor for MutSliceSourceDescriptor<'data, T> {
+impl<'data, T: Send + 'data> ExactSourceDescriptor for MutSliceSourceDescriptor<'data, T> {
     type Item = &'data mut T;
 
-    unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.len);
         let base_ptr: *mut T = self.ptr.get();
         // SAFETY:
         // - The offset in bytes `index * size_of::<T>()` fits in an `isize`, because
         //   the index is smaller than the length of the (well-formed) input slice. This
-        //   is ensured by the safety pre-conditions of the `fetch_item()` function (the
-        //   `index` must be in the range `0..self.len`), and further confirmed by the
-        //   assertion.
+        //   is ensured by the safety pre-conditions of the `exact_fetch_item()`
+        //   function (the `index` must be in the range `0..self.len`), and further
+        //   confirmed by the assertion.
         // - The `base_ptr` is derived from an allocated object (the input slice), and
         //   the entire range between `base_ptr` and the resulting `item_ptr` is in
         //   bounds of that allocated object. This is because the index is smaller than
@@ -192,7 +192,7 @@ impl<'data, T: Send + 'data> SourceDescriptor for MutSliceSourceDescriptor<'data
         //   (within this scope and in particular during the call to `process_item()`),
         //   the memory it points to isn't accessed through any other pointer or
         //   reference. This is ensured by the safety pre-conditions of the
-        //   `fetch_item()` function (each index must be passed at most once), and
+        //   `exact_fetch_item()` function (each index must be passed at most once), and
         //   because the slice is exclusively owned during the scope of this
         //   `ParallelIterator::pipeline()` function.
         //
@@ -219,7 +219,7 @@ impl<T> MutPtrWrapper<T> {
 ///
 /// A [`MutPtrWrapper`] is meant to be shared among threads as a way to send
 /// items of type [`&mut T`](reference) to other threads (see the safety
-/// comments in [`MutSliceSourceDescriptor::fetch_item`]). Therefore we make it
-/// [`Sync`] if and only if [`&mut T`](reference) is [`Send`], which is when `T`
-/// is [`Send`].
+/// comments in [`MutSliceSourceDescriptor::exact_fetch_item`]). Therefore we
+/// make it [`Sync`] if and only if [`&mut T`](reference) is [`Send`], which is
+/// when `T` is [`Send`].
 unsafe impl<T: Send> Sync for MutPtrWrapper<T> {}

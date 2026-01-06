@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Google LLC
+// Copyright 2024-2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -25,9 +25,11 @@ pub use source::vec::VecParallelSource;
 pub use source::vec_deque::{VecDequeRefMutParallelSource, VecDequeRefParallelSource};
 pub use source::zip::{ZipEq, ZipMax, ZipMin, ZipableSource};
 pub use source::{
-    BaseParallelIterator, Chain, Enumerate, IntoParallelRefMutSource, IntoParallelRefSource,
-    IntoParallelSource, ParallelSource, ParallelSourceExt, Rev, Skip, SkipExact, SourceCleanup,
-    SourceDescriptor, StepBy, Take, TakeExact,
+    BaseExactParallelIterator, BaseParallelIterator, Chain, Enumerate, ExactParallelSource,
+    ExactParallelSourceExt, ExactSourceDescriptor, IntoExactParallelRefMutSource,
+    IntoExactParallelRefSource, IntoExactParallelSource, IntoParallelRefMutSource,
+    IntoParallelRefSource, IntoParallelSource, ParallelSource, ParallelSourceExt, Rev, Skip,
+    SkipExact, SourceCleanup, SourceDescriptor, StepBy, Take, TakeExact,
 };
 use std::cmp::Ordering;
 use std::iter::{Product, Sum};

@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2025-2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -7,18 +7,18 @@
 // except according to those terms.
 
 use super::{
-    IntoParallelRefMutSource, IntoParallelRefSource, ParallelSource, ParallelSourceExt,
-    SourceDescriptor,
+    ExactParallelSource, ExactParallelSourceExt, ExactSourceDescriptor,
+    IntoExactParallelRefMutSource, IntoExactParallelRefSource,
 };
 use std::collections::VecDeque;
 
 /// A parallel source over a reference to a [`VecDeque`]. This struct is created
-/// by the [`par_iter()`](IntoParallelRefSource::par_iter) method on
-/// [`IntoParallelRefSource`].
+/// by the [`par_iter()`](IntoExactParallelRefSource::par_iter) method on
+/// [`IntoExactParallelRefSource`].
 ///
 /// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelSource`] and [`ParallelSourceExt`] traits, but it
-/// is nonetheless public because of the `must_use` annotation.
+/// implements the [`ExactParallelSource`] and [`ExactParallelSourceExt`]
+/// traits, but it is nonetheless public because of the `must_use` annotation.
 ///
 /// See also [`VecDequeRefMutParallelSource`].
 ///
@@ -42,7 +42,7 @@ pub struct VecDequeRefParallelSource<'data, T> {
     vec_deque: &'data VecDeque<T>,
 }
 
-impl<'data, T: Sync + 'data> IntoParallelRefSource<'data> for VecDeque<T> {
+impl<'data, T: Sync + 'data> IntoExactParallelRefSource<'data> for VecDeque<T> {
     type Item = &'data T;
     type Source = VecDequeRefParallelSource<'data, T>;
 
@@ -51,22 +51,23 @@ impl<'data, T: Sync + 'data> IntoParallelRefSource<'data> for VecDeque<T> {
     }
 }
 
-impl<'data, T: Sync> ParallelSource for VecDequeRefParallelSource<'data, T> {
+impl<'data, T: Sync> ExactParallelSource for VecDequeRefParallelSource<'data, T> {
     type Item = &'data T;
 
-    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
         let (first, second) = self.vec_deque.as_slices();
-        first.par_iter().chain(second.par_iter()).descriptor()
+        first.par_iter().chain(second.par_iter()).exact_descriptor()
     }
 }
 
 /// A parallel source over a mutable reference to a [`VecDeque`]. This struct is
-/// created by the [`par_iter_mut()`](IntoParallelRefMutSource::par_iter_mut)
-/// method on [`IntoParallelRefMutSource`].
+/// created by the
+/// [`par_iter_mut()`](IntoExactParallelRefMutSource::par_iter_mut)
+/// method on [`IntoExactParallelRefMutSource`].
 ///
 /// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelSource`] and [`ParallelSourceExt`] traits, but it
-/// is nonetheless public because of the `must_use` annotation.
+/// implements the [`ExactParallelSource`] and [`ExactParallelSourceExt`]
+/// traits, but it is nonetheless public because of the `must_use` annotation.
 ///
 /// See also [`VecDequeRefParallelSource`].
 ///
@@ -96,7 +97,7 @@ pub struct VecDequeRefMutParallelSource<'data, T> {
     vec_deque: &'data mut VecDeque<T>,
 }
 
-impl<'data, T: Send + 'data> IntoParallelRefMutSource<'data> for VecDeque<T> {
+impl<'data, T: Send + 'data> IntoExactParallelRefMutSource<'data> for VecDeque<T> {
     type Item = &'data mut T;
     type Source = VecDequeRefMutParallelSource<'data, T>;
 
@@ -105,14 +106,14 @@ impl<'data, T: Send + 'data> IntoParallelRefMutSource<'data> for VecDeque<T> {
     }
 }
 
-impl<'data, T: Send> ParallelSource for VecDequeRefMutParallelSource<'data, T> {
+impl<'data, T: Send> ExactParallelSource for VecDequeRefMutParallelSource<'data, T> {
     type Item = &'data mut T;
 
-    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
         let (first, second) = self.vec_deque.as_mut_slices();
         first
             .par_iter_mut()
             .chain(second.par_iter_mut())
-            .descriptor()
+            .exact_descriptor()
     }
 }

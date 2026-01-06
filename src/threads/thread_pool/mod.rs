@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Google LLC
+// Copyright 2024-2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -562,7 +562,7 @@ impl<R: Range> ThreadContext<R> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::iter::{IntoParallelRefSource, ParallelIteratorExt, ParallelSourceExt};
+    use crate::iter::{ExactParallelSourceExt, IntoExactParallelRefSource, ParallelIteratorExt};
 
     #[test]
     fn test_build_thread_pool_available_parallelism() {

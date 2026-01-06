@@ -6,16 +6,16 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use super::{IntoParallelSource, ParallelSource, SourceCleanup, SourceDescriptor};
+use super::{ExactParallelSource, ExactSourceDescriptor, IntoExactParallelSource, SourceCleanup};
 use std::mem::ManuallyDrop;
 
 /// A parallel source over a [`Vec`]. This struct is created by the
-/// [`into_par_iter()`](IntoParallelSource::into_par_iter) method on
-/// [`IntoParallelSource`].
+/// [`into_par_iter()`](IntoExactParallelSource::into_par_iter) method on
+/// [`IntoExactParallelSource`].
 ///
 /// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelSource`] and
-/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it is
+/// implements the [`ExactParallelSource`] and
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt) traits, but it is
 /// nonetheless public because of the `must_use` annotation.
 ///
 /// See also [`SliceParallelSource`](super::slice::SliceParallelSource) and
@@ -40,7 +40,7 @@ pub struct VecParallelSource<T> {
     vec: Vec<T>,
 }
 
-impl<T: Send> IntoParallelSource for Vec<T> {
+impl<T: Send> IntoExactParallelSource for Vec<T> {
     type Item = T;
     type Source = VecParallelSource<T>;
 
@@ -49,7 +49,7 @@ impl<T: Send> IntoParallelSource for Vec<T> {
     }
 }
 
-impl<T: Send> IntoParallelSource for Box<[T]> {
+impl<T: Send> IntoExactParallelSource for Box<[T]> {
     type Item = T;
     type Source = VecParallelSource<T>;
 
@@ -61,10 +61,10 @@ impl<T: Send> IntoParallelSource for Box<[T]> {
     }
 }
 
-impl<T: Send> ParallelSource for VecParallelSource<T> {
+impl<T: Send> ExactParallelSource for VecParallelSource<T> {
     type Item = T;
 
-    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
         let mut vec = ManuallyDrop::new(self.vec);
         let mut_ptr = vec.as_mut_ptr();
         let len = vec.len();
@@ -78,7 +78,7 @@ impl<T: Send> ParallelSource for VecParallelSource<T> {
     }
 }
 
-struct VecSourceDescriptor<T> {
+pub struct VecSourceDescriptor<T> {
     ptr: MutPtrWrapper<T>,
     len: usize,
     capacity: usize,
@@ -118,8 +118,8 @@ impl<T: Send> SourceCleanup for VecSourceDescriptor<T> {
             //   null: https://doc.rust-lang.org/stable/std/vec/struct.Vec.html#guarantees.
             // - The `slice` is valid for reads and writes. This is ensured by the safety
             //   pre-conditions of the `cleanup_item_range()` function (each index appears
-            //   at most once in calls to `fetch_item()` and `cleanup_item_range()`), i.e.
-            //   the range of items in this slice isn't accessed by anything else.
+            //   at most once in calls to `exact_fetch_item()` and `cleanup_item_range()`),
+            //   i.e. the range of items in this slice isn't accessed by anything else.
             // - The `slice` is valid for dropping, as it is a part of the input vector that
             //   nothing else accesses.
             // - Nothing else is accessing the `slice` while `drop_in_place` is executing.
@@ -131,18 +131,18 @@ impl<T: Send> SourceCleanup for VecSourceDescriptor<T> {
     }
 }
 
-impl<T: Send> SourceDescriptor for VecSourceDescriptor<T> {
+impl<T: Send> ExactSourceDescriptor for VecSourceDescriptor<T> {
     type Item = T;
 
-    unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.len);
         let base_ptr: *const T = self.ptr.get();
         // SAFETY:
         // - The offset in bytes `index * size_of::<T>()` fits in an `isize`, because
         //   the index is smaller than the length of the (well-formed) input vector.
-        //   This is ensured by the safety pre-conditions of the `fetch_item()` function
-        //   (the `index` must be in the range `0..self.len`), and further confirmed by
-        //   the assertion.
+        //   This is ensured by the safety pre-conditions of the `exact_fetch_item()`
+        //   function (the `index` must be in the range `0..self.len`), and further
+        //   confirmed by the assertion.
         // - The `base_ptr` is derived from an allocated object (the input vector), and
         //   the entire range between `base_ptr` and the resulting `item_ptr` is in
         //   bounds of that allocated object. This is because the index is smaller than
@@ -154,10 +154,10 @@ impl<T: Send> SourceDescriptor for VecSourceDescriptor<T> {
         // - The `item_ptr` points to a properly initialized value of type `T`, the
         //   element from the input vector at position `index`.
         // - The `item_ptr` is valid for reads. This is ensured by the safety
-        //   pre-conditions of the `fetch_item()` function (each index must be passed at
-        //   most once), i.e. this item hasn't been read (and moved out of the vector)
-        //   yet. Additionally, there are no concurrent writes to this slot in the
-        //   vector.
+        //   pre-conditions of the `exact_fetch_item()` function (each index must be
+        //   passed at most once), i.e. this item hasn't been read (and moved out of the
+        //   vector) yet. Additionally, there are no concurrent writes to this slot in
+        //   the vector.
         let item: T = unsafe { std::ptr::read(item_ptr) };
         item
     }
@@ -198,7 +198,7 @@ impl<T> MutPtrWrapper<T> {
 ///
 /// A [`MutPtrWrapper`] is meant to be shared among threads as a way to send
 /// items of type [`&mut [T]`](slice) to other threads (see the safety
-/// comments in [`VecSourceDescriptor::fetch_item`] and
+/// comments in [`VecSourceDescriptor::exact_fetch_item`] and
 /// [`VecSourceDescriptor::cleanup_item_range`]). Therefore we make it [`Sync`]
 /// if and only if [`&mut [T]`](slice) is [`Send`], which is when `T` is
 /// [`Send`].

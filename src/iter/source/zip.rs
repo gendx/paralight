@@ -6,14 +6,14 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use super::{ParallelSource, SourceCleanup, SourceDescriptor};
+use super::{ExactParallelSource, ExactSourceDescriptor, SourceCleanup};
 
-/// A helper trait for zipping together multiple [`ParallelSource`]s into a
-/// single [`ParallelSource`] that produces items grouped from the original
+/// A helper trait for zipping together multiple [`ExactParallelSource`]s into a
+/// single [`ExactParallelSource`] that produces items grouped from the original
 /// sources.
 ///
 /// This trait is automatically implemented for [tuples](tuple) (with up to 12
-/// elements) and [arrays](array) of [`ParallelSource`]s.
+/// elements) and [arrays](array) of [`ExactParallelSource`]s.
 ///
 /// ```
 /// # use paralight::prelude::*;
@@ -43,13 +43,13 @@ use super::{ParallelSource, SourceCleanup, SourceDescriptor};
 /// ```
 pub trait ZipableSource: Sized
 where
-    ZipEq<Self>: ParallelSource,
-    ZipMax<Self>: ParallelSource,
-    ZipMin<Self>: ParallelSource,
+    ZipEq<Self>: ExactParallelSource,
+    ZipMax<Self>: ExactParallelSource,
+    ZipMin<Self>: ExactParallelSource,
 {
-    /// Returns a zipped [`ParallelSource`] where all the input sources must be
-    /// of equal lengths. If the lengths don't match, the obtained
-    /// [`ParallelSource`] will panic.
+    /// Returns a zipped [`ExactParallelSource`] where all the input sources
+    /// must be of equal lengths. If the lengths don't match, the obtained
+    /// [`ExactParallelSource`] will panic.
     ///
     /// ```
     /// # use paralight::prelude::*;
@@ -93,8 +93,8 @@ where
         ZipEq(self)
     }
 
-    /// Returns a zipped [`ParallelSource`] whose length is the maximum of the
-    /// input sources lengths. Produced items are [`Option`]s, equal to
+    /// Returns a zipped [`ExactParallelSource`] whose length is the maximum of
+    /// the input sources lengths. Produced items are [`Option`]s, equal to
     /// [`None`] for indices beyond a given source's length.
     ///
     /// ```
@@ -124,8 +124,8 @@ where
         ZipMax(self)
     }
 
-    /// Returns a zipped [`ParallelSource`] whose length is the minimum of the
-    /// input sources lengths.
+    /// Returns a zipped [`ExactParallelSource`] whose length is the minimum of
+    /// the input sources lengths.
     ///
     /// ```
     /// # use paralight::prelude::*;
@@ -157,8 +157,8 @@ where
 /// [`ZipableSource`].
 ///
 /// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelSource`] and
-/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it is
+/// implements the [`ExactParallelSource`] and
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt) traits, but it is
 /// nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct ZipEq<T>(T);
@@ -167,8 +167,8 @@ pub struct ZipEq<T>(T);
 /// on [`ZipableSource`].
 ///
 /// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelSource`] and
-/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it is
+/// implements the [`ExactParallelSource`] and
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt) traits, but it is
 /// nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct ZipMax<T>(T);
@@ -177,8 +177,8 @@ pub struct ZipMax<T>(T);
 /// on [`ZipableSource`].
 ///
 /// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelSource`] and
-/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it is
+/// implements the [`ExactParallelSource`] and
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt) traits, but it is
 /// nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct ZipMin<T>(T);
@@ -227,15 +227,15 @@ struct ZipMaxSourceDescriptor<T> {
 macro_rules! zipable_tuple {
     ( $detail:ident, $($tuple:ident $i:tt),+ ) => {
         impl<$($tuple,)+> ZipableSource for ($($tuple,)+)
-        where $($tuple: ParallelSource,)+ {}
+        where $($tuple: ExactParallelSource,)+ {}
 
-        impl<$($tuple,)+> ParallelSource for ZipEq<($($tuple,)+)>
-        where $($tuple: ParallelSource,)+ {
+        impl<$($tuple,)+> ExactParallelSource for ZipEq<($($tuple,)+)>
+        where $($tuple: ExactParallelSource,)+ {
             type Item = ( $($tuple::Item,)+ );
 
-            fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
+            fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
                 let tuple = self.0;
-                let descriptors = ( $(tuple.$i.descriptor(),)+ );
+                let descriptors = ( $(tuple.$i.exact_descriptor(),)+ );
                 let len = assert_all_eq!( $(descriptors.$i.len()),+ );
                 ZipEqSourceDescriptor {
                     descriptors,
@@ -244,13 +244,13 @@ macro_rules! zipable_tuple {
             }
         }
 
-        impl<$($tuple,)+> ParallelSource for ZipMax<($($tuple,)+)>
-        where $($tuple: ParallelSource,)+ {
+        impl<$($tuple,)+> ExactParallelSource for ZipMax<($($tuple,)+)>
+        where $($tuple: ExactParallelSource,)+ {
             type Item = ( $(Option<$tuple::Item>,)+ );
 
-            fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
+            fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
                 let tuple = self.0;
-                let descriptors = ( $(tuple.$i.descriptor(),)+ );
+                let descriptors = ( $(tuple.$i.exact_descriptor(),)+ );
                 let len = max_of!( $(descriptors.$i.len()),+ );
                 ZipMaxSourceDescriptor {
                     descriptors,
@@ -259,13 +259,13 @@ macro_rules! zipable_tuple {
             }
         }
 
-        impl<$($tuple,)+> ParallelSource for ZipMin<($($tuple,)+)>
-        where $($tuple: ParallelSource,)+ {
+        impl<$($tuple,)+> ExactParallelSource for ZipMin<($($tuple,)+)>
+        where $($tuple: ExactParallelSource,)+ {
             type Item = ( $($tuple::Item,)+ );
 
-            fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
+            fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
                 let tuple = self.0;
-                let descriptors = ( $(tuple.$i.descriptor(),)+ );
+                let descriptors = ( $(tuple.$i.exact_descriptor(),)+ );
                 let len = min_of!( $(descriptors.$i.len()),+ );
                 $detail::ZipMinSourceDescriptor {
                     descriptors,
@@ -296,7 +296,7 @@ macro_rules! zipable_tuple {
                         //   downstream `cleanup_item_range()` functions are also included in the
                         //   `0..len` range,
                         // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
-                        //   and `fetch_item()`, the zip-eq adaptor doesn't repeat indices passed to the
+                        //   and `exact_fetch_item()`, the zip-eq adaptor doesn't repeat indices passed to the
                         //   downstream descriptors.
                         unsafe {
                             self.descriptors.$i.cleanup_item_range(range.clone());
@@ -306,11 +306,11 @@ macro_rules! zipable_tuple {
             }
         }
 
-        impl<$($tuple,)+> SourceDescriptor for ZipEqSourceDescriptor<($($tuple,)+)>
-        where $($tuple: SourceDescriptor,)+ {
+        impl<$($tuple,)+> ExactSourceDescriptor for ZipEqSourceDescriptor<($($tuple,)+)>
+        where $($tuple: ExactSourceDescriptor,)+ {
             type Item = ( $($tuple::Item,)+ );
 
-            unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+            unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
                 debug_assert!(index < self.len);
                 ( $(
                     // SAFETY: Given descriptors of equal lengths `len`, the `ZipEqSourceDescriptor`
@@ -318,12 +318,12 @@ macro_rules! zipable_tuple {
                     //
                     // Therefore:
                     // - if the caller passes indices in `0..len`, indices passed to the downstream
-                    //   `fetch_item()` functions are also in the `0..len` range,
+                    //   `exact_fetch_item()` functions are also in the `0..len` range,
                     // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
-                    //   and `fetch_item()`, the zip-eq adaptor doesn't repeat indices passed to the
+                    //   and `exact_fetch_item()`, the zip-eq adaptor doesn't repeat indices passed to the
                     //   downstream descriptors.
                     unsafe {
-                        self.descriptors.$i.fetch_item(index)
+                        self.descriptors.$i.exact_fetch_item(index)
                     },
                 )+ )
             }
@@ -353,7 +353,7 @@ macro_rules! zipable_tuple {
                         // - ranges passed to the downstream `cleanup_item_range()` functions are in
                         //   their respective `0..len_i` ranges after clamping,
                         // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
-                        //   and `fetch_item()`, the zip-max adaptor doesn't repeat indices passed to
+                        //   and `exact_fetch_item()`, the zip-max adaptor doesn't repeat indices passed to
                         //   the downstream descriptors.
                         //
                         // This line implements the pass-through function, clamped to the current
@@ -366,11 +366,11 @@ macro_rules! zipable_tuple {
             }
         }
 
-        impl<$($tuple,)+> SourceDescriptor for ZipMaxSourceDescriptor<($($tuple,)+)>
-        where $($tuple: SourceDescriptor,)+ {
+        impl<$($tuple,)+> ExactSourceDescriptor for ZipMaxSourceDescriptor<($($tuple,)+)>
+        where $($tuple: ExactSourceDescriptor,)+ {
             type Item = ( $(Option<$tuple::Item>,)+ );
 
-            unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+            unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
                 debug_assert!(index < self.len);
                 ( $( if index < self.descriptors.$i.len() {
                     // SAFETY: Given descriptors of maximal length `len`, the
@@ -378,16 +378,16 @@ macro_rules! zipable_tuple {
                     // all of them, padding with `None` values beyond each descriptor's length.
                     //
                     // Therefore:
-                    // - indices passed to the downstream `fetch_item()` functions are in their
+                    // - indices passed to the downstream `exact_fetch_item()` functions are in their
                     //   respective `0..len_i` ranges in this branch,
                     // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
-                    //   and `fetch_item()`, the zip-max adaptor doesn't repeat indices passed to
+                    //   and `exact_fetch_item()`, the zip-max adaptor doesn't repeat indices passed to
                     //   the downstream descriptors.
                     //
                     // This line implements the pass-through function, when the index is lower than
                     // the current descriptor length.
                     unsafe {
-                        Some(self.descriptors.$i.fetch_item(index))
+                        Some(self.descriptors.$i.exact_fetch_item(index))
                     }
                 } else {
                     None
@@ -434,7 +434,7 @@ macro_rules! zipable_tuple {
                             //   `0..len` range, itself included in the respective `0..len_i` ranges
                             //   (because `len <= len_i`),
                             // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
-                            //   and `fetch_item()`, the zip-min adaptor doesn't repeat indices passed to
+                            //   and `exact_fetch_item()`, the zip-min adaptor doesn't repeat indices passed to
                             //   the downstream descriptors.
                             unsafe {
                                 self.descriptors.$i.cleanup_item_range(range.clone());
@@ -444,11 +444,11 @@ macro_rules! zipable_tuple {
                 }
             }
 
-            impl<$($tuple,)+> SourceDescriptor for ZipMinSourceDescriptor<$($tuple,)+>
-            where $($tuple: SourceDescriptor,)+ {
+            impl<$($tuple,)+> ExactSourceDescriptor for ZipMinSourceDescriptor<$($tuple,)+>
+            where $($tuple: ExactSourceDescriptor,)+ {
                 type Item = ( $($tuple::Item,)+ );
 
-                unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+                unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
                     debug_assert!(index < self.len);
                     ( $(
                         // SAFETY: Given descriptors of minimal length `len`, the
@@ -457,13 +457,13 @@ macro_rules! zipable_tuple {
                         //
                         // Therefore:
                         // - if the caller passes indices in `0..len`, indices passed to the downstream
-                        //   `fetch_item()` functions are also in the `0..len` range, itself included in
+                        //   `exact_fetch_item()` functions are also in the `0..len` range, itself included in
                         //   the respective `0..len_i` ranges (because `len <= len_i`),
                         // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
-                        //   and `fetch_item()`, the zip-min adaptor doesn't repeat indices passed to
+                        //   and `exact_fetch_item()`, the zip-min adaptor doesn't repeat indices passed to
                         //   the downstream descriptors.
                         unsafe {
-                            self.descriptors.$i.fetch_item(index)
+                            self.descriptors.$i.exact_fetch_item(index)
                         },
                     )+ )
                 }
@@ -506,17 +506,17 @@ zipable_tuple!(zip10, A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9);
 zipable_tuple!(zip11, A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9, K 10);
 zipable_tuple!(zip12, A 0, B 1, C 2, D 3, E 4, F 5, G 6, H 7, I 8, J 9, K 10, L 11);
 
-impl<T, const N: usize> ZipableSource for [T; N] where T: ParallelSource {}
+impl<T, const N: usize> ZipableSource for [T; N] where T: ExactParallelSource {}
 
-impl<T, const N: usize> ParallelSource for ZipEq<[T; N]>
+impl<T, const N: usize> ExactParallelSource for ZipEq<[T; N]>
 where
-    T: ParallelSource,
+    T: ExactParallelSource,
 {
     type Item = [T::Item; N];
 
-    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
         let array = self.0;
-        let descriptors = array.map(|source| source.descriptor());
+        let descriptors = array.map(|source| source.exact_descriptor());
         for i in 1..N {
             assert_eq!(
                 descriptors[0].len(),
@@ -529,15 +529,15 @@ where
     }
 }
 
-impl<T, const N: usize> ParallelSource for ZipMax<[T; N]>
+impl<T, const N: usize> ExactParallelSource for ZipMax<[T; N]>
 where
-    T: ParallelSource,
+    T: ExactParallelSource,
 {
     type Item = [Option<T::Item>; N];
 
-    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
         let array = self.0;
-        let descriptors = array.map(|source| source.descriptor());
+        let descriptors = array.map(|source| source.exact_descriptor());
         let len = *descriptors
             .each_ref()
             .map(|desc| desc.len())
@@ -548,15 +548,15 @@ where
     }
 }
 
-impl<T, const N: usize> ParallelSource for ZipMin<[T; N]>
+impl<T, const N: usize> ExactParallelSource for ZipMin<[T; N]>
 where
-    T: ParallelSource,
+    T: ExactParallelSource,
 {
     type Item = [T::Item; N];
 
-    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
         let array = self.0;
-        let descriptors = array.map(|source| source.descriptor());
+        let descriptors = array.map(|source| source.exact_descriptor());
         let len = *descriptors
             .each_ref()
             .map(|desc| desc.len())
@@ -591,21 +591,21 @@ where
                 //   downstream `cleanup_item_range()` functions are also included in the
                 //   `0..len` range,
                 // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
-                //   and `fetch_item()`, the zip-eq adaptor doesn't repeat indices passed to the
-                //   downstream descriptors.
+                //   and `exact_fetch_item()`, the zip-eq adaptor doesn't repeat indices passed
+                //   to the downstream descriptors.
                 unsafe { desc.cleanup_item_range(range.clone()) }
             }
         }
     }
 }
 
-impl<T, const N: usize> SourceDescriptor for ZipEqSourceDescriptor<[T; N]>
+impl<T, const N: usize> ExactSourceDescriptor for ZipEqSourceDescriptor<[T; N]>
 where
-    T: SourceDescriptor,
+    T: ExactSourceDescriptor,
 {
     type Item = [T::Item; N];
 
-    unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.len);
         self.descriptors.each_ref().map(|desc| {
             // SAFETY: Given descriptors of equal lengths `len`, the `ZipEqSourceDescriptor`
@@ -613,11 +613,11 @@ where
             //
             // Therefore:
             // - if the caller passes indices in `0..len`, indices passed to the downstream
-            //   `fetch_item()` functions are also in the `0..len` range,
+            //   `exact_fetch_item()` functions are also in the `0..len` range,
             // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
-            //   and `fetch_item()`, the zip-eq adaptor doesn't repeat indices passed to the
-            //   downstream descriptors.
-            unsafe { desc.fetch_item(index) }
+            //   and `exact_fetch_item()`, the zip-eq adaptor doesn't repeat indices passed
+            //   to the downstream descriptors.
+            unsafe { desc.exact_fetch_item(index) }
         })
     }
 }
@@ -648,8 +648,8 @@ where
                 // - ranges passed to the downstream `cleanup_item_range()` functions are in
                 //   their respective `0..len_i` ranges after clamping,
                 // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
-                //   and `fetch_item()`, the zip-max adaptor doesn't repeat indices passed to
-                //   the downstream descriptors.
+                //   and `exact_fetch_item()`, the zip-max adaptor doesn't repeat indices passed
+                //   to the downstream descriptors.
                 //
                 // This line implements the pass-through function, clamped to the current
                 // descriptor length.
@@ -661,13 +661,13 @@ where
     }
 }
 
-impl<T, const N: usize> SourceDescriptor for ZipMaxSourceDescriptor<[T; N]>
+impl<T, const N: usize> ExactSourceDescriptor for ZipMaxSourceDescriptor<[T; N]>
 where
-    T: SourceDescriptor,
+    T: ExactSourceDescriptor,
 {
     type Item = [Option<T::Item>; N];
 
-    unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.len);
         self.descriptors.each_ref().map(|desc| {
             if index < desc.len() {
@@ -676,15 +676,15 @@ where
                 // all of them, padding with `None` values beyond each descriptor's length.
                 //
                 // Therefore:
-                // - indices passed to the downstream `fetch_item()` functions are in their
-                //   respective `0..len_i` ranges in this branch,
+                // - indices passed to the downstream `exact_fetch_item()` functions are in
+                //   their respective `0..len_i` ranges in this branch,
                 // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
-                //   and `fetch_item()`, the zip-max adaptor doesn't repeat indices passed to
-                //   the downstream descriptors.
+                //   and `exact_fetch_item()`, the zip-max adaptor doesn't repeat indices passed
+                //   to the downstream descriptors.
                 //
                 // This line implements the pass-through function, when the index is lower than
                 // the current descriptor length.
-                unsafe { Some(desc.fetch_item(index)) }
+                unsafe { Some(desc.exact_fetch_item(index)) }
             } else {
                 None
             }
@@ -726,8 +726,8 @@ where
                 //   `0..len` range, itself included in the respective `0..len_i` ranges
                 //   (because `len <= len_i`),
                 // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
-                //   and `fetch_item()`, the zip-min adaptor doesn't repeat indices passed to
-                //   the downstream descriptors.
+                //   and `exact_fetch_item()`, the zip-min adaptor doesn't repeat indices passed
+                //   to the downstream descriptors.
                 unsafe {
                     desc.cleanup_item_range(range.clone());
                 }
@@ -736,13 +736,13 @@ where
     }
 }
 
-impl<T, const N: usize> SourceDescriptor for ZipMinArraySourceDescriptor<T, N>
+impl<T, const N: usize> ExactSourceDescriptor for ZipMinArraySourceDescriptor<T, N>
 where
-    T: SourceDescriptor,
+    T: ExactSourceDescriptor,
 {
     type Item = [T::Item; N];
 
-    unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.len);
         self.descriptors.each_ref().map(|desc| {
             // SAFETY: Given descriptors of minimal length `len`, the
@@ -751,12 +751,12 @@ where
             //
             // Therefore:
             // - if the caller passes indices in `0..len`, indices passed to the downstream
-            //   `fetch_item()` functions are also in the `0..len` range, itself included in
-            //   the respective `0..len_i` ranges (because `len <= len_i`),
+            //   `exact_fetch_item()` functions are also in the `0..len` range, itself
+            //   included in the respective `0..len_i` ranges (because `len <= len_i`),
             // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
-            //   and `fetch_item()`, the zip-min adaptor doesn't repeat indices passed to
-            //   the downstream descriptors.
-            unsafe { desc.fetch_item(index) }
+            //   and `exact_fetch_item()`, the zip-min adaptor doesn't repeat indices passed
+            //   to the downstream descriptors.
+            unsafe { desc.exact_fetch_item(index) }
         })
     }
 }

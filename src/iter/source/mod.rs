@@ -19,36 +19,6 @@ pub mod zip;
 use super::{Accumulator, ExactSizeAccumulator, GenericThreadPool, ParallelIterator};
 use std::ops::ControlFlow;
 
-/// An interface describing how to fetch items from a [`ParallelSource`].
-pub trait SourceDescriptor: SourceCleanup {
-    /// The type of items that this parallel source produces.
-    type Item: Send;
-
-    /// Fetch the item at the given index.
-    ///
-    /// # Safety
-    ///
-    /// Given the length `len` returned by [`len()`](SourceCleanup::len) in
-    /// [`SourceCleanup`]:
-    /// - indices passed to [`fetch_item()`](Self::fetch_item) must be in the
-    ///   `0..len` range,
-    /// - each index in `0..len` must be present at most once in all indices
-    ///   passed to calls to [`fetch_item()`](Self::fetch_item) and ranges
-    ///   passed to calls to [`SourceCleanup::cleanup_item_range()`].
-    ///
-    /// It is therefore undefined behavior to call this function twice with the
-    /// same index, with an index contained in a range for which
-    /// [`cleanup_item_range()`](SourceCleanup::cleanup_item_range) was
-    /// invoked, etc.
-    ///
-    /// You normally shouldn't have to worry about this, because this API is
-    /// intended to be called by Paralight's internal multi-threading
-    /// engine. This API is public to allow others to implement parallel
-    /// sources: when implementing your own source(s), you can rely on these
-    /// `unsafe` pre-conditions.
-    unsafe fn fetch_item(&self, index: usize) -> Self::Item;
-}
-
 /// An interface to cleanup a range of items that aren't fetched from a source.
 ///
 /// There are two reasons why manual cleanup of items is sometimes needed.
@@ -83,13 +53,19 @@ pub trait SourceCleanup {
     /// Given the length `len` returned by [`len()`](Self::len):
     /// - ranges passed to [`cleanup_item_range()`](Self::cleanup_item_range)
     ///   must be included in the `0..len` range,
-    /// - each index in `0..len` must be present at most once in all indices
-    ///   passed to calls to [`SourceDescriptor::fetch_item()`] and ranges
-    ///   passed to calls to [`cleanup_item_range()`](Self::cleanup_item_range).
+    /// - (if this type implements [`SourceDescriptor`]) each index in `0..len`
+    ///   must be present at most once in all indices passed to calls to
+    ///   [`SourceDescriptor::fetch_item()`] and ranges passed to calls to
+    ///   [`cleanup_item_range()`](Self::cleanup_item_range),
+    /// - (if this type implements [`ExactSourceDescriptor`]) each index in
+    ///   `0..len` must be present at most once in all indices passed to calls
+    ///   to [`ExactSourceDescriptor::exact_fetch_item()`] and ranges passed to
+    ///   calls to [`cleanup_item_range()`](Self::cleanup_item_range).
     ///
     /// It is therefore undefined behavior to call this function twice with the
     /// same range, with overlapping ranges, with a range that contains an
-    /// index for which [`fetch_item()`](SourceDescriptor::fetch_item) was
+    /// index for which [`fetch_item()`](SourceDescriptor::fetch_item) or
+    /// [`exact_fetch_item()`](ExactSourceDescriptor::exact_fetch_item) was
     /// invoked, etc.
     ///
     /// You normally shouldn't have to worry about this, because this API is
@@ -100,6 +76,67 @@ pub trait SourceCleanup {
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>);
 }
 
+/// An interface describing how to fetch items from a [`ParallelSource`].
+pub trait SourceDescriptor: SourceCleanup {
+    /// The type of items that this parallel source produces.
+    type Item: Send;
+
+    /// Fetch the item at the given index, returning [`None`] if there is no
+    /// item.
+    ///
+    /// # Safety
+    ///
+    /// Given the length `len` returned by [`len()`](SourceCleanup::len) in
+    /// [`SourceCleanup`]:
+    /// - indices passed to [`fetch_item()`](Self::fetch_item) must be in the
+    ///   `0..len` range,
+    /// - each index in `0..len` must be present at most once in all indices
+    ///   passed to calls to [`fetch_item()`](Self::fetch_item) and ranges
+    ///   passed to calls to [`SourceCleanup::cleanup_item_range()`].
+    ///
+    /// It is therefore undefined behavior to call this function twice with the
+    /// same index, with an index contained in a range for which
+    /// [`cleanup_item_range()`](SourceCleanup::cleanup_item_range) was
+    /// invoked, etc.
+    ///
+    /// You normally shouldn't have to worry about this, because this API is
+    /// intended to be called by Paralight's internal multi-threading
+    /// engine. This API is public to allow others to implement parallel
+    /// sources: when implementing your own source(s), you can rely on these
+    /// `unsafe` pre-conditions.
+    unsafe fn fetch_item(&self, index: usize) -> Option<Self::Item>;
+}
+
+/// An interface describing how to fetch items from an [`ExactParallelSource`].
+pub trait ExactSourceDescriptor: SourceCleanup {
+    /// The type of items that this parallel source produces.
+    type Item: Send;
+
+    /// Fetch the item at the given index.
+    ///
+    /// # Safety
+    ///
+    /// Given the length `len` returned by [`len()`](SourceCleanup::len) in
+    /// [`SourceCleanup`]:
+    /// - indices passed to [`exact_fetch_item()`](Self::exact_fetch_item) must
+    ///   be in the `0..len` range,
+    /// - each index in `0..len` must be present at most once in all indices
+    ///   passed to calls to [`exact_fetch_item()`](Self::exact_fetch_item) and
+    ///   ranges passed to calls to [`SourceCleanup::cleanup_item_range()`].
+    ///
+    /// It is therefore undefined behavior to call this function twice with the
+    /// same index, with an index contained in a range for which
+    /// [`cleanup_item_range()`](SourceCleanup::cleanup_item_range) was
+    /// invoked, etc.
+    ///
+    /// You normally shouldn't have to worry about this, because this API is
+    /// intended to be called by Paralight's internal multi-threading
+    /// engine. This API is public to allow others to implement parallel
+    /// sources: when implementing your own source(s), you can rely on these
+    /// `unsafe` pre-conditions.
+    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item;
+}
+
 /// A source to produce items in parallel. The [`ParallelSourceExt`] trait
 /// provides additional methods (iterator adaptors) as an extension of this
 /// trait.
@@ -107,6 +144,8 @@ pub trait SourceCleanup {
 /// This can be turned into a [`ParallelIterator`] by attaching a
 /// [`GenericThreadPool`] via the
 /// [`with_thread_pool()`](ParallelSourceExt::with_thread_pool) function.
+///
+/// See also [`ExactParallelSource`].
 pub trait ParallelSource: Sized {
     /// The type of items that this parallel source produces.
     ///
@@ -118,6 +157,28 @@ pub trait ParallelSource: Sized {
 
     /// Returns an object that describes how to fetch items from this source.
     fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync;
+}
+
+/// A source to produce items in parallel. The [`ExactParallelSourceExt`] trait
+/// provides additional methods (iterator adaptors) as an extension of this
+/// trait.
+///
+/// This can be turned into a [`ParallelIterator`] by attaching a
+/// [`GenericThreadPool`] via the
+/// [`with_thread_pool()`](ExactParallelSourceExt::with_thread_pool) function.
+///
+/// See also [`ParallelSource`].
+pub trait ExactParallelSource: Sized {
+    /// The type of items that this parallel source produces.
+    ///
+    /// Items are sent to worker threads (where they are then consumed by the
+    /// `process_item` function parameter of the
+    /// [`ParallelIterator::pipeline()`](super::ParallelIterator::pipeline)),
+    /// hence the required [`Send`] bound.
+    type Item: Send;
+
+    /// Returns an object that describes how to fetch items from this source.
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync;
 }
 
 /// Trait for converting into a [`ParallelSource`].
@@ -137,6 +198,23 @@ pub trait IntoParallelSource {
     fn into_par_iter(self) -> Self::Source;
 }
 
+/// Trait for converting into an [`ExactParallelSource`].
+pub trait IntoExactParallelSource {
+    /// The type of items that this parallel source produces.
+    ///
+    /// Items are sent to worker threads (where they are then consumed by the
+    /// `process_item` function parameter of the
+    /// [`ParallelIterator::pipeline()`](super::ParallelIterator::pipeline)),
+    /// hence the required [`Send`] bound.
+    type Item: Send;
+
+    /// Target parallel source type.
+    type Source: ExactParallelSource<Item = Self::Item>;
+
+    /// Converts `self` into a parallel source.
+    fn into_par_iter(self) -> Self::Source;
+}
+
 /// Trait for converting into a [`ParallelSource`] that produces references.
 pub trait IntoParallelRefSource<'data> {
     /// The type of items that this parallel source produces.
@@ -149,6 +227,25 @@ pub trait IntoParallelRefSource<'data> {
 
     /// Target parallel source type.
     type Source: ParallelSource<Item = Self::Item>;
+
+    /// Converts `&self` into a parallel source.
+    fn par_iter(&'data self) -> Self::Source;
+}
+
+/// Trait for converting into an [`ExactParallelSource`] that produces
+/// references.
+pub trait IntoExactParallelRefSource<'data> {
+    /// The type of items that this parallel source produces.
+    ///
+    /// Like for [`IntoExactParallelSource`], items are sent to worker threads
+    /// (where they are then consumed by the `process_item` function
+    /// parameter of the
+    /// [`ParallelIterator::pipeline()`](super::ParallelIterator::pipeline)),
+    /// hence the required [`Send`] bound.
+    type Item: Send;
+
+    /// Target parallel source type.
+    type Source: ExactParallelSource<Item = Self::Item>;
 
     /// Converts `&self` into a parallel source.
     ///
@@ -185,6 +282,25 @@ pub trait IntoParallelRefMutSource<'data> {
     type Source: ParallelSource<Item = Self::Item>;
 
     /// Converts `&mut self` into a parallel source.
+    fn par_iter_mut(&'data mut self) -> Self::Source;
+}
+
+/// Trait for converting into an [`ExactParallelSource`] that produces mutable
+/// references.
+pub trait IntoExactParallelRefMutSource<'data> {
+    /// The type of items that this parallel source produces.
+    ///
+    /// Like for [`IntoExactParallelSource`], items are sent to worker threads
+    /// (where they are then consumed by the `process_item` function
+    /// parameter of the
+    /// [`ParallelIterator::pipeline()`](super::ParallelIterator::pipeline)),
+    /// hence the required [`Send`] bound.
+    type Item: Send;
+
+    /// Target parallel source type.
+    type Source: ExactParallelSource<Item = Self::Item>;
+
+    /// Converts `&mut self` into a parallel source.
     ///
     /// ```
     /// # use paralight::prelude::*;
@@ -213,8 +329,55 @@ pub trait ParallelSourceExt: ParallelSource {
     ///
     /// Note: Given that items are processed in arbitrary order (in
     /// [`WorkStealing`](crate::threads::RangeStrategy::WorkStealing) mode), the
-    /// order in which sources are chained doesn't necessarily matter, but
-    /// can be relevant when combined with order-sensitive adaptors (e.g.
+    /// order in which sources are chained doesn't necessarily matter, but can
+    /// be relevant when combined with order-sensitive adaptors (e.g.
+    /// [`enumerate()`](ExactParallelSourceExt::enumerate),
+    /// [`take()`](ExactParallelSourceExt::take), etc.).
+    fn chain<T: ParallelSource<Item = Self::Item>>(self, next: T) -> Chain<Self, T> {
+        Chain {
+            first: self,
+            second: next,
+        }
+    }
+
+    /// Returns a parallel source that produces items from this source in
+    /// reverse order.
+    ///
+    /// Note: Given that items are processed in arbitrary order (in
+    /// [`WorkStealing`](crate::threads::RangeStrategy::WorkStealing) mode),
+    /// this isn't very useful on its own, but can be relevant when combined
+    /// with order-sensitive adaptors (e.g.
+    /// [`enumerate()`](ExactParallelSourceExt::enumerate),
+    /// [`take()`](ExactParallelSourceExt::take), etc.).
+    fn rev(self) -> Rev<Self> {
+        Rev { inner: self }
+    }
+
+    /// Attaches the given [`GenericThreadPool`] to this [`ParallelSource`] and
+    /// obtain a [`ParallelIterator`].
+    fn with_thread_pool<T: GenericThreadPool>(
+        self,
+        thread_pool: T,
+    ) -> BaseParallelIterator<T, Self> {
+        BaseParallelIterator {
+            thread_pool,
+            source: self,
+        }
+    }
+}
+
+impl<T: ParallelSource> ParallelSourceExt for T {}
+
+/// Additional methods provided for types that implement
+/// [`ExactParallelSource`].
+pub trait ExactParallelSourceExt: ExactParallelSource {
+    /// Returns a parallel source that produces items from this source followed
+    /// by items from the next source.
+    ///
+    /// Note: Given that items are processed in arbitrary order (in
+    /// [`WorkStealing`](crate::threads::RangeStrategy::WorkStealing) mode), the
+    /// order in which sources are chained doesn't necessarily matter, but can
+    /// be relevant when combined with order-sensitive adaptors (e.g.
     /// [`enumerate()`](Self::enumerate), [`take()`](Self::take), etc.).
     ///
     /// ```
@@ -235,7 +398,7 @@ pub trait ParallelSourceExt: ParallelSource {
     ///     .sum::<i32>();
     /// assert_eq!(sum, 5 * 11);
     /// ```
-    fn chain<T: ParallelSource<Item = Self::Item>>(self, next: T) -> Chain<Self, T> {
+    fn chain<T: ExactParallelSource<Item = Self::Item>>(self, next: T) -> Chain<Self, T> {
         Chain {
             first: self,
             second: next,
@@ -271,8 +434,8 @@ pub trait ParallelSourceExt: ParallelSource {
     /// Note: Given that items are processed in arbitrary order (in
     /// [`WorkStealing`](crate::threads::RangeStrategy::WorkStealing) mode),
     /// this isn't very useful on its own, but can be relevant when combined
-    /// with order-sensitive adaptors (e.g.
-    /// [`enumerate()`](Self::enumerate), [`take()`](Self::take), etc.).
+    /// with order-sensitive adaptors (e.g. [`enumerate()`](Self::enumerate),
+    /// [`take()`](Self::take), etc.).
     ///
     /// ```
     /// # use paralight::prelude::*;
@@ -549,8 +712,8 @@ pub trait ParallelSourceExt: ParallelSource {
         }
     }
 
-    /// Attaches the given [`GenericThreadPool`] to this [`ParallelSource`] and
-    /// obtain a [`ParallelIterator`].
+    /// Attaches the given [`GenericThreadPool`] to this [`ExactParallelSource`]
+    /// and obtain a [`ParallelIterator`].
     ///
     /// ```
     /// # use paralight::prelude::*;
@@ -571,36 +734,69 @@ pub trait ParallelSourceExt: ParallelSource {
     fn with_thread_pool<T: GenericThreadPool>(
         self,
         thread_pool: T,
-    ) -> BaseParallelIterator<T, Self> {
-        BaseParallelIterator {
+    ) -> BaseExactParallelIterator<T, Self> {
+        BaseExactParallelIterator {
             thread_pool,
             source: self,
         }
     }
 }
 
-impl<T: ParallelSource> ParallelSourceExt for T {}
+impl<T: ExactParallelSource> ExactParallelSourceExt for T {}
 
 /// This struct is created by the [`chain()`](ParallelSourceExt::chain) method
-/// on [`ParallelSourceExt`].
+/// on [`ParallelSourceExt`] and [`chain()`](ExactParallelSourceExt::chain) on
+/// [`ExactParallelSourceExt`].
 ///
 /// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelSource`] and [`ParallelSourceExt`] traits, but it
-/// is nonetheless public because of the `must_use` annotation.
+/// implements the [`ParallelSource`]/[`ParallelSourceExt`] or
+/// [`ExactParallelSource`]/[`ExactParallelSourceExt`] traits, but it is
+/// nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct Chain<First, Second> {
     first: First,
     second: Second,
 }
 
-impl<T: Send, First: ParallelSource<Item = T>, Second: ParallelSource<Item = T>> ParallelSource
-    for Chain<First, Second>
+impl<T: Send, First, Second> ParallelSource for Chain<First, Second>
+where
+    First: ParallelSource<Item = T>,
+    Second: ParallelSource<Item = T>,
 {
     type Item = T;
 
     fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
         let descriptor1 = self.first.descriptor();
         let descriptor2 = self.second.descriptor();
+
+        let len1 = descriptor1.len();
+        let len2 = descriptor2.len();
+        let len = len1.checked_add(len2).unwrap_or_else(|| {
+            panic!(
+                "called chain() with sources that together produce more than usize::MAX items ({})",
+                usize::MAX
+            );
+        });
+
+        ChainSourceDescriptor {
+            descriptor1,
+            descriptor2,
+            len,
+            len1,
+        }
+    }
+}
+
+impl<T: Send, First, Second> ExactParallelSource for Chain<First, Second>
+where
+    First: ExactParallelSource<Item = T>,
+    Second: ExactParallelSource<Item = T>,
+{
+    type Item = T;
+
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
+        let descriptor1 = self.first.exact_descriptor();
+        let descriptor2 = self.second.exact_descriptor();
 
         let len1 = descriptor1.len();
         let len2 = descriptor2.len();
@@ -647,8 +843,8 @@ where
     //   the two downstream `cleanup_item_range()` functions are included in their
     //   respective ranges `0..len1` and `0..len2`,
     // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
-    //   and `fetch_item()`, the chain adaptor doesn't repeat indices passed to the
-    //   two downstream descriptors.
+    //   and `(exact_)fetch_item()`, the chain adaptor doesn't repeat indices passed
+    //   to the two downstream descriptors.
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
             debug_assert!(range.start <= range.end);
@@ -705,7 +901,7 @@ where
     // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
     //   and `fetch_item()`, the chain adaptor doesn't repeat indices passed to the
     //   two downstream descriptors.
-    unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn fetch_item(&self, index: usize) -> Option<Self::Item> {
         debug_assert!(index < self.len);
         if index < self.len1 {
             // SAFETY: See the function comment. This branch implements the mapping for an
@@ -719,23 +915,56 @@ where
     }
 }
 
-/// This struct is created by the [`enumerate()`](ParallelSourceExt::enumerate)
-/// method on [`ParallelSourceExt`].
+impl<T: Send, First, Second> ExactSourceDescriptor for ChainSourceDescriptor<First, Second>
+where
+    First: ExactSourceDescriptor<Item = T>,
+    Second: ExactSourceDescriptor<Item = T>,
+{
+    type Item = T;
+
+    // For safety comments: given two sources of lengths `len1` and `len2`, the
+    // `ChainSourceDescriptor` creates a bijection of indices between `0..len1 +
+    // len2` and `0..len1 | 0..len2`.
+    //
+    // Therefore:
+    // - if the caller passes indices in `0..len1 + len2`, indices passed to the two
+    //   downstream `exact_fetch_item()` functions are included in their respective
+    //   ranges `0..len1` and `0..len2`,
+    // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
+    //   and `exact_fetch_item()`, the chain adaptor doesn't repeat indices passed
+    //   to the two downstream descriptors.
+    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
+        debug_assert!(index < self.len);
+        if index < self.len1 {
+            // SAFETY: See the function comment. This branch implements the mapping for an
+            // index in `0..len1` to `0..len1`.
+            unsafe { self.descriptor1.exact_fetch_item(index) }
+        } else {
+            // SAFETY: See the function comment. This branch implements the mapping for an
+            // index in `len1..len1 + len2` to `0..len2`.
+            unsafe { self.descriptor2.exact_fetch_item(index - self.len1) }
+        }
+    }
+}
+
+/// This struct is created by the
+/// [`enumerate()`](ExactParallelSourceExt::enumerate)
+/// method on [`ExactParallelSourceExt`].
 ///
 /// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelSource`] and [`ParallelSourceExt`] traits, but it
-/// is nonetheless public because of the `must_use` annotation.
+/// implements the [`ExactParallelSource`] and [`ExactParallelSourceExt`]
+/// traits, but it is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct Enumerate<Inner> {
     inner: Inner,
 }
 
-impl<Inner: ParallelSource> ParallelSource for Enumerate<Inner> {
+impl<Inner: ExactParallelSource> ExactParallelSource for Enumerate<Inner> {
     type Item = (usize, Inner::Item);
 
-    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
         EnumerateSourceDescriptor {
-            inner: self.inner.descriptor(),
+            inner: self.inner.exact_descriptor(),
         }
     }
 }
@@ -769,28 +998,30 @@ impl<Inner: SourceCleanup> SourceCleanup for EnumerateSourceDescriptor<Inner> {
     }
 }
 
-impl<Inner: SourceDescriptor> SourceDescriptor for EnumerateSourceDescriptor<Inner> {
+impl<Inner: ExactSourceDescriptor> ExactSourceDescriptor for EnumerateSourceDescriptor<Inner> {
     type Item = (usize, Inner::Item);
 
-    unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
         // SAFETY: The `EnumerateSourceDescriptor` only implements a mapping of items,
         // while passing through indices to the inner descriptor.
         //
         // Therefore:
         // - if the caller passes indices in `0..len`, indices passed to the inner
-        //   `fetch_item()` function are also in the `0..len` range,
+        //   `exact_fetch_item()` function are also in the `0..len` range,
         // - if the caller doesn't repeat indices, the enumerate adaptor doesn't repeat
         //   indices passed to the inner descriptor.
-        (index, unsafe { self.inner.fetch_item(index) })
+        (index, unsafe { self.inner.exact_fetch_item(index) })
     }
 }
 
 /// This struct is created by the [`rev()`](ParallelSourceExt::rev) method on
-/// [`ParallelSourceExt`].
+/// [`ParallelSourceExt`] and [`rev()`](ExactParallelSourceExt::rev) on
+/// [`ExactParallelSourceExt`].
 ///
 /// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelSource`] and [`ParallelSourceExt`] traits, but it
-/// is nonetheless public because of the `must_use` annotation.
+/// implements the [`ParallelSource`]/[`ParallelSourceExt`] or
+/// [`ExactParallelSource`]/[`ExactParallelSourceExt`] traits, but it is
+/// nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct Rev<Inner> {
     inner: Inner,
@@ -801,6 +1032,19 @@ impl<Inner: ParallelSource> ParallelSource for Rev<Inner> {
 
     fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
         let descriptor = self.inner.descriptor();
+        let len = descriptor.len();
+        RevSourceDescriptor {
+            inner: descriptor,
+            len,
+        }
+    }
+}
+
+impl<Inner: ExactParallelSource> ExactParallelSource for Rev<Inner> {
+    type Item = Inner::Item;
+
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
+        let descriptor = self.inner.exact_descriptor();
         let len = descriptor.len();
         RevSourceDescriptor {
             inner: descriptor,
@@ -850,7 +1094,7 @@ impl<Inner: SourceCleanup> SourceCleanup for RevSourceDescriptor<Inner> {
 impl<Inner: SourceDescriptor> SourceDescriptor for RevSourceDescriptor<Inner> {
     type Item = Inner::Item;
 
-    unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn fetch_item(&self, index: usize) -> Option<Self::Item> {
         debug_assert!(index < self.len);
         // SAFETY: Given an inner descriptor of length `len`, the `RevSourceDescriptor`
         // implements a bijective mapping of indices from `0..len` to `0..len` given by
@@ -865,23 +1109,41 @@ impl<Inner: SourceDescriptor> SourceDescriptor for RevSourceDescriptor<Inner> {
     }
 }
 
-/// This struct is created by the [`skip()`](ParallelSourceExt::skip) method on
-/// [`ParallelSourceExt`].
+impl<Inner: ExactSourceDescriptor> ExactSourceDescriptor for RevSourceDescriptor<Inner> {
+    type Item = Inner::Item;
+
+    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
+        debug_assert!(index < self.len);
+        // SAFETY: Given an inner descriptor of length `len`, the `RevSourceDescriptor`
+        // implements a bijective mapping of indices from `0..len` to `0..len` given by
+        // `rev: x -> len - 1 - x`.
+        //
+        // Therefore:
+        // - if the caller passes indices in `0..len`, indices passed to the inner
+        //   `exact_fetch_item()` function are also in the `0..len` range,
+        // - if the caller doesn't repeat indices, the rev adaptor doesn't repeat
+        //   indices passed to the inner descriptor.
+        unsafe { self.inner.exact_fetch_item(self.len - index - 1) }
+    }
+}
+
+/// This struct is created by the [`skip()`](ExactParallelSourceExt::skip)
+/// method on [`ExactParallelSourceExt`].
 ///
 /// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelSource`] and [`ParallelSourceExt`] traits, but it
-/// is nonetheless public because of the `must_use` annotation.
+/// implements the [`ExactParallelSource`] and [`ExactParallelSourceExt`]
+/// traits, but it is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct Skip<Inner> {
     inner: Inner,
     count: usize,
 }
 
-impl<Inner: ParallelSource> ParallelSource for Skip<Inner> {
+impl<Inner: ExactParallelSource> ExactParallelSource for Skip<Inner> {
     type Item = Inner::Item;
 
-    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
-        let descriptor = self.inner.descriptor();
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
+        let descriptor = self.inner.exact_descriptor();
         let inner_len = descriptor.len();
         let count = std::cmp::min(self.count, inner_len);
         SkipSourceDescriptor {
@@ -929,10 +1191,10 @@ impl<Inner: SourceCleanup> SourceCleanup for SkipSourceDescriptor<Inner> {
     }
 }
 
-impl<Inner: SourceDescriptor> SourceDescriptor for SkipSourceDescriptor<Inner> {
+impl<Inner: ExactSourceDescriptor> ExactSourceDescriptor for SkipSourceDescriptor<Inner> {
     type Item = Inner::Item;
 
-    unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.len);
         // SAFETY: Given an inner descriptor of length `len` as well as a parameter
         // `count <= len`, the `SkipSourceDescriptor` implements a bijective mapping of
@@ -941,10 +1203,10 @@ impl<Inner: SourceDescriptor> SourceDescriptor for SkipSourceDescriptor<Inner> {
         //
         // Therefore:
         // - if the caller passes indices in `0..len - count`, indices passed here to
-        //   the inner `fetch_item()` function are in the `count..len` range,
+        //   the inner `exact_fetch_item()` function are in the `count..len` range,
         // - if the caller doesn't repeat indices, the skip adaptor doesn't repeat
         //   indices passed to the inner descriptor.
-        unsafe { self.inner.fetch_item(self.count + index) }
+        unsafe { self.inner.exact_fetch_item(self.count + index) }
     }
 }
 
@@ -968,23 +1230,23 @@ impl<Inner: SourceCleanup> Drop for SkipSourceDescriptor<Inner> {
 }
 
 /// This struct is created by the
-/// [`skip_exact()`](ParallelSourceExt::skip_exact) method on
-/// [`ParallelSourceExt`].
+/// [`skip_exact()`](ExactParallelSourceExt::skip_exact) method on
+/// [`ExactParallelSourceExt`].
 ///
 /// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelSource`] and [`ParallelSourceExt`] traits, but it
-/// is nonetheless public because of the `must_use` annotation.
+/// implements the [`ExactParallelSource`] and [`ExactParallelSourceExt`]
+/// traits, but it is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct SkipExact<Inner> {
     inner: Inner,
     count: usize,
 }
 
-impl<Inner: ParallelSource> ParallelSource for SkipExact<Inner> {
+impl<Inner: ExactParallelSource> ExactParallelSource for SkipExact<Inner> {
     type Item = Inner::Item;
 
-    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
-        let descriptor = self.inner.descriptor();
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
+        let descriptor = self.inner.exact_descriptor();
         let inner_len = descriptor.len();
         assert!(
             self.count <= inner_len,
@@ -999,22 +1261,23 @@ impl<Inner: ParallelSource> ParallelSource for SkipExact<Inner> {
 }
 
 /// This struct is created by the
-/// [`step_by()`](ParallelSourceExt::step_by) method on [`ParallelSourceExt`].
+/// [`step_by()`](ExactParallelSourceExt::step_by) method on
+/// [`ExactParallelSourceExt`].
 ///
 /// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelSource`] and [`ParallelSourceExt`] traits, but it
-/// is nonetheless public because of the `must_use` annotation.
+/// implements the [`ExactParallelSource`] and [`ExactParallelSourceExt`]
+/// traits, but it is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct StepBy<Inner> {
     inner: Inner,
     step: usize,
 }
 
-impl<Inner: ParallelSource> ParallelSource for StepBy<Inner> {
+impl<Inner: ExactParallelSource> ExactParallelSource for StepBy<Inner> {
     type Item = Inner::Item;
 
-    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
-        let descriptor = self.inner.descriptor();
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
+        let descriptor = self.inner.exact_descriptor();
         let inner_len = descriptor.len();
         assert!(self.step != 0, "called step_by() with a step of zero");
         let len = inner_len.div_ceil(self.step);
@@ -1078,14 +1341,14 @@ impl<Inner: SourceCleanup> SourceCleanup for StepBySourceDescriptor<Inner> {
     }
 }
 
-impl<Inner: SourceDescriptor> SourceDescriptor for StepBySourceDescriptor<Inner> {
+impl<Inner: ExactSourceDescriptor> ExactSourceDescriptor for StepBySourceDescriptor<Inner> {
     type Item = Inner::Item;
 
-    unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.len);
         // SAFETY: See the function comment in `Self::cleanup_item_range`. This
         // implements the mapping `i -> step * i`.
-        unsafe { self.inner.fetch_item(self.step * index) }
+        unsafe { self.inner.exact_fetch_item(self.step * index) }
     }
 }
 
@@ -1119,23 +1382,23 @@ impl<Inner: SourceCleanup> Drop for StepBySourceDescriptor<Inner> {
     }
 }
 
-/// This struct is created by the [`take()`](ParallelSourceExt::take) method on
-/// [`ParallelSourceExt`].
+/// This struct is created by the [`take()`](ExactParallelSourceExt::take)
+/// method on [`ExactParallelSourceExt`].
 ///
 /// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelSource`] and [`ParallelSourceExt`] traits, but it
-/// is nonetheless public because of the `must_use` annotation.
+/// implements the [`ExactParallelSource`] and [`ExactParallelSourceExt`]
+/// traits, but it is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct Take<Inner> {
     inner: Inner,
     count: usize,
 }
 
-impl<Inner: ParallelSource> ParallelSource for Take<Inner> {
+impl<Inner: ExactParallelSource> ExactParallelSource for Take<Inner> {
     type Item = Inner::Item;
 
-    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
-        let descriptor = self.inner.descriptor();
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
+        let descriptor = self.inner.exact_descriptor();
         let inner_len = descriptor.len();
         let count = std::cmp::min(self.count, inner_len);
         TakeSourceDescriptor {
@@ -1181,10 +1444,10 @@ impl<Inner: SourceCleanup> SourceCleanup for TakeSourceDescriptor<Inner> {
     }
 }
 
-impl<Inner: SourceDescriptor> SourceDescriptor for TakeSourceDescriptor<Inner> {
+impl<Inner: ExactSourceDescriptor> ExactSourceDescriptor for TakeSourceDescriptor<Inner> {
     type Item = Inner::Item;
 
-    unsafe fn fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.count);
         // SAFETY: Given an inner descriptor of length `len` as well as a parameter
         // `count <= len`, the `TakeSourceDescriptor` implements a pass-through mapping
@@ -1192,11 +1455,11 @@ impl<Inner: SourceDescriptor> SourceDescriptor for TakeSourceDescriptor<Inner> {
         //
         // Therefore:
         // - if the caller passes indices in `0..count`, indices passed here to the
-        //   inner `fetch_item()` function are in the `0..count` range (itself included
-        //   in `0..len`),
+        //   inner `exact_fetch_item()` function are in the `0..count` range (itself
+        //   included in `0..len`),
         // - if the caller doesn't repeat indices, the take adaptor doesn't repeat
         //   indices passed to the inner descriptor.
-        unsafe { self.inner.fetch_item(index) }
+        unsafe { self.inner.exact_fetch_item(index) }
     }
 }
 
@@ -1219,23 +1482,23 @@ impl<Inner: SourceCleanup> Drop for TakeSourceDescriptor<Inner> {
 }
 
 /// This struct is created by the
-/// [`take_exact()`](ParallelSourceExt::take_exact) method on
-/// [`ParallelSourceExt`].
+/// [`take_exact()`](ExactParallelSourceExt::take_exact) method on
+/// [`ExactParallelSourceExt`].
 ///
 /// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelSource`] and [`ParallelSourceExt`] traits, but it
-/// is nonetheless public because of the `must_use` annotation.
+/// implements the [`ExactParallelSource`] and [`ExactParallelSourceExt`]
+/// traits, but it is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct TakeExact<Inner> {
     inner: Inner,
     count: usize,
 }
 
-impl<Inner: ParallelSource> ParallelSource for TakeExact<Inner> {
+impl<Inner: ExactParallelSource> ExactParallelSource for TakeExact<Inner> {
     type Item = Inner::Item;
 
-    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
-        let descriptor = self.inner.descriptor();
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
+        let descriptor = self.inner.exact_descriptor();
         let inner_len = descriptor.len();
         assert!(
             self.count <= inner_len,
@@ -1262,6 +1525,19 @@ pub struct BaseParallelIterator<T: GenericThreadPool, S: ParallelSource> {
     source: S,
 }
 
+/// This struct is created by the
+/// [`with_thread_pool()`](ExactParallelSourceExt::with_thread_pool) method on
+/// [`ExactParallelSourceExt`].
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ExactParallelSource`] and [`ExactParallelSourceExt`]
+/// traits, but it is nonetheless public because of the `must_use` annotation.
+#[must_use = "iterator adaptors are lazy"]
+pub struct BaseExactParallelIterator<T: GenericThreadPool, S: ExactParallelSource> {
+    thread_pool: T,
+    source: S,
+}
+
 impl<T: GenericThreadPool, S: ParallelSource> ParallelIterator for BaseParallelIterator<T, S> {
     type Item = S::Item;
 
@@ -1277,15 +1553,15 @@ impl<T: GenericThreadPool, S: ParallelSource> ParallelIterator for BaseParallelI
             source_descriptor.len(),
             init,
             |acc, index| {
-                process_item(
-                    acc,
-                    index,
-                    // SAFETY: The pre-conditions to the `source_descriptor`'s `fetch_item()` and
-                    // `cleanup_item_range()` methods are ensured by the safety guarantees of
-                    // `ThreadPool::upper_bounded_pipeline()`, i.e. that all the indices passed are
-                    // in `0..len` and they are each passed exactly once.
-                    unsafe { source_descriptor.fetch_item(index) },
-                )
+                // SAFETY: The pre-conditions to the `source_descriptor`'s `fetch_item()` and
+                // `cleanup_item_range()` methods are ensured by the safety guarantees of
+                // `ThreadPool::upper_bounded_pipeline()`, i.e. that all the indices passed are
+                // in `0..len` and they are each passed exactly once.
+                let item = unsafe { source_descriptor.fetch_item(index) };
+                match item {
+                    None => ControlFlow::Continue(acc),
+                    Some(item) => process_item(acc, index, item),
+                }
             },
             finalize,
             reduce,
@@ -1318,6 +1594,65 @@ impl<T: GenericThreadPool, S: ParallelSource> ParallelIterator for BaseParallelI
     }
 }
 
+impl<T: GenericThreadPool, S: ExactParallelSource> ParallelIterator
+    for BaseExactParallelIterator<T, S>
+{
+    type Item = S::Item;
+
+    fn upper_bounded_pipeline<Output: Send, Accum>(
+        self,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(Accum, usize, Self::Item) -> ControlFlow<Accum, Accum> + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+    ) -> Output {
+        let source_descriptor = self.source.exact_descriptor();
+        self.thread_pool.upper_bounded_pipeline(
+            source_descriptor.len(),
+            init,
+            |acc, index| {
+                process_item(
+                    acc,
+                    index,
+                    // SAFETY: The pre-conditions to the `source_descriptor`'s `exact_fetch_item()`
+                    // and `cleanup_item_range()` methods are ensured by the safety guarantees of
+                    // `ThreadPool::upper_bounded_pipeline()`, i.e. that all the indices passed are
+                    // in `0..len` and they are each passed exactly once.
+                    unsafe { source_descriptor.exact_fetch_item(index) },
+                )
+            },
+            finalize,
+            reduce,
+            &source_descriptor,
+        )
+    }
+
+    fn iter_pipeline<Output, Accum: Send>(
+        self,
+        accum: impl Accumulator<Self::Item, Accum> + Sync,
+        reduce: impl ExactSizeAccumulator<Accum, Output>,
+    ) -> Output {
+        let source_descriptor = self.source.exact_descriptor();
+        let accumulator = ExactFetchAccumulator {
+            inner: accum,
+            fetch_item: |index| {
+                // SAFETY: The pre-conditions to the `source_descriptor`'s `exact_fetch_item()`
+                // and `cleanup_item_range()` methods are ensured by the safety
+                // guarantees of `ThreadPool::iter_pipeline()`, i.e. that all
+                // the indices passed are in `0..len` and they are each passed
+                // exactly once.
+                unsafe { source_descriptor.exact_fetch_item(index) }
+            },
+        };
+        self.thread_pool.iter_pipeline(
+            source_descriptor.len(),
+            accumulator,
+            reduce,
+            &source_descriptor,
+        )
+    }
+}
+
 struct FetchAccumulator<Inner, FetchItem> {
     inner: Inner,
     fetch_item: FetchItem,
@@ -1325,6 +1660,23 @@ struct FetchAccumulator<Inner, FetchItem> {
 
 impl<Item, Output, Inner, FetchItem> Accumulator<usize, Output>
     for FetchAccumulator<Inner, FetchItem>
+where
+    Inner: Accumulator<Item, Output>,
+    FetchItem: Fn(usize) -> Option<Item>,
+{
+    #[inline(always)]
+    fn accumulate(&self, iter: impl Iterator<Item = usize>) -> Output {
+        self.inner.accumulate(iter.filter_map(&self.fetch_item))
+    }
+}
+
+struct ExactFetchAccumulator<Inner, FetchItem> {
+    inner: Inner,
+    fetch_item: FetchItem,
+}
+
+impl<Item, Output, Inner, FetchItem> Accumulator<usize, Output>
+    for ExactFetchAccumulator<Inner, FetchItem>
 where
     Inner: Accumulator<Item, Output>,
     FetchItem: Fn(usize) -> Item,

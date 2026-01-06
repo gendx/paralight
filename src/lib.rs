@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Google LLC
+// Copyright 2024-2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -43,8 +43,10 @@ pub mod threads;
 /// Prelude of commonly used items from this crate.
 pub mod prelude {
     pub use crate::iter::{
-        GenericThreadPool, IntoParallelRefMutSource, IntoParallelRefSource, IntoParallelSource,
-        MinMaxResult, ParallelIterator, ParallelIteratorExt, ParallelSourceExt, ZipableSource,
+        ExactParallelSourceExt, GenericThreadPool, IntoExactParallelRefMutSource,
+        IntoExactParallelRefSource, IntoExactParallelSource, IntoParallelRefMutSource,
+        IntoParallelRefSource, IntoParallelSource, MinMaxResult, ParallelIterator,
+        ParallelIteratorExt, ParallelSourceExt, ZipableSource,
     };
     #[cfg(feature = "rayon")]
     pub use crate::threads::RayonThreadPool;
