@@ -12,43 +12,31 @@ use super::{
 };
 use std::marker::PhantomData;
 
-/// A parallel source over a [slice](slice). This struct is created by the
-/// [`par_iter()`](IntoExactParallelRefSource::par_iter) method on
-/// [`IntoExactParallelRefSource`].
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ExactParallelSource`] and
-/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt) traits, but it is
-/// nonetheless public because of the `must_use` annotation.
-///
-/// See also [`MutSliceParallelSource`].
-///
-/// ```
-/// # use paralight::iter::SliceParallelSource;
-/// # use paralight::prelude::*;
-/// # let mut thread_pool = ThreadPoolBuilder {
-/// #     num_threads: ThreadCount::AvailableParallelism,
-/// #     range_strategy: RangeStrategy::WorkStealing,
-/// #     cpu_pinning: CpuPinningPolicy::No,
-/// # }
-/// # .build();
-/// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-/// let iter: SliceParallelSource<_> = input.par_iter();
-/// let sum = iter.with_thread_pool(&mut thread_pool).sum::<i32>();
-/// assert_eq!(sum, 5 * 11);
-/// ```
-#[must_use = "iterator adaptors are lazy"]
-pub struct SliceParallelSource<'data, T> {
-    slice: &'data [T],
-}
-
 impl<'data, T: Sync + 'data> IntoExactParallelRefSource<'data> for [T] {
     type Item = &'data T;
-    type Source = SliceParallelSource<'data, T>;
 
-    fn par_iter(&'data self) -> Self::Source {
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// assert_eq!(sum, 5 * 11);
+    /// ```
+    fn par_iter(&'data self) -> impl ExactParallelSource<Item = Self::Item> {
         SliceParallelSource { slice: self }
     }
+}
+
+struct SliceParallelSource<'data, T> {
+    slice: &'data [T],
 }
 
 impl<'data, T: Sync> ExactParallelSource for SliceParallelSource<'data, T> {
@@ -86,44 +74,31 @@ impl<'data, T: Sync> ExactSourceDescriptor for SliceSourceDescriptor<'data, T> {
     }
 }
 
-/// A parallel source over a [mutable slice](slice). This struct is created by
-/// the [`par_iter_mut()`](IntoExactParallelRefMutSource::par_iter_mut) method
-/// on [`IntoExactParallelRefMutSource`].
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ExactParallelSource`] and
-/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt) traits, but it is
-/// nonetheless public because of the `must_use` annotation.
-///
-/// See also [`SliceParallelSource`].
-///
-/// ```
-/// # use paralight::iter::MutSliceParallelSource;
-/// # use paralight::prelude::*;
-/// # let mut thread_pool = ThreadPoolBuilder {
-/// #     num_threads: ThreadCount::AvailableParallelism,
-/// #     range_strategy: RangeStrategy::WorkStealing,
-/// #     cpu_pinning: CpuPinningPolicy::No,
-/// # }
-/// # .build();
-/// let mut values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-/// let iter: MutSliceParallelSource<_> = values.par_iter_mut();
-/// iter.with_thread_pool(&mut thread_pool)
-///     .for_each(|x| *x *= 2);
-/// assert_eq!(values, [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]);
-/// ```
-#[must_use = "iterator adaptors are lazy"]
-pub struct MutSliceParallelSource<'data, T> {
-    slice: &'data mut [T],
-}
-
 impl<'data, T: Send + 'data> IntoExactParallelRefMutSource<'data> for [T] {
     type Item = &'data mut T;
-    type Source = MutSliceParallelSource<'data, T>;
 
-    fn par_iter_mut(&'data mut self) -> Self::Source {
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let mut values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// values
+    ///     .par_iter_mut()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .for_each(|x| *x *= 2);
+    /// assert_eq!(values, [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]);
+    /// ```
+    fn par_iter_mut(&'data mut self) -> impl ExactParallelSource<Item = Self::Item> {
         MutSliceParallelSource { slice: self }
     }
+}
+
+struct MutSliceParallelSource<'data, T> {
+    slice: &'data mut [T],
 }
 
 impl<'data, T: Send> ExactParallelSource for MutSliceParallelSource<'data, T> {

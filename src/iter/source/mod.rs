@@ -146,6 +146,7 @@ pub trait ExactSourceDescriptor: SourceCleanup {
 /// [`with_thread_pool()`](ParallelSourceExt::with_thread_pool) function.
 ///
 /// See also [`ExactParallelSource`].
+#[must_use = "iterator adaptors are lazy"]
 pub trait ParallelSource: Sized {
     /// The type of items that this parallel source produces.
     ///
@@ -168,6 +169,7 @@ pub trait ParallelSource: Sized {
 /// [`with_thread_pool()`](ExactParallelSourceExt::with_thread_pool) function.
 ///
 /// See also [`ParallelSource`].
+#[must_use = "iterator adaptors are lazy"]
 pub trait ExactParallelSource: Sized {
     /// The type of items that this parallel source produces.
     ///
@@ -191,11 +193,8 @@ pub trait IntoParallelSource {
     /// hence the required [`Send`] bound.
     type Item: Send;
 
-    /// Target parallel source type.
-    type Source: ParallelSource<Item = Self::Item>;
-
     /// Converts `self` into a parallel source.
-    fn into_par_iter(self) -> Self::Source;
+    fn into_par_iter(self) -> impl ParallelSource<Item = Self::Item>;
 }
 
 /// Trait for converting into an [`ExactParallelSource`].
@@ -208,11 +207,8 @@ pub trait IntoExactParallelSource {
     /// hence the required [`Send`] bound.
     type Item: Send;
 
-    /// Target parallel source type.
-    type Source: ExactParallelSource<Item = Self::Item>;
-
     /// Converts `self` into a parallel source.
-    fn into_par_iter(self) -> Self::Source;
+    fn into_par_iter(self) -> impl ExactParallelSource<Item = Self::Item>;
 }
 
 /// Trait for converting into a [`ParallelSource`] that produces references.
@@ -225,11 +221,8 @@ pub trait IntoParallelRefSource<'data> {
     /// hence the required [`Send`] bound.
     type Item: Send;
 
-    /// Target parallel source type.
-    type Source: ParallelSource<Item = Self::Item>;
-
     /// Converts `&self` into a parallel source.
-    fn par_iter(&'data self) -> Self::Source;
+    fn par_iter(&'data self) -> impl ParallelSource<Item = Self::Item>;
 }
 
 /// Trait for converting into an [`ExactParallelSource`] that produces
@@ -243,9 +236,6 @@ pub trait IntoExactParallelRefSource<'data> {
     /// [`ParallelIterator::pipeline()`](super::ParallelIterator::pipeline)),
     /// hence the required [`Send`] bound.
     type Item: Send;
-
-    /// Target parallel source type.
-    type Source: ExactParallelSource<Item = Self::Item>;
 
     /// Converts `&self` into a parallel source.
     ///
@@ -264,7 +254,7 @@ pub trait IntoExactParallelRefSource<'data> {
     ///     .sum::<i32>();
     /// assert_eq!(sum, 5 * 11);
     /// ```
-    fn par_iter(&'data self) -> Self::Source;
+    fn par_iter(&'data self) -> impl ExactParallelSource<Item = Self::Item>;
 }
 
 /// Trait for converting into a [`ParallelSource`] that produces mutable
@@ -278,11 +268,8 @@ pub trait IntoParallelRefMutSource<'data> {
     /// hence the required [`Send`] bound.
     type Item: Send;
 
-    /// Target parallel source type.
-    type Source: ParallelSource<Item = Self::Item>;
-
     /// Converts `&mut self` into a parallel source.
-    fn par_iter_mut(&'data mut self) -> Self::Source;
+    fn par_iter_mut(&'data mut self) -> impl ParallelSource<Item = Self::Item>;
 }
 
 /// Trait for converting into an [`ExactParallelSource`] that produces mutable
@@ -296,9 +283,6 @@ pub trait IntoExactParallelRefMutSource<'data> {
     /// [`ParallelIterator::pipeline()`](super::ParallelIterator::pipeline)),
     /// hence the required [`Send`] bound.
     type Item: Send;
-
-    /// Target parallel source type.
-    type Source: ExactParallelSource<Item = Self::Item>;
 
     /// Converts `&mut self` into a parallel source.
     ///
@@ -319,7 +303,7 @@ pub trait IntoExactParallelRefMutSource<'data> {
     ///     });
     /// assert_eq!(values, [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]);
     /// ```
-    fn par_iter_mut(&'data mut self) -> Self::Source;
+    fn par_iter_mut(&'data mut self) -> impl ExactParallelSource<Item = Self::Item>;
 }
 
 /// Additional methods provided for types that implement [`ParallelSource`].
@@ -333,7 +317,10 @@ pub trait ParallelSourceExt: ParallelSource {
     /// be relevant when combined with order-sensitive adaptors (e.g.
     /// [`enumerate()`](ExactParallelSourceExt::enumerate),
     /// [`take()`](ExactParallelSourceExt::take), etc.).
-    fn chain<T: ParallelSource<Item = Self::Item>>(self, next: T) -> Chain<Self, T> {
+    fn chain<T: ParallelSource<Item = Self::Item>>(
+        self,
+        next: T,
+    ) -> impl ParallelSource<Item = Self::Item> {
         Chain {
             first: self,
             second: next,
@@ -349,7 +336,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// with order-sensitive adaptors (e.g.
     /// [`enumerate()`](ExactParallelSourceExt::enumerate),
     /// [`take()`](ExactParallelSourceExt::take), etc.).
-    fn rev(self) -> Rev<Self> {
+    fn rev(self) -> impl ParallelSource<Item = Self::Item> {
         Rev { inner: self }
     }
 
@@ -398,7 +385,10 @@ pub trait ExactParallelSourceExt: ExactParallelSource {
     ///     .sum::<i32>();
     /// assert_eq!(sum, 5 * 11);
     /// ```
-    fn chain<T: ExactParallelSource<Item = Self::Item>>(self, next: T) -> Chain<Self, T> {
+    fn chain<T: ExactParallelSource<Item = Self::Item>>(
+        self,
+        next: T,
+    ) -> impl ExactParallelSource<Item = Self::Item> {
         Chain {
             first: self,
             second: next,
@@ -424,7 +414,7 @@ pub trait ExactParallelSourceExt: ExactParallelSource {
     ///     .max_by_key(|(_, &x)| x);
     /// assert_eq!(indexed_max, Some((9, &10)));
     /// ```
-    fn enumerate(self) -> Enumerate<Self> {
+    fn enumerate(self) -> impl ExactParallelSource<Item = (usize, Self::Item)> {
         Enumerate { inner: self }
     }
 
@@ -454,7 +444,7 @@ pub trait ExactParallelSourceExt: ExactParallelSource {
     ///     .sum::<i32>();
     /// assert_eq!(sum, 5 * 11);
     /// ```
-    fn rev(self) -> Rev<Self> {
+    fn rev(self) -> impl ExactParallelSource<Item = Self::Item> {
         Rev { inner: self }
     }
 
@@ -498,7 +488,7 @@ pub trait ExactParallelSourceExt: ExactParallelSource {
     ///     .sum::<i32>();
     /// assert_eq!(sum, 0);
     /// ```
-    fn skip(self, n: usize) -> Skip<Self> {
+    fn skip(self, n: usize) -> impl ExactParallelSource<Item = Self::Item> {
         Skip {
             inner: self,
             count: n,
@@ -544,7 +534,7 @@ pub trait ExactParallelSourceExt: ExactParallelSource {
     ///     .with_thread_pool(&mut thread_pool)
     ///     .sum::<i32>();
     /// ```
-    fn skip_exact(self, n: usize) -> SkipExact<Self> {
+    fn skip_exact(self, n: usize) -> impl ExactParallelSource<Item = Self::Item> {
         SkipExact {
             inner: self,
             count: n,
@@ -614,7 +604,7 @@ pub trait ExactParallelSourceExt: ExactParallelSource {
     ///     .with_thread_pool(&mut thread_pool)
     ///     .sum::<i32>();
     /// ```
-    fn step_by(self, n: usize) -> StepBy<Self> {
+    fn step_by(self, n: usize) -> impl ExactParallelSource<Item = Self::Item> {
         StepBy {
             inner: self,
             step: n,
@@ -660,7 +650,7 @@ pub trait ExactParallelSourceExt: ExactParallelSource {
     ///     .sum::<i32>();
     /// assert_eq!(sum, 5 * 11);
     /// ```
-    fn take(self, n: usize) -> Take<Self> {
+    fn take(self, n: usize) -> impl ExactParallelSource<Item = Self::Item> {
         Take {
             inner: self,
             count: n,
@@ -705,7 +695,7 @@ pub trait ExactParallelSourceExt: ExactParallelSource {
     ///     .with_thread_pool(&mut thread_pool)
     ///     .sum::<i32>();
     /// ```
-    fn take_exact(self, n: usize) -> TakeExact<Self> {
+    fn take_exact(self, n: usize) -> impl ExactParallelSource<Item = Self::Item> {
         TakeExact {
             inner: self,
             count: n,
@@ -744,16 +734,7 @@ pub trait ExactParallelSourceExt: ExactParallelSource {
 
 impl<T: ExactParallelSource> ExactParallelSourceExt for T {}
 
-/// This struct is created by the [`chain()`](ParallelSourceExt::chain) method
-/// on [`ParallelSourceExt`] and [`chain()`](ExactParallelSourceExt::chain) on
-/// [`ExactParallelSourceExt`].
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelSource`]/[`ParallelSourceExt`] or
-/// [`ExactParallelSource`]/[`ExactParallelSourceExt`] traits, but it is
-/// nonetheless public because of the `must_use` annotation.
-#[must_use = "iterator adaptors are lazy"]
-pub struct Chain<First, Second> {
+struct Chain<First, Second> {
     first: First,
     second: Second,
 }
@@ -947,15 +928,7 @@ where
     }
 }
 
-/// This struct is created by the
-/// [`enumerate()`](ExactParallelSourceExt::enumerate)
-/// method on [`ExactParallelSourceExt`].
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ExactParallelSource`] and [`ExactParallelSourceExt`]
-/// traits, but it is nonetheless public because of the `must_use` annotation.
-#[must_use = "iterator adaptors are lazy"]
-pub struct Enumerate<Inner> {
+struct Enumerate<Inner> {
     inner: Inner,
 }
 
@@ -1014,16 +987,7 @@ impl<Inner: ExactSourceDescriptor> ExactSourceDescriptor for EnumerateSourceDesc
     }
 }
 
-/// This struct is created by the [`rev()`](ParallelSourceExt::rev) method on
-/// [`ParallelSourceExt`] and [`rev()`](ExactParallelSourceExt::rev) on
-/// [`ExactParallelSourceExt`].
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelSource`]/[`ParallelSourceExt`] or
-/// [`ExactParallelSource`]/[`ExactParallelSourceExt`] traits, but it is
-/// nonetheless public because of the `must_use` annotation.
-#[must_use = "iterator adaptors are lazy"]
-pub struct Rev<Inner> {
+struct Rev<Inner> {
     inner: Inner,
 }
 
@@ -1127,14 +1091,7 @@ impl<Inner: ExactSourceDescriptor> ExactSourceDescriptor for RevSourceDescriptor
     }
 }
 
-/// This struct is created by the [`skip()`](ExactParallelSourceExt::skip)
-/// method on [`ExactParallelSourceExt`].
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ExactParallelSource`] and [`ExactParallelSourceExt`]
-/// traits, but it is nonetheless public because of the `must_use` annotation.
-#[must_use = "iterator adaptors are lazy"]
-pub struct Skip<Inner> {
+struct Skip<Inner> {
     inner: Inner,
     count: usize,
 }
@@ -1229,15 +1186,7 @@ impl<Inner: SourceCleanup> Drop for SkipSourceDescriptor<Inner> {
     }
 }
 
-/// This struct is created by the
-/// [`skip_exact()`](ExactParallelSourceExt::skip_exact) method on
-/// [`ExactParallelSourceExt`].
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ExactParallelSource`] and [`ExactParallelSourceExt`]
-/// traits, but it is nonetheless public because of the `must_use` annotation.
-#[must_use = "iterator adaptors are lazy"]
-pub struct SkipExact<Inner> {
+struct SkipExact<Inner> {
     inner: Inner,
     count: usize,
 }
@@ -1260,15 +1209,7 @@ impl<Inner: ExactParallelSource> ExactParallelSource for SkipExact<Inner> {
     }
 }
 
-/// This struct is created by the
-/// [`step_by()`](ExactParallelSourceExt::step_by) method on
-/// [`ExactParallelSourceExt`].
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ExactParallelSource`] and [`ExactParallelSourceExt`]
-/// traits, but it is nonetheless public because of the `must_use` annotation.
-#[must_use = "iterator adaptors are lazy"]
-pub struct StepBy<Inner> {
+struct StepBy<Inner> {
     inner: Inner,
     step: usize,
 }
@@ -1382,14 +1323,7 @@ impl<Inner: SourceCleanup> Drop for StepBySourceDescriptor<Inner> {
     }
 }
 
-/// This struct is created by the [`take()`](ExactParallelSourceExt::take)
-/// method on [`ExactParallelSourceExt`].
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ExactParallelSource`] and [`ExactParallelSourceExt`]
-/// traits, but it is nonetheless public because of the `must_use` annotation.
-#[must_use = "iterator adaptors are lazy"]
-pub struct Take<Inner> {
+struct Take<Inner> {
     inner: Inner,
     count: usize,
 }
@@ -1481,15 +1415,7 @@ impl<Inner: SourceCleanup> Drop for TakeSourceDescriptor<Inner> {
     }
 }
 
-/// This struct is created by the
-/// [`take_exact()`](ExactParallelSourceExt::take_exact) method on
-/// [`ExactParallelSourceExt`].
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ExactParallelSource`] and [`ExactParallelSourceExt`]
-/// traits, but it is nonetheless public because of the `must_use` annotation.
-#[must_use = "iterator adaptors are lazy"]
-pub struct TakeExact<Inner> {
+struct TakeExact<Inner> {
     inner: Inner,
     count: usize,
 }

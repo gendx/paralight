@@ -456,12 +456,14 @@ list of places where `unsafe` is needed.
   the `'static` lifetime to a local `'a` as needed. [`Send`](Send) and
   [`Sync`](Sync) implementations are also provided (when sound) on this wrapper
   type.
-- The [`SliceParallelSource`](iter::SliceParallelSource) API in
+- The [`IntoExactParallelRefSource`](iter::IntoExactParallelRefSource)
+  implementation on [slices](slice) in
   [iter/source/slice.rs](https://github.com/gendx/paralight/blob/main/src/iter/source/slice.rs)
   uses [`slice::get_unchecked()`](slice::get_unchecked) as it guides the
   compiler to better optimize the code. In particular, missed vectorized loops
   [were observed](https://github.com/gendx/paralight/issues/12) without it.
-- The [`MutSliceParallelSource`](iter::MutSliceParallelSource) API in
+- The [`IntoExactParallelRefMutSource`](iter::IntoExactParallelRefMutSource)
+  implementation on [slices](slice) in
   [iter/source/slice.rs](https://github.com/gendx/paralight/blob/main/src/iter/source/slice.rs).
   The goal is to provide parallel iterators that produce mutable references
   `&mut T` to items of a mutable slice `&mut [T]`. Sharing a `&mut [T]` with all
@@ -471,7 +473,8 @@ list of places where `unsafe` is needed.
   will consume which item (due to work stealing). An approach that decomposes
   the slice into a pointer-length pair is used instead, making it possible to
   share the raw pointer with all the worker threads.
-- Similarly, the [`VecParallelSource`](iter::VecParallelSource) API in
+- Similarly, the [`IntoExactParallelSource`](iter::IntoExactParallelSource)
+  implementation on [`Vec`](Vec) in
   [iter/source/vec.rs](https://github.com/gendx/paralight/blob/main/src/iter/source/vec.rs)
   provides parallel iterators that consume a `Vec<T>`. This is achieved by
   decomposing the vector into a pointer-length-capacity triple, and sharing the
@@ -480,7 +483,8 @@ list of places where `unsafe` is needed.
   original `Vec<T>` allocation is released when the iterator is dropped (to
   avoid memory leaks), which involves reconstructing it from the
   pointer-allocation pair (via [`Vec::from_raw_parts()`](Vec::from_raw_parts)).
-- Likewise, the [`ArrayParallelSource`](iter::ArrayParallelSource) API in
+- Likewise, the [`IntoExactParallelSource`](iter::IntoExactParallelSource)
+  implementation on [arrays](array) in
   [iter/source/array.rs](https://github.com/gendx/paralight/blob/main/src/iter/source/array.rs)
   provides parallel iterators that consume a `[T; N]`. The situation is similar
   to `Vec<T>`, except that the items aren't allocated on the heap behind a

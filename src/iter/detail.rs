@@ -635,15 +635,6 @@ where
 
 // Adaptor implementations.
 
-/// This struct is created by the
-/// [`cloned()`](super::ParallelIteratorExt::cloned)
-/// method on [`ParallelIteratorExt`](super::ParallelIteratorExt).
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelIterator`] and
-/// [`ParallelIteratorExt`](super::ParallelIteratorExt) traits, but
-/// it is nonetheless public because of the `must_use` annotation.
-#[must_use = "iterator adaptors are lazy"]
 pub struct Cloned<Inner: ParallelIterator> {
     pub(super) inner: Inner,
 }
@@ -670,15 +661,6 @@ where
     }
 }
 
-/// This struct is created by the
-/// [`copied()`](super::ParallelIteratorExt::copied)
-/// method on [`ParallelIteratorExt`](super::ParallelIteratorExt).
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelIterator`] and
-/// [`ParallelIteratorExt`](super::ParallelIteratorExt) traits, but
-/// it is nonetheless public because of the `must_use` annotation.
-#[must_use = "iterator adaptors are lazy"]
 pub struct Copied<Inner: ParallelIterator> {
     pub(super) inner: Inner,
 }
@@ -705,15 +687,6 @@ where
     }
 }
 
-/// This struct is created by the
-/// [`filter()`](super::ParallelIteratorExt::filter)
-/// method on [`ParallelIteratorExt`](super::ParallelIteratorExt).
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelIterator`] and
-/// [`ParallelIteratorExt`](super::ParallelIteratorExt) traits, but
-/// it is nonetheless public because of the `must_use` annotation.
-#[must_use = "iterator adaptors are lazy"]
 pub struct Filter<Inner: ParallelIterator, F> {
     pub(super) inner: Inner,
     pub(super) f: F,
@@ -746,15 +719,6 @@ where
     }
 }
 
-/// This struct is created by the
-/// [`filter_map()`](super::ParallelIteratorExt::filter_map) method on
-/// [`ParallelIteratorExt`](super::ParallelIteratorExt).
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelIterator`] and
-/// [`ParallelIteratorExt`](super::ParallelIteratorExt) traits, but
-/// it is nonetheless public because of the `must_use` annotation.
-#[must_use = "iterator adaptors are lazy"]
 pub struct FilterMap<Inner: ParallelIterator, F> {
     pub(super) inner: Inner,
     pub(super) f: F,
@@ -781,15 +745,6 @@ where
     }
 }
 
-/// This struct is created by the
-/// [`inspect()`](super::ParallelIteratorExt::inspect)
-/// method on [`ParallelIteratorExt`](super::ParallelIteratorExt).
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelIterator`] and
-/// [`ParallelIteratorExt`](super::ParallelIteratorExt) traits, but
-/// it is nonetheless public because of the `must_use` annotation.
-#[must_use = "iterator adaptors are lazy"]
 pub struct Inspect<Inner: ParallelIterator, F> {
     pub(super) inner: Inner,
     pub(super) f: F,
@@ -819,14 +774,6 @@ where
     }
 }
 
-/// This struct is created by the [`map()`](super::ParallelIteratorExt::map)
-/// method on [`ParallelIteratorExt`](super::ParallelIteratorExt).
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelIterator`] and
-/// [`ParallelIteratorExt`](super::ParallelIteratorExt) traits, but
-/// it is nonetheless public because of the `must_use` annotation.
-#[must_use = "iterator adaptors are lazy"]
 pub struct Map<Inner: ParallelIterator, F> {
     pub(super) inner: Inner,
     pub(super) f: F,
@@ -853,15 +800,6 @@ where
     }
 }
 
-/// This struct is created by the
-/// [`map_init()`](super::ParallelIteratorExt::map_init)
-/// method on [`ParallelIteratorExt`](super::ParallelIteratorExt).
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelIterator`] and
-/// [`ParallelIteratorExt`](super::ParallelIteratorExt) traits, but
-/// it is nonetheless public because of the `must_use` annotation.
-#[must_use = "iterator adaptors are lazy"]
 pub struct MapInit<Inner: ParallelIterator, Init, F> {
     pub(super) inner: Inner,
     pub(super) init: Init,

@@ -9,56 +9,57 @@
 use super::{ExactParallelSource, ExactSourceDescriptor, IntoExactParallelSource, SourceCleanup};
 use std::mem::ManuallyDrop;
 
-/// A parallel source over a [`Vec`]. This struct is created by the
-/// [`into_par_iter()`](IntoExactParallelSource::into_par_iter) method on
-/// [`IntoExactParallelSource`].
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ExactParallelSource`] and
-/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt) traits, but it is
-/// nonetheless public because of the `must_use` annotation.
-///
-/// See also [`SliceParallelSource`](super::slice::SliceParallelSource) and
-/// [`MutSliceParallelSource`](super::slice::MutSliceParallelSource).
-///
-/// ```
-/// # use paralight::iter::VecParallelSource;
-/// # use paralight::prelude::*;
-/// # let mut thread_pool = ThreadPoolBuilder {
-/// #     num_threads: ThreadCount::AvailableParallelism,
-/// #     range_strategy: RangeStrategy::WorkStealing,
-/// #     cpu_pinning: CpuPinningPolicy::No,
-/// # }
-/// # .build();
-/// let input = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-/// let iter: VecParallelSource<_> = input.into_par_iter();
-/// let sum = iter.with_thread_pool(&mut thread_pool).sum::<i32>();
-/// assert_eq!(sum, 5 * 11);
-/// ```
-#[must_use = "iterator adaptors are lazy"]
-pub struct VecParallelSource<T> {
-    vec: Vec<T>,
-}
-
 impl<T: Send> IntoExactParallelSource for Vec<T> {
     type Item = T;
-    type Source = VecParallelSource<T>;
 
-    fn into_par_iter(self) -> Self::Source {
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum = input
+    ///     .into_par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// assert_eq!(sum, 5 * 11);
+    /// ```
+    fn into_par_iter(self) -> impl ExactParallelSource<Item = Self::Item> {
         VecParallelSource { vec: self }
     }
 }
 
 impl<T: Send> IntoExactParallelSource for Box<[T]> {
     type Item = T;
-    type Source = VecParallelSource<T>;
 
-    fn into_par_iter(self) -> Self::Source {
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10].into_boxed_slice();
+    /// let sum = input
+    ///     .into_par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// assert_eq!(sum, 5 * 11);
+    /// ```
+    fn into_par_iter(self) -> impl ExactParallelSource<Item = Self::Item> {
         // There's no Box::<[T]>::from_raw_parts(), so we just piggy back on Vec.
         VecParallelSource {
             vec: self.into_vec(),
         }
     }
+}
+
+struct VecParallelSource<T> {
+    vec: Vec<T>,
 }
 
 impl<T: Send> ExactParallelSource for VecParallelSource<T> {

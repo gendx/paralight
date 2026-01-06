@@ -12,43 +12,32 @@ use super::{
 };
 use std::collections::VecDeque;
 
-/// A parallel source over a reference to a [`VecDeque`]. This struct is created
-/// by the [`par_iter()`](IntoExactParallelRefSource::par_iter) method on
-/// [`IntoExactParallelRefSource`].
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ExactParallelSource`] and [`ExactParallelSourceExt`]
-/// traits, but it is nonetheless public because of the `must_use` annotation.
-///
-/// See also [`VecDequeRefMutParallelSource`].
-///
-/// ```
-/// # use paralight::iter::VecDequeRefParallelSource;
-/// # use paralight::prelude::*;
-/// # use std::collections::VecDeque;
-/// # let mut thread_pool = ThreadPoolBuilder {
-/// #     num_threads: ThreadCount::AvailableParallelism,
-/// #     range_strategy: RangeStrategy::WorkStealing,
-/// #     cpu_pinning: CpuPinningPolicy::No,
-/// # }
-/// # .build();
-/// let input: VecDeque<_> = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].into_iter().collect();
-/// let iter: VecDequeRefParallelSource<_> = input.par_iter();
-/// let sum = iter.with_thread_pool(&mut thread_pool).sum::<i32>();
-/// assert_eq!(sum, 5 * 11);
-/// ```
-#[must_use = "iterator adaptors are lazy"]
-pub struct VecDequeRefParallelSource<'data, T> {
-    vec_deque: &'data VecDeque<T>,
-}
-
 impl<'data, T: Sync + 'data> IntoExactParallelRefSource<'data> for VecDeque<T> {
     type Item = &'data T;
-    type Source = VecDequeRefParallelSource<'data, T>;
 
-    fn par_iter(&'data self) -> Self::Source {
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # use std::collections::VecDeque;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input: VecDeque<_> = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].into_iter().collect();
+    /// let sum = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// assert_eq!(sum, 5 * 11);
+    /// ```
+    fn par_iter(&'data self) -> impl ExactParallelSource<Item = Self::Item> {
         VecDequeRefParallelSource { vec_deque: self }
     }
+}
+
+struct VecDequeRefParallelSource<'data, T> {
+    vec_deque: &'data VecDeque<T>,
 }
 
 impl<'data, T: Sync> ExactParallelSource for VecDequeRefParallelSource<'data, T> {
@@ -60,50 +49,37 @@ impl<'data, T: Sync> ExactParallelSource for VecDequeRefParallelSource<'data, T>
     }
 }
 
-/// A parallel source over a mutable reference to a [`VecDeque`]. This struct is
-/// created by the
-/// [`par_iter_mut()`](IntoExactParallelRefMutSource::par_iter_mut)
-/// method on [`IntoExactParallelRefMutSource`].
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ExactParallelSource`] and [`ExactParallelSourceExt`]
-/// traits, but it is nonetheless public because of the `must_use` annotation.
-///
-/// See also [`VecDequeRefParallelSource`].
-///
-/// ```
-/// # use paralight::iter::VecDequeRefMutParallelSource;
-/// # use paralight::prelude::*;
-/// # use std::collections::VecDeque;
-/// # let mut thread_pool = ThreadPoolBuilder {
-/// #     num_threads: ThreadCount::AvailableParallelism,
-/// #     range_strategy: RangeStrategy::WorkStealing,
-/// #     cpu_pinning: CpuPinningPolicy::No,
-/// # }
-/// # .build();
-/// let mut values: VecDeque<_> = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].into_iter().collect();
-/// let iter: VecDequeRefMutParallelSource<_> = values.par_iter_mut();
-/// iter.with_thread_pool(&mut thread_pool)
-///     .for_each(|x| *x *= 2);
-/// assert_eq!(
-///     values,
-///     [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]
-///         .into_iter()
-///         .collect::<VecDeque<_>>()
-/// );
-/// ```
-#[must_use = "iterator adaptors are lazy"]
-pub struct VecDequeRefMutParallelSource<'data, T> {
-    vec_deque: &'data mut VecDeque<T>,
-}
-
 impl<'data, T: Send + 'data> IntoExactParallelRefMutSource<'data> for VecDeque<T> {
     type Item = &'data mut T;
-    type Source = VecDequeRefMutParallelSource<'data, T>;
 
-    fn par_iter_mut(&'data mut self) -> Self::Source {
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # use std::collections::VecDeque;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let mut values: VecDeque<_> = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].into_iter().collect();
+    /// values
+    ///     .par_iter_mut()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .for_each(|x| *x *= 2);
+    /// assert_eq!(
+    ///     values,
+    ///     [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]
+    ///         .into_iter()
+    ///         .collect::<VecDeque<_>>()
+    /// );
+    /// ```
+    fn par_iter_mut(&'data mut self) -> impl ExactParallelSource<Item = Self::Item> {
         VecDequeRefMutParallelSource { vec_deque: self }
     }
+}
+
+struct VecDequeRefMutParallelSource<'data, T> {
+    vec_deque: &'data mut VecDeque<T>,
 }
 
 impl<'data, T: Send> ExactParallelSource for VecDequeRefMutParallelSource<'data, T> {

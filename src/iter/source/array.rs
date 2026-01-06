@@ -10,52 +10,38 @@ use super::{ExactParallelSource, ExactSourceDescriptor, IntoExactParallelSource,
 use std::cell::UnsafeCell;
 use std::mem::MaybeUninit;
 
-/// A parallel source over an [array](array). This struct is created by the
-/// [`into_par_iter()`](IntoExactParallelSource::into_par_iter) method on
-/// [`IntoExactParallelSource`].
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ExactParallelSource`] and
-/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt) traits, but it is
-/// nonetheless public because of the `must_use` annotation.
-///
-/// See also [`SliceParallelSource`](super::slice::SliceParallelSource) and
-/// [`MutSliceParallelSource`](super::slice::MutSliceParallelSource).
-///
 /// ### Stability blockers
 ///
-/// This struct is currently only available on Rust nightly with the `nightly`
-/// feature of Paralight enabled. This is because the implementation depends on
-/// the following nightly Rust features:
+/// This implementation is currently only available on Rust nightly with the
+/// `nightly` feature of Paralight enabled. This is because the implementation
+/// depends on the following nightly Rust features:
 /// - [`array_ptr_get`](https://github.com/rust-lang/rust/issues/119834),
 /// - [`maybe_uninit_uninit_array_transpose`](https://github.com/rust-lang/rust/issues/96097).
-///
-/// ```
-/// # use paralight::iter::ArrayParallelSource;
-/// # use paralight::prelude::*;
-/// # let mut thread_pool = ThreadPoolBuilder {
-/// #     num_threads: ThreadCount::AvailableParallelism,
-/// #     range_strategy: RangeStrategy::WorkStealing,
-/// #     cpu_pinning: CpuPinningPolicy::No,
-/// # }
-/// # .build();
-/// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-/// let iter: ArrayParallelSource<_, 10> = input.into_par_iter();
-/// let sum = iter.with_thread_pool(&mut thread_pool).sum::<i32>();
-/// assert_eq!(sum, 5 * 11);
-/// ```
-#[must_use = "iterator adaptors are lazy"]
-pub struct ArrayParallelSource<T, const N: usize> {
-    array: [T; N],
-}
-
 impl<T: Send, const N: usize> IntoExactParallelSource for [T; N] {
     type Item = T;
-    type Source = ArrayParallelSource<T, N>;
 
-    fn into_par_iter(self) -> Self::Source {
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum = input
+    ///     .into_par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// assert_eq!(sum, 5 * 11);
+    /// ```
+    fn into_par_iter(self) -> impl ExactParallelSource<Item = Self::Item> {
         ArrayParallelSource { array: self }
     }
+}
+
+struct ArrayParallelSource<T, const N: usize> {
+    array: [T; N],
 }
 
 impl<T: Send, const N: usize> ExactParallelSource for ArrayParallelSource<T, N> {

@@ -11,25 +11,18 @@
 mod detail;
 mod source;
 
+pub use detail::MinMaxResult;
 use detail::{
-    AdaptorAccumulator, Fuse, IterAccumulator, IterCollector, IterFolder, IterReducer,
-    MinMaxAccumulator, ProductAccumulator, ShortCircuitingAccumulator, SumAccumulator,
-    TryIterCollector, TryIterFolder,
+    AdaptorAccumulator, Cloned, Copied, Filter, FilterMap, Fuse, Inspect, IterAccumulator,
+    IterCollector, IterFolder, IterReducer, Map, MapInit, MinMaxAccumulator, ProductAccumulator,
+    ShortCircuitingAccumulator, SumAccumulator, TryIterCollector, TryIterFolder,
 };
-pub use detail::{Cloned, Copied, Filter, FilterMap, Inspect, Map, MapInit, MinMaxResult};
-#[cfg(feature = "nightly")]
-pub use source::array::ArrayParallelSource;
-pub use source::range::{RangeInclusiveParallelSource, RangeParallelSource};
-pub use source::slice::{MutSliceParallelSource, SliceParallelSource};
-pub use source::vec::VecParallelSource;
-pub use source::vec_deque::{VecDequeRefMutParallelSource, VecDequeRefParallelSource};
 pub use source::zip::{ZipEq, ZipMax, ZipMin, ZipableSource};
 pub use source::{
-    BaseExactParallelIterator, BaseParallelIterator, Chain, Enumerate, ExactParallelSource,
-    ExactParallelSourceExt, ExactSourceDescriptor, IntoExactParallelRefMutSource,
-    IntoExactParallelRefSource, IntoExactParallelSource, IntoParallelRefMutSource,
-    IntoParallelRefSource, IntoParallelSource, ParallelSource, ParallelSourceExt, Rev, Skip,
-    SkipExact, SourceCleanup, SourceDescriptor, StepBy, Take, TakeExact,
+    BaseExactParallelIterator, BaseParallelIterator, ExactParallelSource, ExactParallelSourceExt,
+    ExactSourceDescriptor, IntoExactParallelRefMutSource, IntoExactParallelRefSource,
+    IntoExactParallelSource, IntoParallelRefMutSource, IntoParallelRefSource, IntoParallelSource,
+    ParallelSource, ParallelSourceExt, SourceCleanup, SourceDescriptor,
 };
 use std::cmp::Ordering;
 use std::iter::{Product, Sum};
@@ -157,6 +150,7 @@ where
 /// An iterator to process items in parallel. The [`ParallelIteratorExt`] trait
 /// provides additional methods (iterator adaptors) as an extension of this
 /// trait.
+#[must_use = "iterator adaptors are lazy"]
 pub trait ParallelIterator: Sized {
     /// The type of items that this parallel iterator produces.
     ///
@@ -677,7 +671,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///     );
     /// assert_eq!(*sum, 5 * 11);
     /// ```
-    fn cloned<'a, T>(self) -> Cloned<Self>
+    fn cloned<'a, T>(self) -> impl ParallelIterator<Item = T>
     where
         Self: ParallelIterator<Item = &'a T>,
         T: Clone + 'a,
@@ -1009,7 +1003,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///     .reduce(|| 0, |x, y| x + y);
     /// assert_eq!(sum, 5 * 11);
     /// ```
-    fn copied<'a, T>(self) -> Copied<Self>
+    fn copied<'a, T>(self) -> impl ParallelIterator<Item = T>
     where
         Self: ParallelIterator<Item = &'a T>,
         T: Copy + 'a,
@@ -1229,7 +1223,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///     .sum::<i32>();
     /// assert_eq!(sum_even, 5 * 6);
     /// ```
-    fn filter<F>(self, f: F) -> Filter<Self, F>
+    fn filter<F>(self, f: F) -> impl ParallelIterator<Item = Self::Item>
     where
         F: Fn(&Self::Item) -> bool + Sync,
     {
@@ -1278,7 +1272,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///     .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
     /// assert_eq!(sum_even, 5 * 6);
     /// ```
-    fn filter_map<T, F>(self, f: F) -> FilterMap<Self, F>
+    fn filter_map<T, F>(self, f: F) -> impl ParallelIterator<Item = T>
     where
         F: Fn(Self::Item) -> Option<T> + Sync,
     {
@@ -1727,7 +1721,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// assert_eq!(min, Some(&1));
     /// assert_eq!(inspections.load(Ordering::Relaxed), 10);
     /// ```
-    fn inspect<F>(self, f: F) -> Inspect<Self, F>
+    fn inspect<F>(self, f: F) -> impl ParallelIterator<Item = Self::Item>
     where
         F: Fn(&Self::Item) + Sync,
     {
@@ -1777,7 +1771,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///     .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
     /// assert_eq!(sum, 5 * 11);
     /// ```
-    fn map<T, F>(self, f: F) -> Map<Self, F>
+    fn map<T, F>(self, f: F) -> impl ParallelIterator<Item = T>
     where
         F: Fn(Self::Item) -> T + Sync,
     {
@@ -1815,7 +1809,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// assert!(randomized_sum >= 10 * 11);
     /// assert!(randomized_sum <= 15 * 11);
     /// ```
-    fn map_init<I, Init, T, F>(self, init: Init, f: F) -> MapInit<Self, Init, F>
+    fn map_init<I, Init, T, F>(self, init: Init, f: F) -> impl ParallelIterator<Item = T>
     where
         Init: Fn() -> I + Sync,
         F: Fn(&mut I, Self::Item) -> T + Sync,

@@ -48,52 +48,70 @@ impl ExactSourceDescriptor for RangeSourceDescriptor<usize> {
     }
 }
 
-/// A parallel source over a [`Range`]. This struct is created by the
-/// [`into_par_iter()`](IntoExactParallelSource::into_par_iter) method on
-/// [`IntoExactParallelSource`].
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ExactParallelSource`] and
-/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt) traits, but it is
-/// nonetheless public because of the `must_use` annotation.
-///
-/// See also [`RangeInclusiveParallelSource`].
-///
+#[cfg(feature = "nightly")]
 /// ### Stability blockers
 ///
-/// On stable Rust, this struct is currently only implemented for ranges of
-/// [`usize`]. Ranges over any [`Step`] type are only available on Rust nightly
-/// with the `nightly` feature of Paralight enabled. This is because the
+/// On stable Rust, this implementation is currently only available for ranges
+/// of [`usize`]. Ranges over any [`Step`] type are only available on Rust
+/// nightly with the `nightly` feature of Paralight enabled. This is because the
 /// implementation depends on the
 /// [`step_trait`](https://github.com/rust-lang/rust/issues/42168) nightly Rust
 /// feature.
-///
-/// ```
-/// # use paralight::iter::RangeParallelSource;
-/// # use paralight::prelude::*;
-/// # let mut thread_pool = ThreadPoolBuilder {
-/// #     num_threads: ThreadCount::AvailableParallelism,
-/// #     range_strategy: RangeStrategy::WorkStealing,
-/// #     cpu_pinning: CpuPinningPolicy::No,
-/// # }
-/// # .build();
-/// let iter: RangeParallelSource<usize> = (1..10).into_par_iter();
-/// let sum = iter.with_thread_pool(&mut thread_pool).sum::<usize>();
-/// assert_eq!(sum, 5 * 9);
-/// ```
-#[must_use = "iterator adaptors are lazy"]
-pub struct RangeParallelSource<T> {
-    range: Range<T>,
-}
-
-#[cfg(feature = "nightly")]
 impl<T: Step + Copy + Send + Sync> IntoExactParallelSource for Range<T> {
     type Item = T;
-    type Source = RangeParallelSource<T>;
 
-    fn into_par_iter(self) -> Self::Source {
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let sum = (1..10)
+    ///     .into_par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<usize>();
+    /// assert_eq!(sum, 5 * 9);
+    /// ```
+    fn into_par_iter(self) -> impl ExactParallelSource<Item = Self::Item> {
         RangeParallelSource { range: self }
     }
+}
+
+#[cfg(not(feature = "nightly"))]
+/// ### Stability blockers
+///
+/// On stable Rust, this implementation is currently only available for ranges
+/// of [`usize`]. Ranges over any [`Step`] type are only available on Rust
+/// nightly with the `nightly` feature of Paralight enabled. This is because the
+/// implementation depends on the
+/// [`step_trait`](https://github.com/rust-lang/rust/issues/42168) nightly Rust
+/// feature.
+impl IntoExactParallelSource for Range<usize> {
+    type Item = usize;
+
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let sum = (1..10)
+    ///     .into_par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<usize>();
+    /// assert_eq!(sum, 5 * 9);
+    /// ```
+    fn into_par_iter(self) -> impl ExactParallelSource<Item = Self::Item> {
+        RangeParallelSource { range: self }
+    }
+}
+
+struct RangeParallelSource<T> {
+    range: Range<T>,
 }
 
 #[cfg(feature = "nightly")]
@@ -121,16 +139,6 @@ impl<T: Step + Copy + Send + Sync> ExactParallelSource for RangeParallelSource<T
 }
 
 #[cfg(not(feature = "nightly"))]
-impl IntoExactParallelSource for Range<usize> {
-    type Item = usize;
-    type Source = RangeParallelSource<usize>;
-
-    fn into_par_iter(self) -> Self::Source {
-        RangeParallelSource { range: self }
-    }
-}
-
-#[cfg(not(feature = "nightly"))]
 impl ExactParallelSource for RangeParallelSource<usize> {
     type Item = usize;
 
@@ -147,52 +155,70 @@ impl ExactParallelSource for RangeParallelSource<usize> {
     }
 }
 
-/// A parallel source over a [`RangeInclusive`]. This struct is created by the
-/// [`into_par_iter()`](IntoExactParallelSource::into_par_iter) method on
-/// [`IntoExactParallelSource`].
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ExactParallelSource`] and
-/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt) traits, but it is
-/// nonetheless public because of the `must_use` annotation.
-///
-/// See also [`RangeParallelSource`].
-///
+#[cfg(feature = "nightly")]
 /// ### Stability blockers
 ///
-/// On stable Rust, this struct is currently only implemented for ranges of
-/// [`usize`]. Ranges over any [`Step`] type are only available on Rust nightly
-/// with the `nightly` feature of Paralight enabled. This is because the
+/// On stable Rust, this implementation is currently only available for ranges
+/// of [`usize`]. Ranges over any [`Step`] type are only available on Rust
+/// nightly with the `nightly` feature of Paralight enabled. This is because the
 /// implementation depends on the
 /// [`step_trait`](https://github.com/rust-lang/rust/issues/42168) nightly Rust
 /// feature.
-///
-/// ```
-/// # use paralight::iter::RangeInclusiveParallelSource;
-/// # use paralight::prelude::*;
-/// # let mut thread_pool = ThreadPoolBuilder {
-/// #     num_threads: ThreadCount::AvailableParallelism,
-/// #     range_strategy: RangeStrategy::WorkStealing,
-/// #     cpu_pinning: CpuPinningPolicy::No,
-/// # }
-/// # .build();
-/// let iter: RangeInclusiveParallelSource<usize> = (1..=10).into_par_iter();
-/// let sum = iter.with_thread_pool(&mut thread_pool).sum::<usize>();
-/// assert_eq!(sum, 5 * 11);
-/// ```
-#[must_use = "iterator adaptors are lazy"]
-pub struct RangeInclusiveParallelSource<T> {
-    range: RangeInclusive<T>,
-}
-
-#[cfg(feature = "nightly")]
 impl<T: Step + Copy + Send + Sync> IntoExactParallelSource for RangeInclusive<T> {
     type Item = T;
-    type Source = RangeInclusiveParallelSource<T>;
 
-    fn into_par_iter(self) -> Self::Source {
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let sum = (1..=10)
+    ///     .into_par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<usize>();
+    /// assert_eq!(sum, 5 * 11);
+    /// ```
+    fn into_par_iter(self) -> impl ExactParallelSource<Item = Self::Item> {
         RangeInclusiveParallelSource { range: self }
     }
+}
+
+#[cfg(not(feature = "nightly"))]
+/// ### Stability blockers
+///
+/// On stable Rust, this implementation is currently only available for ranges
+/// of [`usize`]. Ranges over any [`Step`] type are only available on Rust
+/// nightly with the `nightly` feature of Paralight enabled. This is because the
+/// implementation depends on the
+/// [`step_trait`](https://github.com/rust-lang/rust/issues/42168) nightly Rust
+/// feature.
+impl IntoExactParallelSource for RangeInclusive<usize> {
+    type Item = usize;
+
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let sum = (1..=10)
+    ///     .into_par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<usize>();
+    /// assert_eq!(sum, 5 * 11);
+    /// ```
+    fn into_par_iter(self) -> impl ExactParallelSource<Item = Self::Item> {
+        RangeInclusiveParallelSource { range: self }
+    }
+}
+
+struct RangeInclusiveParallelSource<T> {
+    range: RangeInclusive<T>,
 }
 
 #[cfg(feature = "nightly")]
@@ -219,16 +245,6 @@ impl<T: Step + Copy + Send + Sync> ExactParallelSource for RangeInclusiveParalle
             );
         });
         RangeSourceDescriptor { start, len }
-    }
-}
-
-#[cfg(not(feature = "nightly"))]
-impl IntoExactParallelSource for RangeInclusive<usize> {
-    type Item = usize;
-    type Source = RangeInclusiveParallelSource<usize>;
-
-    fn into_par_iter(self) -> Self::Source {
-        RangeInclusiveParallelSource { range: self }
     }
 }
 
