@@ -56,7 +56,7 @@ pub trait RangeFactory {
 /// An orchestrator for the ranges given to all the threads.
 pub trait RangeOrchestrator {
     /// Resets all the ranges to prepare a new computation round.
-    fn reset_ranges(&self, num_elements: usize);
+    fn reset_ranges(&mut self, num_elements: usize);
 
     /// Hook to display various debugging statistics.
     #[cfg(feature = "log_parallelism")]
@@ -169,7 +169,7 @@ pub struct FixedRangeOrchestrator {
 }
 
 impl RangeOrchestrator for FixedRangeOrchestrator {
-    fn reset_ranges(&self, num_elements: usize) {
+    fn reset_ranges(&mut self, num_elements: usize) {
         self.num_elements.store(num_elements, Ordering::Relaxed);
     }
 }
@@ -321,7 +321,7 @@ pub struct WorkStealingRangeOrchestrator {
 }
 
 impl RangeOrchestrator for WorkStealingRangeOrchestrator {
-    fn reset_ranges(&self, num_elements: usize) {
+    fn reset_ranges(&mut self, num_elements: usize) {
         log_debug!("Resetting ranges");
         let num_threads = self.ranges.len() as u64;
         let num_elements = u32::try_from(num_elements).unwrap_or_else(|_| {
@@ -1048,7 +1048,7 @@ mod test {
     fn test_fixed_range() {
         let factory = FixedRangeFactory::new(4);
         let ranges: [_; 4] = std::array::from_fn(|i| factory.range(i));
-        let orchestrator = factory.orchestrator();
+        let mut orchestrator = factory.orchestrator();
 
         std::thread::scope(|s| {
             for _ in 0..10 {
@@ -1076,7 +1076,7 @@ mod test {
 
         let factory = WorkStealingRangeFactory::new(NUM_THREADS);
         let ranges: [_; NUM_THREADS] = std::array::from_fn(|i| factory.range(i));
-        let orchestrator = factory.orchestrator();
+        let mut orchestrator = factory.orchestrator();
 
         std::thread::scope(|s| {
             for _ in 0..10 {
@@ -1118,14 +1118,14 @@ mod test {
     )]
     fn test_work_stealing_range_too_many_items() {
         let factory = WorkStealingRangeFactory::new(4);
-        let orchestrator = factory.orchestrator();
+        let mut orchestrator = factory.orchestrator();
         orchestrator.reset_ranges(10_000_000_000);
     }
 
     #[test]
     fn test_work_stealing_range_many_items() {
         let factory = WorkStealingRangeFactory::new(4);
-        let orchestrator = factory.orchestrator();
+        let mut orchestrator = factory.orchestrator();
         orchestrator.reset_ranges(4_000_000_000);
 
         assert_eq!(

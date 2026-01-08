@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2025-2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -21,7 +21,8 @@ use std::ops::ControlFlow;
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
 
-/// Adaptor to execute Paralight iterators over a thread pool provided by the [Rayon](https://docs.rs/rayon) crate.
+/// Adaptor to execute Paralight iterators over a thread pool provided by the
+/// [Rayon](https://docs.rs/rayon) crate.
 ///
 /// This type implements the [`GenericThreadPool`] trait, allowing to use the
 /// thread pool with Paralight iterators via the
@@ -48,8 +49,86 @@ use std::sync::{Arc, Mutex};
 /// assert_eq!(product, 3_628_800);
 /// # }
 /// ```
+///
+/// This thread pool type can be used recursively, for example to process all
+/// files descending from a directory.
+///
+/// ```
+/// # // By design, there's not much Miri should do about reading files when isolation is enabled.
+/// # #[cfg(not(miri))]
+/// # {
+/// # use paralight::prelude::*;
+/// use std::fs::{read_dir, DirEntry};
+/// use std::io;
+/// use std::path::Path;
+///
+/// fn try_for_all_files(
+///     thread_pool: &RayonThreadPool,
+///     path: &Path,
+///     process_file: &(impl Fn(&Path) -> io::Result<()> + Sync),
+/// ) -> io::Result<()> {
+///     let children: Vec<io::Result<DirEntry>> = read_dir(path)?.collect();
+///
+///     children
+///         .into_par_iter()
+///         .with_thread_pool(thread_pool)
+///         .try_for_each(|entry| -> io::Result<()> {
+///             let entry = entry?;
+///             let entry_path = entry.path();
+///             let file_type = entry.file_type()?;
+///
+///             if file_type.is_dir() {
+///                 try_for_all_files(thread_pool, entry_path.as_path(), process_file)?;
+///             } else if file_type.is_file() {
+///                 process_file(entry_path.as_path())?;
+///             } else {
+///                 eprintln!(
+///                     "Not a directory nor a regular file, skipping: {:?}",
+///                     entry_path.as_path()
+///                 );
+///             }
+///
+///             Ok(())
+///         })?;
+///     Ok(())
+/// }
+///
+/// // Basic usage example: counting descendant files (not necessarily in the most efficient way).
+/// use std::sync::atomic::{AtomicU64, Ordering};
+///
+/// let thread_pool = RayonThreadPool::new_global(
+///     ThreadCount::try_from(rayon_core::current_num_threads())
+///         .expect("Paralight cannot operate with 0 threads"),
+///     RangeStrategy::WorkStealing,
+/// );
+///
+/// let Ok(path) = std::env::current_dir() else {
+///     return;
+/// };
+///
+/// let count_files = AtomicU64::new(0);
+/// let result = try_for_all_files(&thread_pool, &path, &|_file| {
+///     count_files.fetch_add(1, Ordering::Relaxed);
+///     Ok(())
+/// });
+///
+/// match result {
+///     Ok(()) => println!(
+///         "Found {} files in {path:?}",
+///         count_files.load(Ordering::Relaxed)
+///     ),
+///     Err(e) => eprintln!("I/O error: {e:?}"),
+/// }
+/// # }
+/// ```
 pub struct RayonThreadPool<'a> {
-    inner: RayonThreadPoolEnum<'a>,
+    /// Handle to the Rayon thread pool, or [`None`] if using the global Rayon
+    /// thread pool.
+    thread_pool: Option<&'a ThreadPool>,
+    /// Number of parallel tasks to spawn for each iterator pipeline.
+    num_tasks: ThreadCount,
+    /// Strategy to distribute parallel tasks.
+    range_strategy: RangeStrategy,
 }
 
 impl RayonThreadPool<'static> {
@@ -94,7 +173,9 @@ impl RayonThreadPool<'static> {
     /// ```
     pub fn new_global(num_tasks: ThreadCount, range_strategy: RangeStrategy) -> Self {
         Self {
-            inner: RayonThreadPoolEnum::new(None, num_tasks, range_strategy),
+            thread_pool: None,
+            num_tasks,
+            range_strategy,
         }
     }
 }
@@ -155,7 +236,9 @@ impl<'a> RayonThreadPool<'a> {
         range_strategy: RangeStrategy,
     ) -> Self {
         Self {
-            inner: RayonThreadPoolEnum::new(Some(thread_pool), num_tasks, range_strategy),
+            thread_pool: Some(thread_pool),
+            num_tasks,
+            range_strategy,
         }
     }
 }
@@ -164,7 +247,7 @@ impl RayonThreadPool<'_> {
     /// Returns the number of Paralight tasks that are spawned by this thread
     /// pool wrapper.
     pub fn num_tasks(&self) -> NonZeroUsize {
-        self.inner.num_tasks()
+        self.num_tasks.count()
     }
 }
 
@@ -179,9 +262,10 @@ unsafe impl GenericThreadPool for &RayonThreadPool<'_> {
         reduce: impl Fn(Output, Output) -> Output,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
+        let mut inner =
+            RayonThreadPoolEnum::new(self.thread_pool, self.num_tasks, self.range_strategy);
         // Proof of the safety guarantees is deferred to the inner function.
-        self.inner
-            .upper_bounded_pipeline(input_len, init, process_item, finalize, reduce, cleanup)
+        inner.upper_bounded_pipeline(input_len, init, process_item, finalize, reduce, cleanup)
     }
 
     fn iter_pipeline<Output, Accum: Send>(
@@ -191,8 +275,10 @@ unsafe impl GenericThreadPool for &RayonThreadPool<'_> {
         reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
+        let mut inner =
+            RayonThreadPoolEnum::new(self.thread_pool, self.num_tasks, self.range_strategy);
         // Proof of the safety guarantees is deferred to the inner function.
-        self.inner.iter_pipeline(input_len, accum, reduce, cleanup)
+        inner.iter_pipeline(input_len, accum, reduce, cleanup)
     }
 }
 
@@ -228,15 +314,6 @@ impl<'a> RayonThreadPoolEnum<'a> {
         }
     }
 
-    /// Returns the number of Paralight tasks that are spawned by this thread
-    /// pool wrapper.
-    fn num_tasks(&self) -> NonZeroUsize {
-        match self {
-            RayonThreadPoolEnum::Fixed(inner) => inner.num_tasks(),
-            RayonThreadPoolEnum::WorkStealing(inner) => inner.num_tasks(),
-        }
-    }
-
     /// Processes an input of the given length in parallel and returns the
     /// aggregated output.
     ///
@@ -253,7 +330,7 @@ impl<'a> RayonThreadPoolEnum<'a> {
     /// - each index in `0..inner_len` is passed exactly once in calls to
     ///   `process_item()` and `cleanup.cleanup_item_range()`.
     fn upper_bounded_pipeline<Output: Send, Accum>(
-        &self,
+        &mut self,
         input_len: usize,
         init: impl Fn() -> Accum + Sync,
         process_item: impl Fn(Accum, usize) -> ControlFlow<Accum, Accum> + Sync,
@@ -294,7 +371,7 @@ impl<'a> RayonThreadPoolEnum<'a> {
     /// - each index in `0..inner_len` is passed exactly once in calls to
     ///   `accum.accumulate()` and `cleanup.cleanup_item_range()`.
     fn iter_pipeline<Output, Accum: Send>(
-        &self,
+        &mut self,
         input_len: usize,
         accum: impl Accumulator<usize, Accum> + Sync,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
@@ -334,12 +411,6 @@ impl<'a, F: RangeFactory> RayonThreadPoolImpl<'a, F> {
             ranges,
         }
     }
-
-    /// Returns the number of Paralight tasks that are spawned by this thread
-    /// pool wrapper.
-    fn num_tasks(&self) -> NonZeroUsize {
-        self.ranges.len().try_into().unwrap()
-    }
 }
 
 impl<F: RangeFactory> RayonThreadPoolImpl<'_, F> {
@@ -377,7 +448,7 @@ where
     /// - each index in `0..inner_len` is passed exactly once in calls to
     ///   `process_item()` and `cleanup.cleanup_item_range()`.
     fn upper_bounded_pipeline<Output: Send, Accum>(
-        &self,
+        &mut self,
         input_len: usize,
         init: impl Fn() -> Accum + Sync,
         process_item: impl Fn(Accum, usize) -> ControlFlow<Accum, Accum> + Sync,
@@ -435,7 +506,7 @@ where
     /// - each index in `0..inner_len` is passed exactly once in calls to
     ///   `accum.accumulate()` and `cleanup.cleanup_item_range()`.
     fn iter_pipeline<Output, Accum: Send>(
-        &self,
+        &mut self,
         input_len: usize,
         accum: impl Accumulator<usize, Accum> + Sync,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
@@ -493,6 +564,78 @@ mod test {
             let thread_pool =
                 RayonThreadPool::new_global(ThreadCount::try_from(4).unwrap(), range_strategy);
             assert_eq!(thread_pool.num_tasks(), NonZeroUsize::try_from(4).unwrap());
+        }
+    }
+
+    // TODO: Enable Miri once supported by Rayon and its dependencies: https://github.com/crossbeam-rs/crossbeam/issues/1181.
+    #[cfg(not(miri))]
+    mod not_miri {
+        use super::*;
+        use crate::iter::{ExactParallelSourceExt, IntoExactParallelSource, ParallelIteratorExt};
+        use std::ops::Range;
+
+        enum Tree<T> {
+            Leaf(T),
+            Node(Vec<Tree<T>>),
+        }
+
+        fn build_tree<T>(
+            arity: usize,
+            range: Range<usize>,
+            build: &impl Fn(usize) -> T,
+        ) -> Tree<T> {
+            assert!(!range.is_empty());
+            let len = range.end - range.start;
+            if len == 1 {
+                Tree::Leaf(build(range.start))
+            } else if len <= arity {
+                Tree::Node(range.map(|i| Tree::Leaf(build(i))).collect())
+            } else {
+                Tree::Node(
+                    (0..arity)
+                        .map(|i| {
+                            let start = range.start + i * len / arity;
+                            let end = range.start + (i + 1) * len / arity;
+                            build_tree(arity, start..end, build)
+                        })
+                        .collect(),
+                )
+            }
+        }
+
+        fn reduce_tree<T: Send, U: Default + Send>(
+            thread_pool: &RayonThreadPool,
+            tree: Tree<T>,
+            convert: &(impl Fn(T) -> U + Sync),
+            reduce_op: &(impl Fn(U, U) -> U + Sync),
+        ) -> U {
+            match tree {
+                Tree::Leaf(t) => convert(t),
+                Tree::Node(children) => children
+                    .into_par_iter()
+                    .with_thread_pool(thread_pool)
+                    .map(|child| reduce_tree(thread_pool, child, convert, reduce_op))
+                    .reduce(U::default, reduce_op),
+            }
+        }
+
+        const INPUT_LEN: u64 = 100_000;
+
+        #[test]
+        fn test_recursion() {
+            let thread_pool = RayonThreadPool::new_global(
+                ThreadCount::AvailableParallelism,
+                RangeStrategy::WorkStealing,
+            );
+
+            let tree: Tree<u64> = build_tree(10, 0..INPUT_LEN as usize, &|i| i as u64);
+            let sum: u64 = reduce_tree(&thread_pool, tree, &|x| x, &|x, y| x + y);
+            assert_eq!(sum, INPUT_LEN * (INPUT_LEN - 1) / 2);
+
+            let tree: Tree<Box<u64>> =
+                build_tree(10, 0..INPUT_LEN as usize, &|i| Box::new(i as u64));
+            let sum: u64 = reduce_tree(&thread_pool, tree, &|x| *x, &|x, y| x + y);
+            assert_eq!(sum, INPUT_LEN * (INPUT_LEN - 1) / 2);
         }
     }
 }
