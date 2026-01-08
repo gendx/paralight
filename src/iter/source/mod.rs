@@ -10,6 +10,8 @@
 
 #[cfg(feature = "nightly")]
 pub mod array;
+#[cfg(all(test, any(feature = "rayon", feature = "default-thread-pool")))]
+pub(crate) mod hashset;
 pub mod range;
 pub mod slice;
 pub mod vec;

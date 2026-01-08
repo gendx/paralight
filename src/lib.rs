@@ -58,6 +58,7 @@ pub mod prelude {
 
 #[cfg(all(test, any(feature = "rayon", feature = "default-thread-pool")))]
 mod test {
+    use crate::iter::MyHashSet;
     use crate::prelude::*;
     use rand::Rng;
     use std::cell::Cell;
@@ -170,6 +171,7 @@ mod test {
                 #[cfg(feature = "nightly")]
                 test_source_array_find_first_panic => fail("worker thread(s) panicked!", "arithmetic panic"),
                 test_source_boxed_slice,
+                test_source_hashset,
                 test_source_slice,
                 #[cfg(feature = "nightly_tests")]
                 test_source_slice_not_send,
@@ -203,34 +205,36 @@ mod test {
                 test_source_vec_deque_ref,
                 test_source_vec_deque_ref_mut,
                 test_source_adaptor_chain,
-                test_source_adaptor_chain_cleanup,
-                test_source_adaptor_chain_overflow => fail("called chain() with sources that together produce more than usize::MAX items", "called chain() with sources that together produce more than usize::MAX items"),
-                test_source_adaptor_chains_cleanup,
-                test_source_adaptor_enumerate,
-                test_source_adaptor_enumerate_cleanup,
                 test_source_adaptor_rev,
-                test_source_adaptor_rev_cleanup,
-                test_source_adaptor_skip,
-                test_source_adaptor_skip_cleanup,
-                test_source_adaptor_skip_exact,
-                test_source_adaptor_skip_exact_too_much => fail("called skip_exact() with more items than this source produces", "called skip_exact() with more items than this source produces"),
-                test_source_adaptor_step_by,
-                test_source_adaptor_step_by_cleanup,
-                test_source_adaptor_step_by_one,
-                test_source_adaptor_step_by_zero => fail("called step_by() with a step of zero", "called step_by() with a step of zero"),
-                test_source_adaptor_step_by_zero_empty => fail("called step_by() with a step of zero", "called step_by() with a step of zero"),
-                test_source_adaptor_take,
-                test_source_adaptor_take_cleanup,
-                test_source_adaptor_take_exact,
-                test_source_adaptor_take_exact_too_much => fail("called take_exact() with more items than this source produces", "called take_exact() with more items than this source produces"),
-                test_source_adaptor_zip_eq,
-                test_source_adaptor_zip_eq_cleanup,
-                test_source_adaptor_zip_eq_unequal_array => fail("called zip_eq() with sources of different lengths", "called zip_eq() with sources of different lengths"),
-                test_source_adaptor_zip_eq_unequal_tuple => fail("called zip_eq() with sources of different lengths", "called zip_eq() with sources of different lengths"),
-                test_source_adaptor_zip_max,
-                test_source_adaptor_zip_max_cleanup,
-                test_source_adaptor_zip_min,
-                test_source_adaptor_zip_min_cleanup,
+                test_source_exact_adaptor_chain,
+                test_source_exact_adaptor_chain_cleanup,
+                test_source_exact_adaptor_chain_overflow => fail("called chain() with sources that together produce more than usize::MAX items", "called chain() with sources that together produce more than usize::MAX items"),
+                test_source_exact_adaptor_chains_cleanup,
+                test_source_exact_adaptor_enumerate,
+                test_source_exact_adaptor_enumerate_cleanup,
+                test_source_exact_adaptor_rev,
+                test_source_exact_adaptor_rev_cleanup,
+                test_source_exact_adaptor_skip,
+                test_source_exact_adaptor_skip_cleanup,
+                test_source_exact_adaptor_skip_exact,
+                test_source_exact_adaptor_skip_exact_too_much => fail("called skip_exact() with more items than this source produces", "called skip_exact() with more items than this source produces"),
+                test_source_exact_adaptor_step_by,
+                test_source_exact_adaptor_step_by_cleanup,
+                test_source_exact_adaptor_step_by_one,
+                test_source_exact_adaptor_step_by_zero => fail("called step_by() with a step of zero", "called step_by() with a step of zero"),
+                test_source_exact_adaptor_step_by_zero_empty => fail("called step_by() with a step of zero", "called step_by() with a step of zero"),
+                test_source_exact_adaptor_take,
+                test_source_exact_adaptor_take_cleanup,
+                test_source_exact_adaptor_take_exact,
+                test_source_exact_adaptor_take_exact_too_much => fail("called take_exact() with more items than this source produces", "called take_exact() with more items than this source produces"),
+                test_source_exact_adaptor_zip_eq,
+                test_source_exact_adaptor_zip_eq_cleanup,
+                test_source_exact_adaptor_zip_eq_unequal_array => fail("called zip_eq() with sources of different lengths", "called zip_eq() with sources of different lengths"),
+                test_source_exact_adaptor_zip_eq_unequal_tuple => fail("called zip_eq() with sources of different lengths", "called zip_eq() with sources of different lengths"),
+                test_source_exact_adaptor_zip_max,
+                test_source_exact_adaptor_zip_max_cleanup,
+                test_source_exact_adaptor_zip_min,
+                test_source_exact_adaptor_zip_min_cleanup,
                 test_adaptor_all,
                 test_adaptor_any,
                 test_adaptor_cloned,
@@ -1027,6 +1031,18 @@ mod test {
         assert_eq!(needle, Some(Box::new(9)));
     }
 
+    fn test_source_hashset<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<MyHashSet<u64>>();
+        let sum = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(|| 0, |acc, x| acc + x, |acc| acc, |a, b| a + b);
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
     fn test_source_slice<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
@@ -1414,6 +1430,56 @@ mod test {
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
+        let input1 = (0..INPUT_LEN / 2).collect::<MyHashSet<u64>>();
+        let input2 = (INPUT_LEN / 2..=INPUT_LEN).collect::<MyHashSet<u64>>();
+        let sum = input1
+            .par_iter()
+            .chain(input2.par_iter())
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+
+        // Even though each set yields elements in arbitrary order, this specific needle
+        // is guaranteed to be in the first half of the chained iterator.
+        let needle = input1
+            .par_iter()
+            .chain(input2.par_iter())
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .find_first(|x| *x >= INPUT_LEN / 2 - 1);
+        assert_eq!(needle, Some(INPUT_LEN / 2 - 1));
+    }
+
+    fn test_source_adaptor_rev<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<MyHashSet<u64>>();
+        let sum = input
+            .par_iter()
+            .rev()
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+
+        // Even though each set yields elements in arbitrary order, this specific needle
+        // is guaranteed to be in the first half of the chained and reversed iterator.
+        let input1 = (0..INPUT_LEN / 2).collect::<MyHashSet<u64>>();
+        let input2 = (INPUT_LEN / 2..=INPUT_LEN).collect::<MyHashSet<u64>>();
+        let needle = input1
+            .par_iter()
+            .chain(input2.par_iter())
+            .rev()
+            .with_thread_pool(&mut thread_pool)
+            .copied()
+            .find_first(|x| *x <= INPUT_LEN / 2);
+        assert_eq!(needle, Some(INPUT_LEN / 2));
+    }
+
+    fn test_source_exact_adaptor_chain<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
         let input1 = (0..INPUT_LEN / 2).collect::<Vec<u64>>();
         let input2 = (INPUT_LEN / 2..=INPUT_LEN).collect::<Vec<u64>>();
         let sum = input1
@@ -1424,7 +1490,7 @@ mod test {
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_source_adaptor_chain_cleanup<T>(mut thread_pool: T)
+    fn test_source_exact_adaptor_chain_cleanup<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
@@ -1459,7 +1525,7 @@ mod test {
         assert_eq!(needle, Some(Box::new(9)));
     }
 
-    fn test_source_adaptor_chain_overflow<T>(mut thread_pool: T)
+    fn test_source_exact_adaptor_chain_overflow<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
@@ -1470,7 +1536,7 @@ mod test {
             .sum::<usize>();
     }
 
-    fn test_source_adaptor_chains_cleanup<T>(mut thread_pool: T)
+    fn test_source_exact_adaptor_chains_cleanup<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
@@ -1517,7 +1583,7 @@ mod test {
         assert_eq!(needle, Some(Box::new(9)));
     }
 
-    fn test_source_adaptor_enumerate<T>(mut thread_pool: T)
+    fn test_source_exact_adaptor_enumerate<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
@@ -1534,7 +1600,7 @@ mod test {
         );
     }
 
-    fn test_source_adaptor_enumerate_cleanup<T>(mut thread_pool: T)
+    fn test_source_exact_adaptor_enumerate_cleanup<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
@@ -1570,7 +1636,7 @@ mod test {
         assert_eq!(needle, Some((9, Box::new(9))));
     }
 
-    fn test_source_adaptor_rev<T>(mut thread_pool: T)
+    fn test_source_exact_adaptor_rev<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
@@ -1585,7 +1651,7 @@ mod test {
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN - 1) * (INPUT_LEN + 1) / 6);
     }
 
-    fn test_source_adaptor_rev_cleanup<T>(mut thread_pool: T)
+    fn test_source_exact_adaptor_rev_cleanup<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
@@ -1619,7 +1685,7 @@ mod test {
         assert_eq!(needle, Some(Box::new(expected)));
     }
 
-    fn test_source_adaptor_skip<T>(mut thread_pool: T)
+    fn test_source_exact_adaptor_skip<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
@@ -1639,7 +1705,7 @@ mod test {
         assert_eq!(sum_empty, 0);
     }
 
-    fn test_source_adaptor_skip_cleanup<T>(mut thread_pool: T)
+    fn test_source_exact_adaptor_skip_cleanup<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
@@ -1691,7 +1757,7 @@ mod test {
         }
     }
 
-    fn test_source_adaptor_skip_exact<T>(mut thread_pool: T)
+    fn test_source_exact_adaptor_skip_exact<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
@@ -1704,7 +1770,7 @@ mod test {
         assert_eq!(sum, INPUT_LEN.div_ceil(2) * ((3 * INPUT_LEN) / 2 + 1) / 2);
     }
 
-    fn test_source_adaptor_skip_exact_too_much<T>(mut thread_pool: T)
+    fn test_source_exact_adaptor_skip_exact_too_much<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
@@ -1716,7 +1782,7 @@ mod test {
             .sum::<u64>();
     }
 
-    fn test_source_adaptor_step_by<T>(mut thread_pool: T)
+    fn test_source_exact_adaptor_step_by<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
@@ -1751,7 +1817,7 @@ mod test {
         assert_eq!(sum_empty, 0);
     }
 
-    fn test_source_adaptor_step_by_cleanup<T>(mut thread_pool: T)
+    fn test_source_exact_adaptor_step_by_cleanup<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
@@ -1803,7 +1869,7 @@ mod test {
         assert_eq!(needle, Some(Box::new(49)));
     }
 
-    fn test_source_adaptor_step_by_one<T>(mut thread_pool: T)
+    fn test_source_exact_adaptor_step_by_one<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
@@ -1835,7 +1901,7 @@ mod test {
         assert_eq!(needle, Some(Box::new(9)));
     }
 
-    fn test_source_adaptor_step_by_zero<T>(mut thread_pool: T)
+    fn test_source_exact_adaptor_step_by_zero<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
@@ -1847,7 +1913,7 @@ mod test {
             .sum::<u64>();
     }
 
-    fn test_source_adaptor_step_by_zero_empty<T>(mut thread_pool: T)
+    fn test_source_exact_adaptor_step_by_zero_empty<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
@@ -1857,7 +1923,7 @@ mod test {
             .sum::<u64>();
     }
 
-    fn test_source_adaptor_take<T>(mut thread_pool: T)
+    fn test_source_exact_adaptor_take<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
@@ -1877,7 +1943,7 @@ mod test {
         assert_eq!(sum_all, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_source_adaptor_take_cleanup<T>(mut thread_pool: T)
+    fn test_source_exact_adaptor_take_cleanup<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
@@ -1912,7 +1978,7 @@ mod test {
         }
     }
 
-    fn test_source_adaptor_take_exact<T>(mut thread_pool: T)
+    fn test_source_exact_adaptor_take_exact<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
@@ -1925,7 +1991,7 @@ mod test {
         assert_eq!(sum, ((INPUT_LEN / 2) * (INPUT_LEN / 2 + 1)) / 2);
     }
 
-    fn test_source_adaptor_take_exact_too_much<T>(mut thread_pool: T)
+    fn test_source_exact_adaptor_take_exact_too_much<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
@@ -1937,7 +2003,7 @@ mod test {
             .sum::<u64>();
     }
 
-    fn test_source_adaptor_zip_eq<T>(mut thread_pool: T)
+    fn test_source_exact_adaptor_zip_eq<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
@@ -1963,7 +2029,7 @@ mod test {
         assert_eq!(sum_right, 3 * INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_source_adaptor_zip_eq_cleanup<T>(mut thread_pool: T)
+    fn test_source_exact_adaptor_zip_eq_cleanup<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
@@ -2019,7 +2085,7 @@ mod test {
         assert_eq!(needle, Some([Box::new(9), Box::new(INPUT_LEN + 9)]));
     }
 
-    fn test_source_adaptor_zip_eq_unequal_array<T>(mut thread_pool: T)
+    fn test_source_exact_adaptor_zip_eq_unequal_array<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
@@ -2032,7 +2098,7 @@ mod test {
             .reduce(|| [0, 0], |[a, b], [c, d]| [a + c, b + d]);
     }
 
-    fn test_source_adaptor_zip_eq_unequal_tuple<T>(mut thread_pool: T)
+    fn test_source_exact_adaptor_zip_eq_unequal_tuple<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
@@ -2045,7 +2111,7 @@ mod test {
             .reduce(|| (0, 0), |(a, b), (c, d)| (a + c, b + d));
     }
 
-    fn test_source_adaptor_zip_max<T>(mut thread_pool: T)
+    fn test_source_exact_adaptor_zip_max<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
@@ -2071,7 +2137,7 @@ mod test {
         assert_eq!(sum_right, 3 * INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_source_adaptor_zip_max_cleanup<T>(mut thread_pool: T)
+    fn test_source_exact_adaptor_zip_max_cleanup<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
@@ -2131,7 +2197,7 @@ mod test {
         );
     }
 
-    fn test_source_adaptor_zip_min<T>(mut thread_pool: T)
+    fn test_source_exact_adaptor_zip_min<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
@@ -2157,7 +2223,7 @@ mod test {
         assert_eq!(sum_right, 3 * INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
-    fn test_source_adaptor_zip_min_cleanup<T>(mut thread_pool: T)
+    fn test_source_exact_adaptor_zip_min_cleanup<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
     {

@@ -43,6 +43,7 @@ clap = { version = "4.5.31", features = ["derive"] }
 criterion = "0.7.0"
 divan = "0.1.17"
 env_logger = "0.11.6"
+hashbrown = "0.16.1"
 rand = "0.9.0"
 rand_chacha = "0.9.0"
 rayon = "1.10.0"

@@ -19,6 +19,8 @@ use detail::{
 pub use detail::{Cloned, Copied, Filter, FilterMap, Inspect, Map, MapInit, MinMaxResult};
 #[cfg(feature = "nightly")]
 pub use source::array::ArrayParallelSource;
+#[cfg(all(test, any(feature = "rayon", feature = "default-thread-pool")))]
+pub(crate) use source::hashset::MyHashSet;
 pub use source::range::{RangeInclusiveParallelSource, RangeParallelSource};
 pub use source::slice::{MutSliceParallelSource, SliceParallelSource};
 pub use source::vec::VecParallelSource;
