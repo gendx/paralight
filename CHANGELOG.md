@@ -6,7 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## 0.0.9 - 2025-12-19
+## 0.0.10 - 2026-01-09
+
+### Added
+
+- A new form of `ParallelSource` and related traits, for sources that don't
+  produce an item at every index. This paves the way for supporting hash tables
+  (that use the [hashbrown](https://docs.rs/hashbrown) design) as a parallel
+  source.
+- More test coverage.
+
+### Changed
+
+- Renamed `ParallelSource` and related traits to `ExactParallelSource`. Be
+  mindful of the new `ParallelSource` added afterwards, that behaves
+  differently!
+- Moved the `len()` method from the `SourceCleanup` trait to
+  `(Exact)SourceDescriptor`.
+- The structs returned by the `(Exact)ParallelSourceExt` traits are now exported
+  in the crate's public API.
+
+### Fixes
+
+- The `RayonThreadPool` implementation introduced in version 0.0.8 was unsound,
+  as it didn't uphold the contract of the `Sync` trait. It is now working
+  properly even when used recursively and/or concurrently on multiple threads.
+  Affected versions (0.0.8 and 0.0.9) have been yanked.
+
+## 0.0.9 - 2025-12-19 ([yanked](https://doc.rust-lang.org/cargo/commands/cargo-yank.html))
+
+Note: this version has been
+[yanked](https://doc.rust-lang.org/cargo/commands/cargo-yank.html) because its
+`RayonThreadPool` implementation is unsound.
 
 ### Added
 
@@ -30,7 +61,11 @@ and this project adheres to
   guarantees about which element is returned if there are several equal minimal
   or maximal elements.
 
-## 0.0.8 - 2025-11-03
+## 0.0.8 - 2025-11-03 ([yanked](https://doc.rust-lang.org/cargo/commands/cargo-yank.html))
+
+Note: this version has been
+[yanked](https://doc.rust-lang.org/cargo/commands/cargo-yank.html) because its
+`RayonThreadPool` implementation is unsound.
 
 ### Added
 
