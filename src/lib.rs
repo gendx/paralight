@@ -1444,8 +1444,8 @@ mod test {
         let needle = input1
             .par_iter()
             .chain(input2.par_iter())
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .find_first(|x| *x >= INPUT_LEN / 2 - 1);
         assert_eq!(needle, Some(INPUT_LEN / 2 - 1));
     }
@@ -1470,8 +1470,8 @@ mod test {
             .par_iter()
             .chain(input2.par_iter())
             .rev()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .find_first(|x| *x <= INPUT_LEN / 2);
         assert_eq!(needle, Some(INPUT_LEN / 2));
     }
@@ -2346,8 +2346,8 @@ mod test {
         let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
         let sum = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .cloned()
+            .with_thread_pool(&mut thread_pool)
             .reduce(
                 || Box::new(0u64),
                 |mut x, y| {
@@ -2488,8 +2488,8 @@ mod test {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let collection: Vec<Vec<u64>> = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .collect_per_thread();
 
         let mut values: Vec<u64> = collection.into_iter().flatten().collect();
@@ -2499,8 +2499,8 @@ mod test {
         // The inner type can be any collection.
         let collection: Vec<HashSet<u64>> = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .collect_per_thread();
 
         let mut values: Vec<u64> = collection.into_iter().flatten().collect();
@@ -2515,8 +2515,8 @@ mod test {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let sum = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .reduce(|| 0, |x, y| x + y);
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
@@ -2587,8 +2587,8 @@ mod test {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let sum = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .filter(|&&x| x % 2 == 0)
+            .with_thread_pool(&mut thread_pool)
             .sum::<u64>();
         assert_eq!(sum, (INPUT_LEN / 2) * (INPUT_LEN / 2 + 1));
     }
@@ -2600,8 +2600,8 @@ mod test {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let needle = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .filter(|&&x| x % 6 == 5)
+            .with_thread_pool(&mut thread_pool)
             .find_first(|&x| x % 7 == 6);
         assert_eq!(needle, Some(&41));
     }
@@ -2613,8 +2613,8 @@ mod test {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let sum = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .filter_map(|&x| if x % 2 == 0 { Some(x * 3) } else { None })
+            .with_thread_pool(&mut thread_pool)
             .sum::<u64>();
         assert_eq!(sum, 3 * (INPUT_LEN / 2) * (INPUT_LEN / 2 + 1));
     }
@@ -2626,36 +2626,36 @@ mod test {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let first = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .find_any(|&x| x == 0);
         assert_eq!(first, Some(0));
 
         let last = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .find_any(|&x| x == INPUT_LEN);
         assert_eq!(last, Some(INPUT_LEN));
 
         let end = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .find_any(|&x| x == INPUT_LEN + 1);
         assert_eq!(end, None);
 
         let forty_two = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .find_any(|&x| x == 42);
         assert_eq!(forty_two, if INPUT_LEN >= 42 { Some(42) } else { None });
 
         let even = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .find_any(|&x| x % 2 == 0);
         assert!(even.unwrap() % 2 == 0);
 
@@ -2673,43 +2673,43 @@ mod test {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let first = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .find_first(|_| true);
         assert_eq!(first, Some(0));
 
         let last = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .find_first(|&x| x >= INPUT_LEN);
         assert_eq!(last, Some(INPUT_LEN));
 
         let end = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .find_first(|&x| x > INPUT_LEN);
         assert_eq!(end, None);
 
         let forty_two = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .find_first(|&x| x >= 42);
         assert_eq!(forty_two, if INPUT_LEN >= 42 { Some(42) } else { None });
 
         let even = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .find_first(|&x| x % 2 == 0);
         assert_eq!(even, Some(0));
 
         let odd = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .find_first(|&x| x % 2 == 1);
         assert_eq!(odd, Some(1));
 
@@ -2727,36 +2727,36 @@ mod test {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let first = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .find_map_any(|x| if x == 0 { Some(2 * x) } else { None });
         assert_eq!(first, Some(0));
 
         let last = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .find_map_any(|x| if x == INPUT_LEN { Some(2 * x) } else { None });
         assert_eq!(last, Some(2 * INPUT_LEN));
 
         let end = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .find_map_any(|x| if x > INPUT_LEN { Some(2 * x) } else { None });
         assert_eq!(end, None);
 
         let forty_two = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .find_map_any(|x| if x == 42 { Some(2 * x) } else { None });
         assert_eq!(forty_two, if INPUT_LEN >= 42 { Some(84) } else { None });
 
         let even = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .find_map_any(|x| if x % 2 == 0 { Some(2 * x) } else { None });
         assert!(even.unwrap() % 4 == 0);
 
@@ -2774,43 +2774,43 @@ mod test {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let first = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .find_map_first(|x| Some(2 * x));
         assert_eq!(first, Some(0));
 
         let last = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .find_map_first(|x| if x >= INPUT_LEN { Some(2 * x) } else { None });
         assert_eq!(last, Some(2 * INPUT_LEN));
 
         let end = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .find_map_first(|x| if x > INPUT_LEN { Some(2 * x) } else { None });
         assert_eq!(end, None);
 
         let forty_two = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .find_map_first(|x| if x >= 42 { Some(2 * x) } else { None });
         assert_eq!(forty_two, if INPUT_LEN >= 42 { Some(84) } else { None });
 
         let even = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .find_map_first(|x| if x % 2 == 0 { Some(2 * x) } else { None });
         assert_eq!(even, Some(0));
 
         let odd = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .find_map_first(|x| if x % 2 == 1 { Some(2 * x) } else { None });
         assert_eq!(odd, Some(2));
 
@@ -2828,8 +2828,8 @@ mod test {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let collection: Vec<Vec<u64>> = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .fold_per_thread(
                 Vec::new,
                 |mut vec, x| {
@@ -2894,11 +2894,11 @@ mod test {
         let sum = AtomicU64::new(0);
         let max = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
             .inspect(|&x| {
                 sum.fetch_add(x, Ordering::Relaxed);
             })
+            .with_thread_pool(&mut thread_pool)
             .max();
         assert_eq!(max, Some(INPUT_LEN));
 
@@ -2978,24 +2978,24 @@ mod test {
         let mut input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let max = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .max();
         assert_eq!(max, Some(INPUT_LEN));
 
         input.truncate(1);
         let max_one = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .max();
         assert_eq!(max_one, Some(0));
 
         input.clear();
         let max_empty = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .max();
         assert_eq!(max_empty, None);
     }
@@ -3009,8 +3009,8 @@ mod test {
         let mut input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let max = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .max_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
 
         let last_odd = ((INPUT_LEN - 1) / 2) * 2 + 1;
@@ -3019,16 +3019,16 @@ mod test {
         input.truncate(1);
         let max_one = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .max_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
         assert_eq!(max_one, Some(0));
 
         input.clear();
         let max_empty = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .max_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
         assert_eq!(max_empty, None);
     }
@@ -3042,24 +3042,24 @@ mod test {
             .collect::<Vec<(u64, u64)>>();
         let max = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .max_by_key(|pair| pair.1);
         assert_eq!(max, Some((0, INPUT_LEN)));
 
         input.truncate(1);
         let max_one = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .max_by_key(|pair| pair.1);
         assert_eq!(max_one, Some((0, INPUT_LEN)));
 
         input.clear();
         let max_empty = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .max_by_key(|pair| pair.1);
         assert_eq!(max_empty, None);
     }
@@ -3071,24 +3071,24 @@ mod test {
         let mut input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let min = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .min();
         assert_eq!(min, Some(0));
 
         input.truncate(1);
         let min_one = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .min();
         assert_eq!(min_one, Some(0));
 
         input.clear();
         let min_empty = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .min();
         assert_eq!(min_empty, None);
     }
@@ -3102,8 +3102,8 @@ mod test {
         let mut input = (1..=INPUT_LEN).collect::<Vec<u64>>();
         let min = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .min_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
 
         let first_even = 2;
@@ -3112,16 +3112,16 @@ mod test {
         input.truncate(1);
         let min_one = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .min_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
         assert_eq!(min_one, Some(1));
 
         input.clear();
         let min_empty = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .min_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
         assert_eq!(min_empty, None);
     }
@@ -3135,24 +3135,24 @@ mod test {
             .collect::<Vec<(u64, u64)>>();
         let min = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .min_by_key(|pair| pair.1);
         assert_eq!(min, Some((INPUT_LEN, 0)));
 
         input.truncate(1);
         let min_one = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .min_by_key(|pair| pair.1);
         assert_eq!(min_one, Some((0, INPUT_LEN)));
 
         input.clear();
         let min_empty = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .min_by_key(|pair| pair.1);
         assert_eq!(min_empty, None);
     }
@@ -3164,8 +3164,8 @@ mod test {
         let mut input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let minmax = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .minmax();
         assert_eq!(
             minmax,
@@ -3178,16 +3178,16 @@ mod test {
         input.truncate(1);
         let minmax_one = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .minmax();
         assert_eq!(minmax_one, MinMaxResult::OneElement(0));
 
         input.clear();
         let minmax_empty = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .minmax();
         assert_eq!(minmax_empty, MinMaxResult::NoElements);
     }
@@ -3201,8 +3201,8 @@ mod test {
         let mut input = (1..=INPUT_LEN).collect::<Vec<u64>>();
         let minmax = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .minmax_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
 
         let first_even = 2;
@@ -3218,16 +3218,16 @@ mod test {
         input.truncate(1);
         let minmax_one = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .minmax_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
         assert_eq!(minmax_one, MinMaxResult::OneElement(1));
 
         input.clear();
         let minmax_empty = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .minmax_by(|x, y| (*x % 2).cmp(&(*y % 2)).then(x.cmp(y)));
         assert_eq!(minmax_empty, MinMaxResult::NoElements);
     }
@@ -3241,8 +3241,8 @@ mod test {
             .collect::<Vec<(u64, u64)>>();
         let minmax = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .minmax_by_key(|pair| pair.1);
         assert_eq!(
             minmax,
@@ -3255,16 +3255,16 @@ mod test {
         input.truncate(1);
         let minmax_one = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .minmax_by_key(|pair| pair.1);
         assert_eq!(minmax_one, MinMaxResult::OneElement((0, INPUT_LEN)));
 
         input.clear();
         let minmax_empty = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .minmax_by_key(|pair| pair.1);
         assert_eq!(minmax_empty, MinMaxResult::NoElements);
     }
@@ -3361,22 +3361,22 @@ mod test {
 
         let min = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .min_by_key(|pair| pair.1);
         assert_eq!(min, Some((0, 0)));
 
         let max = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .max_by_key(|pair| pair.1);
         assert_eq!(max, Some((INPUT_LEN, 0)));
 
         let minmax = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .minmax_by_key(|pair| pair.1);
         assert_eq!(
             minmax,
@@ -3710,8 +3710,8 @@ mod test {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let sum = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .reduce(|| 0, |x, y| x + y);
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
@@ -3735,8 +3735,8 @@ mod test {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let collection: Result<Vec<Vec<u64>>, ()> = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .map(|&x| Ok(x))
+            .with_thread_pool(&mut thread_pool)
             .try_collect_per_thread();
 
         let mut values: Vec<u64> = collection.unwrap().into_iter().flatten().collect();
@@ -3746,8 +3746,8 @@ mod test {
         // The inner type can be any collection.
         let collection: Result<Vec<HashSet<u64>>, ()> = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .map(|&x| Ok(x))
+            .with_thread_pool(&mut thread_pool)
             .try_collect_per_thread();
 
         let mut values: Vec<u64> = collection.unwrap().into_iter().flatten().collect();
@@ -3756,8 +3756,8 @@ mod test {
 
         let collection: Result<Vec<Vec<u64>>, u64> = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .map(|&x| if x % 2 == 0 { Ok(x) } else { Err(x) })
+            .with_thread_pool(&mut thread_pool)
             .try_collect_per_thread();
         assert!(collection.is_err());
         assert!(collection.unwrap_err() % 2 == 1);
@@ -3771,8 +3771,8 @@ mod test {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let collection: Option<Vec<Vec<u64>>> = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .map(|&x| Some(x))
+            .with_thread_pool(&mut thread_pool)
             .try_collect_per_thread();
 
         let mut values: Vec<u64> = collection.unwrap().into_iter().flatten().collect();
@@ -3782,8 +3782,8 @@ mod test {
         // The inner type can be any collection.
         let collection: Option<Vec<HashSet<u64>>> = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .map(|&x| Some(x))
+            .with_thread_pool(&mut thread_pool)
             .try_collect_per_thread();
 
         let mut values: Vec<u64> = collection.unwrap().into_iter().flatten().collect();
@@ -3792,8 +3792,8 @@ mod test {
 
         let collection: Option<Vec<Vec<u64>>> = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .map(|&x| if x % 2 == 0 { Some(x) } else { None })
+            .with_thread_pool(&mut thread_pool)
             .try_collect_per_thread();
         assert!(collection.is_none());
     }
@@ -3805,8 +3805,8 @@ mod test {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let collection: Result<Vec<Vec<u64>>, ()> = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .try_fold_per_thread(
                 Vec::new,
                 |mut vec, x| {
@@ -3826,8 +3826,8 @@ mod test {
 
         let collection: Result<Vec<Vec<u64>>, ()> = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .try_fold_per_thread(
                 Vec::new,
                 |mut vec, x| {
@@ -3848,8 +3848,8 @@ mod test {
 
         let collection: Result<Vec<Vec<u64>>, ()> = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .try_fold_per_thread(
                 Vec::new,
                 |mut vec, x| {
@@ -3877,8 +3877,8 @@ mod test {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let collection: Option<Vec<Vec<u64>>> = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .try_fold_per_thread(
                 Vec::new,
                 |mut vec, x| {
@@ -3898,8 +3898,8 @@ mod test {
 
         let collection: Option<Vec<Vec<u64>>> = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .try_fold_per_thread(
                 Vec::new,
                 |mut vec, x| {
@@ -3920,8 +3920,8 @@ mod test {
 
         let collection: Option<Vec<Vec<u64>>> = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .try_fold_per_thread(
                 Vec::new,
                 |mut vec, x| {
@@ -4118,16 +4118,16 @@ mod test {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let sum = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .try_reduce(|| 0, |x, y| x.checked_add(y).ok_or("integer overflow"));
         assert_eq!(sum, Ok(INPUT_LEN * (INPUT_LEN + 1) / 2));
 
         let product = input
             .par_iter()
             .skip(1)
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .try_reduce(|| 1, |x, y| x.checked_mul(y).ok_or("integer overflow"));
         assert_eq!(product, Err("integer overflow"));
     }
@@ -4140,16 +4140,16 @@ mod test {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let sum = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .try_reduce(|| 0, |x, y| x.checked_add(y));
         assert_eq!(sum, Some(INPUT_LEN * (INPUT_LEN + 1) / 2));
 
         let product = input
             .par_iter()
             .skip(1)
-            .with_thread_pool(&mut thread_pool)
             .copied()
+            .with_thread_pool(&mut thread_pool)
             .try_reduce(|| 1, |x, y| x.checked_mul(y));
         assert_eq!(product, None);
     }

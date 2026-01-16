@@ -218,6 +218,98 @@ where
     }
 }
 
+/// This struct is created by the [`cloned()`](super::ParallelSourceExt::cloned)
+/// method on [`ParallelSourceExt`](super::ParallelSourceExt) and
+/// [`cloned()`](super::ExactParallelSourceExt::cloned) on
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt).
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the
+/// [`ParallelSource`]/[`ParallelSourceExt`](super::ParallelSourceExt) or
+/// [`ExactParallelSource`]/
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt) traits, but it is
+/// nonetheless public because of the `must_use` annotation.
+#[must_use = "iterator adaptors are lazy"]
+pub struct Cloned<Inner> {
+    pub(super) inner: Inner,
+}
+
+impl<'a, T, Inner> ParallelSource for Cloned<Inner>
+where
+    T: Clone + 'a,
+    Inner: ParallelSource<Item = &'a T>,
+{
+    type Item = T;
+
+    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
+        MapSourceDescriptor {
+            inner: self.inner.descriptor(),
+            f: T::clone,
+        }
+    }
+}
+
+impl<'a, T, Inner> ExactParallelSource for Cloned<Inner>
+where
+    T: Clone + 'a,
+    Inner: ExactParallelSource<Item = &'a T>,
+{
+    type Item = T;
+
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
+        MapSourceDescriptor {
+            inner: self.inner.exact_descriptor(),
+            f: T::clone,
+        }
+    }
+}
+
+/// This struct is created by the [`copied()`](super::ParallelSourceExt::copied)
+/// method on [`ParallelSourceExt`](super::ParallelSourceExt) and
+/// [`copied()`](super::ExactParallelSourceExt::copied) on
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt).
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the
+/// [`ParallelSource`]/[`ParallelSourceExt`](super::ParallelSourceExt) or
+/// [`ExactParallelSource`]/
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt) traits, but it is
+/// nonetheless public because of the `must_use` annotation.
+#[must_use = "iterator adaptors are lazy"]
+pub struct Copied<Inner> {
+    pub(super) inner: Inner,
+}
+
+impl<'a, T, Inner> ParallelSource for Copied<Inner>
+where
+    T: Copy + 'a,
+    Inner: ParallelSource<Item = &'a T>,
+{
+    type Item = T;
+
+    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
+        MapSourceDescriptor {
+            inner: self.inner.descriptor(),
+            f: T::clone,
+        }
+    }
+}
+
+impl<'a, T, Inner> ExactParallelSource for Copied<Inner>
+where
+    T: Copy + 'a,
+    Inner: ExactParallelSource<Item = &'a T>,
+{
+    type Item = T;
+
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
+        MapSourceDescriptor {
+            inner: self.inner.exact_descriptor(),
+            f: T::clone,
+        }
+    }
+}
+
 /// This struct is created by the
 /// [`enumerate()`](super::ExactParallelSourceExt::enumerate) method on
 /// [`ExactParallelSourceExt`](super::ExactParallelSourceExt).
@@ -283,6 +375,351 @@ impl<Inner: ExactSourceDescriptor> ExactSourceDescriptor for EnumerateSourceDesc
         // - if the caller doesn't repeat indices, the enumerate adaptor doesn't repeat
         //   indices passed to the inner descriptor.
         (index, unsafe { self.inner.exact_fetch_item(index) })
+    }
+}
+
+/// This struct is created by the [`filter()`](super::ParallelSourceExt::filter)
+/// method on [`ParallelSourceExt`](super::ParallelSourceExt).
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelSource`] and
+/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it is
+/// nonetheless public because of the `must_use` annotation.
+#[must_use = "iterator adaptors are lazy"]
+pub struct Filter<Inner, F> {
+    pub(super) inner: Inner,
+    pub(super) f: F,
+}
+
+impl<Inner, F> ParallelSource for Filter<Inner, F>
+where
+    Inner: ParallelSource,
+    F: Fn(&Inner::Item) -> bool + Sync,
+{
+    type Item = Inner::Item;
+
+    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
+        FilterMapSourceDescriptor {
+            inner: self.inner.descriptor(),
+            f: move |item| if (self.f)(&item) { Some(item) } else { None },
+        }
+    }
+}
+
+/// This struct is created by the
+/// [`filter()`](super::ExactParallelSourceExt::filter) method on
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt).
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelSource`] and
+/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it is
+/// nonetheless public because of the `must_use` annotation.
+#[must_use = "iterator adaptors are lazy"]
+pub struct FilterExact<Inner, F> {
+    pub(super) inner: Inner,
+    pub(super) f: F,
+}
+
+impl<Inner, F> ParallelSource for FilterExact<Inner, F>
+where
+    Inner: ExactParallelSource,
+    F: Fn(&Inner::Item) -> bool + Sync,
+{
+    type Item = Inner::Item;
+
+    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
+        FilterMapExactSourceDescriptor {
+            inner: self.inner.exact_descriptor(),
+            f: move |item| if (self.f)(&item) { Some(item) } else { None },
+        }
+    }
+}
+
+/// This struct is created by the
+/// [`filter_map()`](super::ParallelSourceExt::filter_map) method on
+/// [`ParallelSourceExt`](super::ParallelSourceExt).
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelSource`] and
+/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it is
+/// nonetheless public because of the `must_use` annotation.
+#[must_use = "iterator adaptors are lazy"]
+pub struct FilterMap<Inner, F> {
+    pub(super) inner: Inner,
+    pub(super) f: F,
+}
+
+impl<Inner, T, F> ParallelSource for FilterMap<Inner, F>
+where
+    Inner: ParallelSource,
+    F: Fn(Inner::Item) -> Option<T> + Sync,
+{
+    type Item = T;
+
+    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
+        FilterMapSourceDescriptor {
+            inner: self.inner.descriptor(),
+            f: self.f,
+        }
+    }
+}
+
+/// This struct is created by the
+/// [`filter_map()`](super::ExactParallelSourceExt::filter_map) method on
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt).
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelSource`] and
+/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it is
+/// nonetheless public because of the `must_use` annotation.
+#[must_use = "iterator adaptors are lazy"]
+pub struct FilterMapExact<Inner, F> {
+    pub(super) inner: Inner,
+    pub(super) f: F,
+}
+
+impl<Inner, T, F> ParallelSource for FilterMapExact<Inner, F>
+where
+    Inner: ExactParallelSource,
+    F: Fn(Inner::Item) -> Option<T> + Sync,
+{
+    type Item = T;
+
+    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
+        FilterMapExactSourceDescriptor {
+            inner: self.inner.exact_descriptor(),
+            f: self.f,
+        }
+    }
+}
+
+struct FilterMapSourceDescriptor<Inner, F> {
+    inner: Inner,
+    f: F,
+}
+
+impl<Inner: SourceCleanup, F> SourceCleanup for FilterMapSourceDescriptor<Inner, F> {
+    const NEEDS_CLEANUP: bool = Inner::NEEDS_CLEANUP;
+
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
+        if Self::NEEDS_CLEANUP {
+            // SAFETY: This descriptor implements a pass-through of indices to the inner
+            // descriptor, therefore safety is preserved by induction.
+            unsafe {
+                self.inner.cleanup_item_range(range);
+            }
+        }
+    }
+}
+
+impl<Inner, T, F> SourceDescriptor for FilterMapSourceDescriptor<Inner, F>
+where
+    Inner: SourceDescriptor,
+    F: Fn(Inner::Item) -> Option<T> + Sync,
+{
+    type Item = T;
+
+    unsafe fn fetch_item(&self, index: usize) -> Option<Self::Item> {
+        // SAFETY: This descriptor implements a pass-through of indices to the inner
+        // descriptor, therefore safety is preserved by induction.
+        let item = unsafe { self.inner.fetch_item(index) };
+        item.and_then(&self.f)
+    }
+}
+
+struct FilterMapExactSourceDescriptor<Inner, F> {
+    inner: Inner,
+    f: F,
+}
+
+impl<Inner: SourceCleanup, F> SourceCleanup for FilterMapExactSourceDescriptor<Inner, F> {
+    const NEEDS_CLEANUP: bool = Inner::NEEDS_CLEANUP;
+
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
+        if Self::NEEDS_CLEANUP {
+            // SAFETY: This descriptor implements a pass-through of indices to the inner
+            // descriptor, therefore safety is preserved by induction.
+            unsafe {
+                self.inner.cleanup_item_range(range);
+            }
+        }
+    }
+}
+
+impl<Inner, T, F> SourceDescriptor for FilterMapExactSourceDescriptor<Inner, F>
+where
+    Inner: ExactSourceDescriptor,
+    F: Fn(Inner::Item) -> Option<T> + Sync,
+{
+    type Item = T;
+
+    unsafe fn fetch_item(&self, index: usize) -> Option<Self::Item> {
+        // SAFETY: This descriptor implements a pass-through of indices to the inner
+        // descriptor, therefore safety is preserved by induction.
+        let item = unsafe { self.inner.exact_fetch_item(index) };
+        (self.f)(item)
+    }
+}
+
+/// This struct is created by the
+/// [`inspect()`](super::ParallelSourceExt::inspect) method on
+/// [`ParallelSourceExt`](super::ParallelSourceExt) and
+/// [`inspect()`](super::ExactParallelSourceExt::inspect) on
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt).
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the
+/// [`ParallelSource`]/[`ParallelSourceExt`](super::ParallelSourceExt) or
+/// [`ExactParallelSource`]/
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt) traits, but it is
+/// nonetheless public because of the `must_use` annotation.
+#[must_use = "iterator adaptors are lazy"]
+pub struct Inspect<Inner, F> {
+    pub(super) inner: Inner,
+    pub(super) f: F,
+}
+
+impl<Inner, F> ParallelSource for Inspect<Inner, F>
+where
+    Inner: ParallelSource,
+    F: Fn(&Inner::Item) + Sync,
+{
+    type Item = Inner::Item;
+
+    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
+        MapSourceDescriptor {
+            inner: self.inner.descriptor(),
+            f: move |item| {
+                (self.f)(&item);
+                item
+            },
+        }
+    }
+}
+
+impl<Inner, F> ExactParallelSource for Inspect<Inner, F>
+where
+    Inner: ExactParallelSource,
+    F: Fn(&Inner::Item) + Sync,
+{
+    type Item = Inner::Item;
+
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
+        MapSourceDescriptor {
+            inner: self.inner.exact_descriptor(),
+            f: move |item| {
+                (self.f)(&item);
+                item
+            },
+        }
+    }
+}
+
+/// This struct is created by the [`map()`](super::ParallelSourceExt::map)
+/// method on [`ParallelSourceExt`](super::ParallelSourceExt) and
+/// [`map()`](super::ExactParallelSourceExt::map) on
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt).
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the
+/// [`ParallelSource`]/[`ParallelSourceExt`](super::ParallelSourceExt) or
+/// [`ExactParallelSource`]/
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt) traits, but it is
+/// nonetheless public because of the `must_use` annotation.
+#[must_use = "iterator adaptors are lazy"]
+pub struct Map<Inner, F> {
+    pub(super) inner: Inner,
+    pub(super) f: F,
+}
+
+impl<Inner, T, F> ParallelSource for Map<Inner, F>
+where
+    Inner: ParallelSource,
+    F: Fn(Inner::Item) -> T + Sync,
+{
+    type Item = T;
+
+    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
+        MapSourceDescriptor {
+            inner: self.inner.descriptor(),
+            f: self.f,
+        }
+    }
+}
+
+impl<Inner, T, F> ExactParallelSource for Map<Inner, F>
+where
+    Inner: ExactParallelSource,
+    F: Fn(Inner::Item) -> T + Sync,
+{
+    type Item = T;
+
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
+        MapSourceDescriptor {
+            inner: self.inner.exact_descriptor(),
+            f: self.f,
+        }
+    }
+}
+
+struct MapSourceDescriptor<Inner, F> {
+    inner: Inner,
+    f: F,
+}
+
+impl<Inner: SourceCleanup, F> SourceCleanup for MapSourceDescriptor<Inner, F> {
+    const NEEDS_CLEANUP: bool = Inner::NEEDS_CLEANUP;
+
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
+        if Self::NEEDS_CLEANUP {
+            // SAFETY: This descriptor implements a pass-through of indices to the inner
+            // descriptor, therefore safety is preserved by induction.
+            unsafe {
+                self.inner.cleanup_item_range(range);
+            }
+        }
+    }
+}
+
+impl<Inner, T, F> SourceDescriptor for MapSourceDescriptor<Inner, F>
+where
+    Inner: SourceDescriptor,
+    F: Fn(Inner::Item) -> T + Sync,
+{
+    type Item = T;
+
+    unsafe fn fetch_item(&self, index: usize) -> Option<Self::Item> {
+        // SAFETY: This descriptor implements a pass-through of indices to the inner
+        // descriptor, therefore safety is preserved by induction.
+        let item = unsafe { self.inner.fetch_item(index) };
+        item.map(&self.f)
+    }
+}
+
+impl<Inner, T, F> ExactSourceDescriptor for MapSourceDescriptor<Inner, F>
+where
+    Inner: ExactSourceDescriptor,
+    F: Fn(Inner::Item) -> T + Sync,
+{
+    type Item = T;
+
+    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
+        // SAFETY: This descriptor implements a pass-through of indices to the inner
+        // descriptor, therefore safety is preserved by induction.
+        let item = unsafe { self.inner.exact_fetch_item(index) };
+        (self.f)(item)
     }
 }
 

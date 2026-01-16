@@ -20,7 +20,10 @@ pub mod vec_deque;
 pub mod zip;
 
 use super::{Accumulator, ExactSizeAccumulator, GenericThreadPool, ParallelIterator};
-pub use detail::{Chain, Enumerate, Rev, Skip, SkipExact, StepBy, Take, TakeExact};
+pub use detail::{
+    Chain, Cloned, Copied, Enumerate, Filter, FilterExact, FilterMap, FilterMapExact, Inspect, Map,
+    Rev, Skip, SkipExact, StepBy, Take, TakeExact,
+};
 use std::ops::ControlFlow;
 
 /// An interface to cleanup a range of items that aren't fetched from a source.
@@ -83,7 +86,7 @@ pub trait SourceCleanup {
 /// An interface describing how to fetch items from a [`ParallelSource`].
 pub trait SourceDescriptor: SourceCleanup {
     /// The type of items that this parallel source produces.
-    type Item: Send;
+    type Item;
 
     /// Fetch the item at the given index, returning [`None`] if there is no
     /// item.
@@ -114,7 +117,7 @@ pub trait SourceDescriptor: SourceCleanup {
 /// An interface describing how to fetch items from an [`ExactParallelSource`].
 pub trait ExactSourceDescriptor: SourceCleanup {
     /// The type of items that this parallel source produces.
-    type Item: Send;
+    type Item;
 
     /// Fetch the item at the given index.
     ///
@@ -153,11 +156,12 @@ pub trait ExactSourceDescriptor: SourceCleanup {
 pub trait ParallelSource: Sized {
     /// The type of items that this parallel source produces.
     ///
-    /// Items are sent to worker threads (where they are then consumed by the
-    /// `process_item` function parameter of the
-    /// [`ParallelIterator::pipeline()`](super::ParallelIterator::pipeline)),
-    /// hence the required [`Send`] bound.
-    type Item: Send;
+    /// Note that this type has no particular [`Send`] nor [`Sync`] bounds, as
+    /// items may be created locally on a worker thread, for example via the
+    /// [`map()`](ParallelSourceExt::map) adaptor. However, initial parallel
+    /// sources require the items to be [`Send`] (via the [`IntoParallelSource`]
+    /// trait), as items are sent to worker threads.
+    type Item;
 
     /// Returns an object that describes how to fetch items from this source.
     fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync;
@@ -175,11 +179,12 @@ pub trait ParallelSource: Sized {
 pub trait ExactParallelSource: Sized {
     /// The type of items that this parallel source produces.
     ///
-    /// Items are sent to worker threads (where they are then consumed by the
-    /// `process_item` function parameter of the
-    /// [`ParallelIterator::pipeline()`](super::ParallelIterator::pipeline)),
-    /// hence the required [`Send`] bound.
-    type Item: Send;
+    /// Note that this type has no particular [`Send`] nor [`Sync`] bounds, as
+    /// items may be created locally on a worker thread, for example via the
+    /// [`map()`](ExactParallelSourceExt::map) adaptor. However, initial
+    /// parallel sources require the items to be [`Send`] (via the
+    /// [`IntoExactParallelSource`] trait), as items are sent to worker threads.
+    type Item;
 
     /// Returns an object that describes how to fetch items from this source.
     fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync;
@@ -337,11 +342,267 @@ pub trait ParallelSourceExt: ParallelSource {
     /// be relevant when combined with order-sensitive adaptors (e.g.
     /// [`enumerate()`](ExactParallelSourceExt::enumerate),
     /// [`take()`](ExactParallelSourceExt::take), etc.).
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let first = [1, 2, 3, 4, 5, 6, 7];
+    /// let second = [8, 9, 10];
+    /// let sum = first
+    ///     .par_iter()
+    ///     .filter(|_| true) // ExactParallelSource -> ParallelSource
+    ///     .chain(second.par_iter().filter(|_| true))
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// assert_eq!(sum, 5 * 11);
+    /// ```
     fn chain<T: ParallelSource<Item = Self::Item>>(self, next: T) -> Chain<Self, T> {
         Chain {
             first: self,
             second: next,
         }
+    }
+
+    /// Returns a parallel source that produces items that are cloned from the
+    /// items of this source. This is useful if you have a source over
+    /// [`&T`](reference) and want a source over `T`, when `T` is [`Clone`].
+    ///
+    /// This is equivalent to calling `.map(|x| x.clone())`.
+    ///
+    /// See also [`copied()`](Self::copied).
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(Box::new);
+    /// let sum = input
+    ///     .par_iter()
+    ///     .filter(|_| true) // ExactParallelSource -> ParallelSource
+    ///     .cloned()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .reduce(
+    ///         || Box::new(0),
+    ///         |mut x, y| {
+    ///             *x += *y;
+    ///             x
+    ///         },
+    ///     );
+    /// assert_eq!(*sum, 5 * 11);
+    /// ```
+    fn cloned<'a, T>(self) -> Cloned<Self>
+    where
+        Self: ParallelSource<Item = &'a T>,
+        T: Clone + 'a,
+    {
+        Cloned { inner: self }
+    }
+
+    /// Returns a parallel source that produces items that are copied from the
+    /// items of this source. This is useful if you have a source over
+    /// [`&T`](reference) and want a source over `T`, when `T` is [`Copy`].
+    ///
+    /// This is equivalent to calling `.map(|x| *x)`.
+    ///
+    /// See also [`cloned()`](Self::cloned).
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum = input
+    ///     .par_iter()
+    ///     .filter(|_| true) // ExactParallelSource -> ParallelSource
+    ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .reduce(|| 0, |x, y| x + y);
+    /// assert_eq!(sum, 5 * 11);
+    /// ```
+    fn copied<'a, T>(self) -> Copied<Self>
+    where
+        Self: ParallelSource<Item = &'a T>,
+        T: Copy + 'a,
+    {
+        Copied { inner: self }
+    }
+
+    /// Returns a parallel source that produces only the items for which the
+    /// predicate `f` returns [`true`].
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum_even = input
+    ///     .par_iter()
+    ///     .filter(|_| true) // ExactParallelSource -> ParallelSource
+    ///     .filter(|&&x| x % 2 == 0)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// assert_eq!(sum_even, 5 * 6);
+    /// ```
+    fn filter<F>(self, f: F) -> Filter<Self, F>
+    where
+        F: Fn(&Self::Item) -> bool + Sync,
+    {
+        Filter { inner: self, f }
+    }
+
+    /// Applies the function `f` to each item of this source, returning a
+    /// parallel source that produces the mapped items `x` for which `f` returns
+    /// [`Some(x)`](Option::Some) and skips the items for which `f` returns
+    /// [`None`].
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum = input
+    ///     .par_iter()
+    ///     .filter(|_| true) // ExactParallelSource -> ParallelSource
+    ///     .filter_map(|&x| if x != 2 { Some(x * 3) } else { None })
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// assert_eq!(sum, 3 * (5 * 11 - 2));
+    /// ```
+    ///
+    /// Mapping to a non-[`Send`] non-[`Sync`] type such as [`Rc`](std::rc::Rc)
+    /// is fine.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # use std::rc::Rc;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum_even = input
+    ///     .par_iter()
+    ///     .filter(|_| true) // ExactParallelSource -> ParallelSource
+    ///     .filter_map(|&x| if x % 2 == 0 { Some(Rc::new(x)) } else { None })
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
+    /// assert_eq!(sum_even, 5 * 6);
+    /// ```
+    fn filter_map<T, F>(self, f: F) -> FilterMap<Self, F>
+    where
+        F: Fn(Self::Item) -> Option<T> + Sync,
+    {
+        FilterMap { inner: self, f }
+    }
+
+    /// Runs the function `f` on each item of this source in a pass-through
+    /// manner, returning a parallel source producing the original items.
+    ///
+    /// This is useful to help debug intermediate stages of an iterator adaptor
+    /// pipeline.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # use std::sync::atomic::{AtomicUsize, Ordering};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let inspections = AtomicUsize::new(0);
+    ///
+    /// let min = input
+    ///     .par_iter()
+    ///     .filter(|_| true) // ExactParallelSource -> ParallelSource
+    ///     .inspect(|x| {
+    ///         println!("[{:?}] x = {x}", std::thread::current().id());
+    ///         inspections.fetch_add(1, Ordering::Relaxed);
+    ///     })
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .min();
+    ///
+    /// assert_eq!(min, Some(&1));
+    /// assert_eq!(inspections.load(Ordering::Relaxed), 10);
+    /// ```
+    fn inspect<F>(self, f: F) -> Inspect<Self, F>
+    where
+        F: Fn(&Self::Item) + Sync,
+    {
+        Inspect { inner: self, f }
+    }
+
+    /// Applies the function `f` to each item of this source, returning a
+    /// parallel source producing the mapped items.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let double_sum = input
+    ///     .par_iter()
+    ///     .filter(|_| true) // ExactParallelSource -> ParallelSource
+    ///     .map(|&x| x * 2)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// assert_eq!(double_sum, 10 * 11);
+    /// ```
+    ///
+    /// Mapping to a non-[`Send`] non-[`Sync`] type such as [`Rc`](std::rc::Rc)
+    /// is fine.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # use std::rc::Rc;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum = input
+    ///     .par_iter()
+    ///     .filter(|_| true) // ExactParallelSource -> ParallelSource
+    ///     .map(|&x| Rc::new(x))
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
+    /// assert_eq!(sum, 5 * 11);
+    /// ```
+    fn map<T, F>(self, f: F) -> Map<Self, F>
+    where
+        F: Fn(Self::Item) -> T + Sync,
+    {
+        Map { inner: self, f }
     }
 
     /// Returns a parallel source that produces items from this source in
@@ -351,14 +612,49 @@ pub trait ParallelSourceExt: ParallelSource {
     /// [`WorkStealing`](crate::threads::RangeStrategy::WorkStealing) mode),
     /// this isn't very useful on its own, but can be relevant when combined
     /// with order-sensitive adaptors (e.g.
-    /// [`enumerate()`](ExactParallelSourceExt::enumerate),
-    /// [`take()`](ExactParallelSourceExt::take), etc.).
+    /// [`find_first()`](super::ParallelIteratorExt::find_first)).
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let first_odd = input
+    ///     .par_iter()
+    ///     .filter(|_| true) // ExactParallelSource -> ParallelSource
+    ///     .rev()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .find_first(|&&x| x % 2 != 0);
+    /// assert_eq!(first_odd, Some(&9));
+    /// ```
     fn rev(self) -> Rev<Self> {
         Rev { inner: self }
     }
 
     /// Attaches the given [`GenericThreadPool`] to this [`ParallelSource`] and
     /// obtain a [`ParallelIterator`].
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// let mut thread_pool = ThreadPoolBuilder {
+    ///     num_threads: ThreadCount::AvailableParallelism,
+    ///     range_strategy: RangeStrategy::WorkStealing,
+    ///     cpu_pinning: CpuPinningPolicy::No,
+    /// }
+    /// .build();
+    ///
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum = input
+    ///     .par_iter()
+    ///     .filter(|_| true) // ExactParallelSource -> ParallelSource
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// assert_eq!(sum, 5 * 11);
+    /// ```
     fn with_thread_pool<T: GenericThreadPool>(
         self,
         thread_pool: T,
@@ -409,6 +705,76 @@ pub trait ExactParallelSourceExt: ExactParallelSource {
         }
     }
 
+    /// Returns a parallel source that produces items that are cloned from the
+    /// items of this source. This is useful if you have a source over
+    /// [`&T`](reference) and want a source over `T`, when `T` is [`Clone`].
+    ///
+    /// This is equivalent to calling `.map(|x| x.clone())`.
+    ///
+    /// See also [`copied()`](Self::copied).
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(Box::new);
+    /// let sum = input
+    ///     .par_iter()
+    ///     .cloned()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .reduce(
+    ///         || Box::new(0),
+    ///         |mut x, y| {
+    ///             *x += *y;
+    ///             x
+    ///         },
+    ///     );
+    /// assert_eq!(*sum, 5 * 11);
+    /// ```
+    fn cloned<'a, T>(self) -> Cloned<Self>
+    where
+        Self: ExactParallelSource<Item = &'a T>,
+        T: Clone + 'a,
+    {
+        Cloned { inner: self }
+    }
+
+    /// Returns a parallel source that produces items that are copied from the
+    /// items of this source. This is useful if you have a source over
+    /// [`&T`](reference) and want a source over `T`, when `T` is [`Copy`].
+    ///
+    /// This is equivalent to calling `.map(|x| *x)`.
+    ///
+    /// See also [`cloned()`](Self::cloned).
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum = input
+    ///     .par_iter()
+    ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .reduce(|| 0, |x, y| x + y);
+    /// assert_eq!(sum, 5 * 11);
+    /// ```
+    fn copied<'a, T>(self) -> Copied<Self>
+    where
+        Self: ExactParallelSource<Item = &'a T>,
+        T: Copy + 'a,
+    {
+        Copied { inner: self }
+    }
+
     /// Returns a parallel source that produces pairs of (index, item) for the
     /// items of this source.
     ///
@@ -430,6 +796,165 @@ pub trait ExactParallelSourceExt: ExactParallelSource {
     /// ```
     fn enumerate(self) -> Enumerate<Self> {
         Enumerate { inner: self }
+    }
+
+    /// Returns a parallel source that produces only the items for which the
+    /// predicate `f` returns [`true`].
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum_even = input
+    ///     .par_iter()
+    ///     .filter(|&&x| x % 2 == 0)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// assert_eq!(sum_even, 5 * 6);
+    /// ```
+    fn filter<F>(self, f: F) -> FilterExact<Self, F>
+    where
+        F: Fn(&Self::Item) -> bool + Sync,
+    {
+        FilterExact { inner: self, f }
+    }
+
+    /// Applies the function `f` to each item of this source, returning a
+    /// parallel source that produces the mapped items `x` for which `f` returns
+    /// [`Some(x)`](Option::Some) and skips the items for which `f` returns
+    /// [`None`].
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum = input
+    ///     .par_iter()
+    ///     .filter_map(|&x| if x != 2 { Some(x * 3) } else { None })
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// assert_eq!(sum, 3 * (5 * 11 - 2));
+    /// ```
+    ///
+    /// Mapping to a non-[`Send`] non-[`Sync`] type such as [`Rc`](std::rc::Rc)
+    /// is fine.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # use std::rc::Rc;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum_even = input
+    ///     .par_iter()
+    ///     .filter_map(|&x| if x % 2 == 0 { Some(Rc::new(x)) } else { None })
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
+    /// assert_eq!(sum_even, 5 * 6);
+    /// ```
+    fn filter_map<T, F>(self, f: F) -> FilterMapExact<Self, F>
+    where
+        F: Fn(Self::Item) -> Option<T> + Sync,
+    {
+        FilterMapExact { inner: self, f }
+    }
+
+    /// Runs the function `f` on each item of this source in a pass-through
+    /// manner, returning a parallel source producing the original items.
+    ///
+    /// This is useful to help debug intermediate stages of an iterator adaptor
+    /// pipeline.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # use std::sync::atomic::{AtomicUsize, Ordering};
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let inspections = AtomicUsize::new(0);
+    ///
+    /// let min = input
+    ///     .par_iter()
+    ///     .inspect(|x| {
+    ///         println!("[{:?}] x = {x}", std::thread::current().id());
+    ///         inspections.fetch_add(1, Ordering::Relaxed);
+    ///     })
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .min();
+    ///
+    /// assert_eq!(min, Some(&1));
+    /// assert_eq!(inspections.load(Ordering::Relaxed), 10);
+    /// ```
+    fn inspect<F>(self, f: F) -> Inspect<Self, F>
+    where
+        F: Fn(&Self::Item) + Sync,
+    {
+        Inspect { inner: self, f }
+    }
+
+    /// Applies the function `f` to each item of this source, returning a
+    /// parallel source producing the mapped items.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let double_sum = input
+    ///     .par_iter()
+    ///     .map(|&x| x * 2)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// assert_eq!(double_sum, 10 * 11);
+    /// ```
+    ///
+    /// Mapping to a non-[`Send`] non-[`Sync`] type such as [`Rc`](std::rc::Rc)
+    /// is fine.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # use std::rc::Rc;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum = input
+    ///     .par_iter()
+    ///     .map(|&x| Rc::new(x))
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
+    /// assert_eq!(sum, 5 * 11);
+    /// ```
+    fn map<T, F>(self, f: F) -> Map<Self, F>
+    where
+        F: Fn(Self::Item) -> T + Sync,
+    {
+        Map { inner: self, f }
     }
 
     /// Returns a parallel source that produces items from this source in

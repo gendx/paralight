@@ -16,7 +16,7 @@ use detail::{
     MinMaxAccumulator, ProductAccumulator, ShortCircuitingAccumulator, SumAccumulator,
     TryIterCollector, TryIterFolder,
 };
-pub use detail::{Cloned, Copied, Filter, FilterMap, Inspect, Map, MapInit, MinMaxResult};
+pub use detail::{Map, MapInit, MinMaxResult};
 #[cfg(feature = "nightly")]
 pub use source::array::ArrayParallelSource;
 #[cfg(all(test, any(feature = "rayon", feature = "default-thread-pool")))]
@@ -27,11 +27,12 @@ pub use source::vec::VecParallelSource;
 pub use source::vec_deque::{VecDequeRefMutParallelSource, VecDequeRefParallelSource};
 pub use source::zip::{ZipEq, ZipMax, ZipMin, ZipableSource};
 pub use source::{
-    BaseExactParallelIterator, BaseParallelIterator, Chain, Enumerate, ExactParallelSource,
-    ExactParallelSourceExt, ExactSourceDescriptor, IntoExactParallelRefMutSource,
-    IntoExactParallelRefSource, IntoExactParallelSource, IntoParallelRefMutSource,
-    IntoParallelRefSource, IntoParallelSource, ParallelSource, ParallelSourceExt, Rev, Skip,
-    SkipExact, SourceCleanup, SourceDescriptor, StepBy, Take, TakeExact,
+    BaseExactParallelIterator, BaseParallelIterator, Chain, Cloned, Copied, Enumerate,
+    ExactParallelSource, ExactParallelSourceExt, ExactSourceDescriptor, Filter, FilterMap, Inspect,
+    IntoExactParallelRefMutSource, IntoExactParallelRefSource, IntoExactParallelSource,
+    IntoParallelRefMutSource, IntoParallelRefSource, IntoParallelSource, ParallelSource,
+    ParallelSourceExt, Rev, Skip, SkipExact, SourceCleanup, SourceDescriptor, StepBy, Take,
+    TakeExact,
 };
 use std::cmp::Ordering;
 use std::iter::{Product, Sum};
@@ -164,9 +165,9 @@ pub trait ParallelIterator: Sized {
     ///
     /// Note that this type has no particular [`Send`] nor [`Sync`] bounds, as
     /// items may be created locally on a worker thread, for example via the
-    /// [`map()`](ParallelIteratorExt::map) adaptor. However, initial
-    /// sources of parallel iterators require the items to be [`Send`],
-    /// via the [`IntoParallelSource`] trait.
+    /// [`map()`](ParallelIteratorExt::map) adaptor. However, initial sources of
+    /// parallel iterators require the items to be [`Send`], via the
+    /// [`IntoParallelSource`] family of traits.
     type Item;
 
     /// Runs the pipeline defined by the given functions on this iterator.
@@ -648,45 +649,6 @@ pub trait ParallelIteratorExt: ParallelIterator {
         )
     }
 
-    /// Returns a parallel iterator that produces items that are cloned from the
-    /// items of this iterator. This is useful if you have an iterator over
-    /// [`&T`](reference) and want an iterator over `T`, when `T` is
-    /// [`Clone`].
-    ///
-    /// This is equivalent to calling `.map(|x| x.clone())`.
-    ///
-    /// See also [`copied()`](Self::copied).
-    ///
-    /// ```
-    /// # use paralight::prelude::*;
-    /// # let mut thread_pool = ThreadPoolBuilder {
-    /// #     num_threads: ThreadCount::AvailableParallelism,
-    /// #     range_strategy: RangeStrategy::WorkStealing,
-    /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # }
-    /// # .build();
-    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(Box::new);
-    /// let sum = input
-    ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
-    ///     .cloned()
-    ///     .reduce(
-    ///         || Box::new(0),
-    ///         |mut x, y| {
-    ///             *x += *y;
-    ///             x
-    ///         },
-    ///     );
-    /// assert_eq!(*sum, 5 * 11);
-    /// ```
-    fn cloned<'a, T>(self) -> Cloned<Self>
-    where
-        Self: ParallelIterator<Item = &'a T>,
-        T: Clone + 'a,
-    {
-        Cloned { inner: self }
-    }
-
     /// Compare the pairs of items produced by this iterator using
     /// [lexicographic](https://en.wikipedia.org/wiki/Lexicographic_order)
     /// order.
@@ -767,8 +729,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let pairs: [(i32, i32); 0] = [];
     /// let ordering = pairs
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .cmp();
     /// assert_eq!(ordering, Ordering::Equal);
     /// ```
@@ -936,8 +898,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let collection: Vec<Vec<i32>> = input
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .collect_per_thread();
     ///
     /// let mut values: Vec<i32> = collection.into_iter().flatten().collect();
@@ -960,8 +922,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let collection: Vec<HashSet<i32>> = input
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .collect_per_thread();
     ///
     /// let mut values: Vec<i32> = collection.into_iter().flatten().collect();
@@ -984,39 +946,6 @@ pub trait ParallelIteratorExt: ParallelIterator {
                 },
             },
         )
-    }
-
-    /// Returns a parallel iterator that produces items that are copied from the
-    /// items of this iterator. This is useful if you have an iterator over
-    /// [`&T`](reference) and want an iterator over `T`, when `T` is
-    /// [`Copy`].
-    ///
-    /// This is equivalent to calling `.map(|x| *x)`.
-    ///
-    /// See also [`cloned()`](Self::cloned).
-    ///
-    /// ```
-    /// # use paralight::prelude::*;
-    /// # let mut thread_pool = ThreadPoolBuilder {
-    /// #     num_threads: ThreadCount::AvailableParallelism,
-    /// #     range_strategy: RangeStrategy::WorkStealing,
-    /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # }
-    /// # .build();
-    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    /// let sum = input
-    ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
-    ///     .copied()
-    ///     .reduce(|| 0, |x, y| x + y);
-    /// assert_eq!(sum, 5 * 11);
-    /// ```
-    fn copied<'a, T>(self) -> Copied<Self>
-    where
-        Self: ParallelIterator<Item = &'a T>,
-        T: Copy + 'a,
-    {
-        Copied { inner: self }
     }
 
     /// Returns [`true`] if all pairs of items produced by this iterator are
@@ -1115,8 +1044,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let pairs: [(i32, i32); 0] = [];
     /// let eq_empty = pairs
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .eq();
     /// assert!(eq_empty);
     /// ```
@@ -1212,81 +1141,6 @@ pub trait ParallelIteratorExt: ParallelIterator {
         self.all(|(t, u)| f(t) == g(u))
     }
 
-    /// Returns a parallel iterator that produces only the items for which the
-    /// predicate `f` returns [`true`].
-    ///
-    /// ```
-    /// # use paralight::prelude::*;
-    /// # let mut thread_pool = ThreadPoolBuilder {
-    /// #     num_threads: ThreadCount::AvailableParallelism,
-    /// #     range_strategy: RangeStrategy::WorkStealing,
-    /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # }
-    /// # .build();
-    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    /// let sum_even = input
-    ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
-    ///     .filter(|&&x| x % 2 == 0)
-    ///     .sum::<i32>();
-    /// assert_eq!(sum_even, 5 * 6);
-    /// ```
-    fn filter<F>(self, f: F) -> Filter<Self, F>
-    where
-        F: Fn(&Self::Item) -> bool + Sync,
-    {
-        Filter { inner: self, f }
-    }
-
-    /// Applies the function `f` to each item of this iterator, returning a
-    /// parallel iterator that produces the mapped items `x` for which `f`
-    /// returns [`Some(x)`](Option::Some) and skips the items for which `f`
-    /// returns [`None`].
-    ///
-    /// ```
-    /// # use paralight::prelude::*;
-    /// # let mut thread_pool = ThreadPoolBuilder {
-    /// #     num_threads: ThreadCount::AvailableParallelism,
-    /// #     range_strategy: RangeStrategy::WorkStealing,
-    /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # }
-    /// # .build();
-    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    /// let sum = input
-    ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
-    ///     .filter_map(|&x| if x != 2 { Some(x * 3) } else { None })
-    ///     .sum::<i32>();
-    /// assert_eq!(sum, 3 * (5 * 11 - 2));
-    /// ```
-    ///
-    /// Mapping to a non-[`Send`] non-[`Sync`] type such as [`Rc`](std::rc::Rc)
-    /// is fine.
-    ///
-    /// ```
-    /// # use paralight::prelude::*;
-    /// # use std::rc::Rc;
-    /// # let mut thread_pool = ThreadPoolBuilder {
-    /// #     num_threads: ThreadCount::AvailableParallelism,
-    /// #     range_strategy: RangeStrategy::WorkStealing,
-    /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # }
-    /// # .build();
-    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    /// let sum_even = input
-    ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
-    ///     .filter_map(|&x| if x % 2 == 0 { Some(Rc::new(x)) } else { None })
-    ///     .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
-    /// assert_eq!(sum_even, 5 * 6);
-    /// ```
-    fn filter_map<T, F>(self, f: F) -> FilterMap<Self, F>
-    where
-        F: Fn(Self::Item) -> Option<T> + Sync,
-    {
-        FilterMap { inner: self, f }
-    }
-
     /// Returns any item that satisfies the predicate `f`, or [`None`] if no
     /// item satisfies it.
     ///
@@ -1319,8 +1173,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// let any_even = input
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .find_any(|&x| x % 2 == 0);
     /// assert!(any_even.unwrap() % 2 == 0);
     /// ```
@@ -1373,8 +1227,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// let first_even = input
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .find_first(|&x| x % 2 == 0);
     /// assert_eq!(first_even, Some(2));
     /// ```
@@ -1567,8 +1421,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let collection: Vec<Vec<i32>> = input
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .fold_per_thread(
     ///         Vec::new,
     ///         |mut vec, x| {
@@ -1697,43 +1551,6 @@ pub trait ParallelIteratorExt: ParallelIterator {
             /* finalize */ |_| (),
             /* reduce */ |(), ()| (),
         )
-    }
-
-    /// Runs the function `f` on each item of this iterator in a pass-through
-    /// manner, returning a parallel iterator producing the original items.
-    ///
-    /// This is useful to help debug intermediate stages of an iterator adaptor
-    /// pipeline.
-    ///
-    /// ```
-    /// # use paralight::prelude::*;
-    /// # use std::sync::atomic::{AtomicUsize, Ordering};
-    /// # let mut thread_pool = ThreadPoolBuilder {
-    /// #     num_threads: ThreadCount::AvailableParallelism,
-    /// #     range_strategy: RangeStrategy::WorkStealing,
-    /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # }
-    /// # .build();
-    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    /// let inspections = AtomicUsize::new(0);
-    ///
-    /// let min = input
-    ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
-    ///     .inspect(|x| {
-    ///         println!("[{:?}] x = {x}", std::thread::current().id());
-    ///         inspections.fetch_add(1, Ordering::Relaxed);
-    ///     })
-    ///     .min();
-    ///
-    /// assert_eq!(min, Some(&1));
-    /// assert_eq!(inspections.load(Ordering::Relaxed), 10);
-    /// ```
-    fn inspect<F>(self, f: F) -> Inspect<Self, F>
-    where
-        F: Fn(&Self::Item) + Sync,
-    {
-        Inspect { inner: self, f }
     }
 
     /// Applies the function `f` to each item of this iterator, returning a
@@ -2305,8 +2122,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let pairs: [(i32, i32); 0] = [];
     /// let ne_empty = pairs
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .ne();
     /// assert!(!ne_empty);
     /// ```
@@ -2501,8 +2318,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let pairs: [(f64, f64); 0] = [];
     /// let ordering = pairs
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .partial_cmp();
     /// assert_eq!(ordering, Some(Ordering::Equal));
     /// ```
@@ -2732,8 +2549,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let sum = input
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .reduce(|| 0, |x, y| x + y);
     /// assert_eq!(sum, 5 * 11);
     /// ```
@@ -2760,8 +2577,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # .build();
     /// let sum = []
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .reduce(|| 0, |x, y| x + y);
     /// assert_eq!(sum, 0);
     /// ```
@@ -2827,8 +2644,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let input = [Ok(1), Ok(2), Ok(3), Ok(4), Ok(5), Ok(6), Ok(7), Ok(8)];
     /// let collection: Result<Vec<Vec<i32>>, i32> = input
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .try_collect_per_thread();
     /// assert!(collection.is_ok());
     ///
@@ -2848,8 +2665,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let input = [Ok(1), Err(2), Ok(3), Err(4), Ok(5), Err(6), Ok(7), Err(8)];
     /// let collection: Result<Vec<Vec<i32>>, i32> = input
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .try_collect_per_thread();
     /// assert!(collection.is_err());
     /// assert!(collection.unwrap_err() % 2 == 0);
@@ -2870,8 +2687,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let input = [Ok(1), Ok(2), Ok(3), Ok(4), Ok(5), Ok(6), Ok(7), Ok(8)];
     /// let collection: Result<Vec<HashSet<i32>>, i32> = input
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .try_collect_per_thread();
     /// assert!(collection.is_ok());
     ///
@@ -2932,8 +2749,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let input = [Ok(1), Ok(2), Ok(3), Ok(4), Ok(5), Ok(6), Ok(7), Ok(8)];
     /// let collection: Result<Vec<Vec<i32>>, i32> = input
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .try_collect_per_thread();
     /// assert!(collection.is_ok());
     ///
@@ -2953,8 +2770,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let input = [Ok(1), Err(2), Ok(3), Err(4), Ok(5), Err(6), Ok(7), Err(8)];
     /// let collection: Result<Vec<Vec<i32>>, i32> = input
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .try_collect_per_thread();
     /// assert!(collection.is_err());
     /// assert!(collection.unwrap_err() % 2 == 0);
@@ -2975,8 +2792,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let input = [Ok(1), Ok(2), Ok(3), Ok(4), Ok(5), Ok(6), Ok(7), Ok(8)];
     /// let collection: Result<Vec<HashSet<i32>>, i32> = input
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .try_collect_per_thread();
     /// assert!(collection.is_ok());
     ///
@@ -2998,8 +2815,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let input = [Some(1), Some(2), Some(3), Some(4), Some(5), Some(6)];
     /// let collection: Option<Vec<Vec<i32>>> = input
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .try_collect_per_thread();
     /// assert!(collection.is_some());
     ///
@@ -3019,8 +2836,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let input = [Some(1), None, Some(3), None, Some(5), None];
     /// let collection: Option<Vec<Vec<i32>>> = input
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .try_collect_per_thread();
     /// assert_eq!(collection, None);
     /// ```
@@ -3037,8 +2854,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let input = [Some(1), Some(2), Some(3), Some(4), Some(5), Some(6)];
     /// let collection: Option<Vec<HashSet<i32>>> = input
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .try_collect_per_thread();
     /// assert!(collection.is_some());
     ///
@@ -3117,8 +2934,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let input: [Result<i32, i32>; 8] = [Ok(1), Ok(2), Ok(3), Ok(4), Ok(5), Ok(6), Ok(7), Ok(8)];
     /// let collection: Result<Vec<Vec<i32>>, i32> = input
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .try_fold_per_thread(
     ///         Vec::new,
     ///         |mut vec, x| -> Result<Vec<i32>, i32> {
@@ -3149,8 +2966,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let input = [Ok(1), Ok(2), Ok(3), Ok(4), Err(5), Ok(6), Ok(7), Ok(8)];
     /// let collection: Result<Vec<Vec<i32>>, i32> = input
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .try_fold_per_thread(
     ///         Vec::new,
     ///         |mut vec, x| -> Result<Vec<i32>, i32> {
@@ -3228,8 +3045,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let input: [Result<i32, i32>; 8] = [Ok(1), Ok(2), Ok(3), Ok(4), Ok(5), Ok(6), Ok(7), Ok(8)];
     /// let collection: Result<Vec<Vec<i32>>, i32> = input
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .try_fold_per_thread(
     ///         Vec::new,
     ///         |mut vec, x| -> Result<Vec<i32>, i32> {
@@ -3260,8 +3077,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let input = [Ok(1), Ok(2), Ok(3), Ok(4), Err(5), Ok(6), Ok(7), Ok(8)];
     /// let collection: Result<Vec<Vec<i32>>, i32> = input
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .try_fold_per_thread(
     ///         Vec::new,
     ///         |mut vec, x| -> Result<Vec<i32>, i32> {
@@ -3290,8 +3107,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let input = [Some(1), Some(2), Some(3), Some(4), Some(5), Some(6)];
     /// let collection: Option<Vec<Vec<i32>>> = input
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .try_fold_per_thread(
     ///         Vec::new,
     ///         |mut vec, x| {
@@ -3322,8 +3139,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let input = [Some(1), Some(2), Some(3), Some(4), None, Some(6)];
     /// let collection: Option<Vec<Vec<i32>>> = input
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .try_fold_per_thread(
     ///         Vec::new,
     ///         |mut vec, x| {
@@ -3845,8 +3662,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let sum = input
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .try_reduce(|| 0i32, |x, y| x.checked_add(y).ok_or("error"));
     /// assert_eq!(sum, Ok(5 * 11));
     /// ```
@@ -3862,8 +3679,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let input = [1, 2, 3, 4, i32::MAX, 6, 7, 8, 9, 10];
     /// let sum = input
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .try_reduce(|| 0i32, |x, y| x.checked_add(y).ok_or("error"));
     /// assert_eq!(sum, Err("error"));
     /// ```
@@ -3878,8 +3695,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # .build();
     /// let sum = []
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .try_reduce(|| 0i32, |x, y| x.checked_add(y).ok_or("error"));
     /// assert_eq!(sum, Ok(0));
     /// ```
@@ -3936,8 +3753,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let sum = input
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .try_reduce(|| 0i32, |x, y| x.checked_add(y).ok_or("error"));
     /// assert_eq!(sum, Ok(5 * 11));
     /// ```
@@ -3953,8 +3770,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let input = [1, 2, 3, 4, i32::MAX, 6, 7, 8, 9, 10];
     /// let sum = input
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .try_reduce(|| 0i32, |x, y| x.checked_add(y).ok_or("error"));
     /// assert_eq!(sum, Err("error"));
     /// ```
@@ -3969,8 +3786,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # .build();
     /// let sum = []
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .try_reduce(|| 0i32, |x, y| x.checked_add(y).ok_or("error"));
     /// assert_eq!(sum, Ok(0));
     /// ```
@@ -3988,8 +3805,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let sum = input
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .try_reduce(|| 0i32, |x, y| x.checked_add(y));
     /// assert_eq!(sum, Some(5 * 11));
     /// ```
@@ -4005,8 +3822,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// let input = [1, 2, 3, 4, i32::MAX, 6, 7, 8, 9, 10];
     /// let sum = input
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .try_reduce(|| 0i32, |x, y| x.checked_add(y));
     /// assert_eq!(sum, None);
     /// ```
@@ -4021,8 +3838,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// # .build();
     /// let sum = []
     ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
     ///     .copied()
+    ///     .with_thread_pool(&mut thread_pool)
     ///     .try_reduce(|| 0i32, |x, y| x.checked_add(y));
     /// assert_eq!(sum, Some(0));
     /// ```
