@@ -44,6 +44,24 @@ use std::mem::MaybeUninit;
 /// let sum = iter.with_thread_pool(&mut thread_pool).sum::<i32>();
 /// assert_eq!(sum, 5 * 11);
 /// ```
+///
+/// The array element type must be [`Send`], so the following example doesn't
+/// compile.
+///
+/// ```compile_fail
+/// # use paralight::iter::ArrayParallelSource;
+/// # use paralight::prelude::*;
+/// use std::rc::Rc;
+///
+/// # let mut thread_pool = ThreadPoolBuilder {
+/// #     num_threads: ThreadCount::AvailableParallelism,
+/// #     range_strategy: RangeStrategy::WorkStealing,
+/// #     cpu_pinning: CpuPinningPolicy::No,
+/// # }
+/// # .build();
+/// let input = [Rc::new(1), Rc::new(2), Rc::new(3), Rc::new(4)];
+/// let iter: ArrayParallelSource<_, 4> = input.into_par_iter();
+/// ```
 #[must_use = "iterator adaptors are lazy"]
 pub struct ArrayParallelSource<T, const N: usize> {
     array: [T; N],

@@ -35,6 +35,23 @@ use std::mem::ManuallyDrop;
 /// let sum = iter.with_thread_pool(&mut thread_pool).sum::<i32>();
 /// assert_eq!(sum, 5 * 11);
 /// ```
+///
+/// The element type must be [`Send`], so the following example doesn't compile.
+///
+/// ```compile_fail
+/// # use paralight::iter::VecParallelSource;
+/// # use paralight::prelude::*;
+/// use std::rc::Rc;
+///
+/// # let mut thread_pool = ThreadPoolBuilder {
+/// #     num_threads: ThreadCount::AvailableParallelism,
+/// #     range_strategy: RangeStrategy::WorkStealing,
+/// #     cpu_pinning: CpuPinningPolicy::No,
+/// # }
+/// # .build();
+/// let input = vec![Rc::new(1), Rc::new(2), Rc::new(3), Rc::new(4)];
+/// let iter: VecParallelSource<_> = input.into_par_iter();
+/// ```
 #[must_use = "iterator adaptors are lazy"]
 pub struct VecParallelSource<T> {
     vec: Vec<T>,

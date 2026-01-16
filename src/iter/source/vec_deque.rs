@@ -37,6 +37,26 @@ use std::collections::VecDeque;
 /// let sum = iter.with_thread_pool(&mut thread_pool).sum::<i32>();
 /// assert_eq!(sum, 5 * 11);
 /// ```
+///
+/// The element type must be [`Sync`], so the following example doesn't compile.
+///
+/// ```compile_fail
+/// # use paralight::iter::VecDequeRefParallelSource;
+/// # use paralight::prelude::*;
+/// # use std::collections::VecDeque;
+/// use std::cell::Cell;
+///
+/// # let mut thread_pool = ThreadPoolBuilder {
+/// #     num_threads: ThreadCount::AvailableParallelism,
+/// #     range_strategy: RangeStrategy::WorkStealing,
+/// #     cpu_pinning: CpuPinningPolicy::No,
+/// # }
+/// # .build();
+/// let input: VecDeque<_> = [Cell::new(1), Cell::new(2), Cell::new(3), Cell::new(4)]
+///     .into_iter()
+///     .collect();
+/// let iter: VecDequeRefParallelSource<_> = input.par_iter();
+/// ```
 #[must_use = "iterator adaptors are lazy"]
 pub struct VecDequeRefParallelSource<'data, T> {
     vec_deque: &'data VecDeque<T>,
@@ -91,6 +111,26 @@ impl<'data, T: Sync> ExactParallelSource for VecDequeRefParallelSource<'data, T>
 ///         .into_iter()
 ///         .collect::<VecDeque<_>>()
 /// );
+/// ```
+///
+/// The element type must be [`Send`], so the following example doesn't compile.
+///
+/// ```compile_fail
+/// # use paralight::iter::VecDequeRefMutParallelSource;
+/// # use paralight::prelude::*;
+/// # use std::collections::VecDeque;
+/// use std::rc::Rc;
+///
+/// # let mut thread_pool = ThreadPoolBuilder {
+/// #     num_threads: ThreadCount::AvailableParallelism,
+/// #     range_strategy: RangeStrategy::WorkStealing,
+/// #     cpu_pinning: CpuPinningPolicy::No,
+/// # }
+/// # .build();
+/// let mut values: VecDeque<_> = [Rc::new(1), Rc::new(2), Rc::new(3), Rc::new(4)]
+///     .into_iter()
+///     .collect();
+/// let iter: VecDequeRefMutParallelSource<_> = input.par_iter_mut();
 /// ```
 #[must_use = "iterator adaptors are lazy"]
 pub struct VecDequeRefMutParallelSource<'data, T> {

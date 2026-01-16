@@ -37,6 +37,24 @@ use std::marker::PhantomData;
 /// let sum = iter.with_thread_pool(&mut thread_pool).sum::<i32>();
 /// assert_eq!(sum, 5 * 11);
 /// ```
+///
+/// The slice element type must be [`Sync`], so the following example doesn't
+/// compile.
+///
+/// ```compile_fail
+/// # use paralight::iter::SliceParallelSource;
+/// # use paralight::prelude::*;
+/// use std::cell::Cell;
+///
+/// # let mut thread_pool = ThreadPoolBuilder {
+/// #     num_threads: ThreadCount::AvailableParallelism,
+/// #     range_strategy: RangeStrategy::WorkStealing,
+/// #     cpu_pinning: CpuPinningPolicy::No,
+/// # }
+/// # .build();
+/// let input = [Cell::new(1), Cell::new(2), Cell::new(3), Cell::new(4)];
+/// let iter: SliceParallelSource<_> = input.par_iter();
+/// ```
 #[must_use = "iterator adaptors are lazy"]
 pub struct SliceParallelSource<'data, T> {
     slice: &'data [T],
@@ -111,6 +129,24 @@ impl<'data, T: Sync> ExactSourceDescriptor for SliceSourceDescriptor<'data, T> {
 /// iter.with_thread_pool(&mut thread_pool)
 ///     .for_each(|x| *x *= 2);
 /// assert_eq!(values, [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]);
+/// ```
+///
+/// The slice element type must be [`Send`], so the following example doesn't
+/// compile.
+///
+/// ```compile_fail
+/// # use paralight::iter::MutSliceParallelSource;
+/// # use paralight::prelude::*;
+/// use std::rc::Rc;
+///
+/// # let mut thread_pool = ThreadPoolBuilder {
+/// #     num_threads: ThreadCount::AvailableParallelism,
+/// #     range_strategy: RangeStrategy::WorkStealing,
+/// #     cpu_pinning: CpuPinningPolicy::No,
+/// # }
+/// # .build();
+/// let mut values = [Rc::new(1), Rc::new(2), Rc::new(3), Rc::new(4)];
+/// let iter: MutSliceParallelSource<_> = values.par_iter_mut();
 /// ```
 #[must_use = "iterator adaptors are lazy"]
 pub struct MutSliceParallelSource<'data, T> {
