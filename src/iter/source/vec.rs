@@ -6,7 +6,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use super::{ExactParallelSource, ExactSourceDescriptor, IntoExactParallelSource, SourceCleanup};
+use super::{
+    ExactParallelSource, ExactSourceDescriptor, IntoExactParallelSource,
+    SimpleExactSourceDescriptor, SourceCleanup,
+};
 use std::mem::ManuallyDrop;
 
 /// A parallel source over a [`Vec`]. This struct is created by the
@@ -135,8 +138,9 @@ impl<T: Send> SourceCleanup for VecSourceDescriptor<T> {
             //   null: https://doc.rust-lang.org/stable/std/vec/struct.Vec.html#guarantees.
             // - The `slice` is valid for reads and writes. This is ensured by the safety
             //   pre-conditions of the `cleanup_item_range()` function (each index appears
-            //   at most once in calls to `exact_fetch_item()` and `cleanup_item_range()`),
-            //   i.e. the range of items in this slice isn't accessed by anything else.
+            //   at most once in calls to `simple_exact_fetch_item()` and
+            //   `cleanup_item_range()`), i.e. the range of items in this slice isn't
+            //   accessed by anything else.
             // - The `slice` is valid for dropping, as it is a part of the input vector that
             //   nothing else accesses.
             // - Nothing else is accessing the `slice` while `drop_in_place` is executing.
@@ -148,18 +152,18 @@ impl<T: Send> SourceCleanup for VecSourceDescriptor<T> {
     }
 }
 
-impl<T: Send> ExactSourceDescriptor for VecSourceDescriptor<T> {
+impl<T: Send> SimpleExactSourceDescriptor for VecSourceDescriptor<T> {
     type Item = T;
 
-    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn simple_exact_fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.len);
         let base_ptr: *const T = self.ptr.get();
         // SAFETY:
         // - The offset in bytes `index * size_of::<T>()` fits in an `isize`, because
         //   the index is smaller than the length of the (well-formed) input vector.
-        //   This is ensured by the safety pre-conditions of the `exact_fetch_item()`
-        //   function (the `index` must be in the range `0..self.len`), and further
-        //   confirmed by the assertion.
+        //   This is ensured by the safety pre-conditions of the
+        //   `simple_exact_fetch_item()` function (the `index` must be in the range
+        //   `0..self.len`), and further confirmed by the assertion.
         // - The `base_ptr` is derived from an allocated object (the input vector), and
         //   the entire range between `base_ptr` and the resulting `item_ptr` is in
         //   bounds of that allocated object. This is because the index is smaller than
@@ -171,10 +175,10 @@ impl<T: Send> ExactSourceDescriptor for VecSourceDescriptor<T> {
         // - The `item_ptr` points to a properly initialized value of type `T`, the
         //   element from the input vector at position `index`.
         // - The `item_ptr` is valid for reads. This is ensured by the safety
-        //   pre-conditions of the `exact_fetch_item()` function (each index must be
-        //   passed at most once), i.e. this item hasn't been read (and moved out of the
-        //   vector) yet. Additionally, there are no concurrent writes to this slot in
-        //   the vector.
+        //   pre-conditions of the `simple_exact_fetch_item()` function (each index must
+        //   be passed at most once), i.e. this item hasn't been read (and moved out of
+        //   the vector) yet. Additionally, there are no concurrent writes to this slot
+        //   in the vector.
         let item: T = unsafe { std::ptr::read(item_ptr) };
         item
     }
@@ -215,7 +219,7 @@ impl<T> MutPtrWrapper<T> {
 ///
 /// A [`MutPtrWrapper`] is meant to be shared among threads as a way to send
 /// items of type [`&mut [T]`](slice) to other threads (see the safety
-/// comments in [`VecSourceDescriptor::exact_fetch_item`] and
+/// comments in [`VecSourceDescriptor::simple_exact_fetch_item`] and
 /// [`VecSourceDescriptor::cleanup_item_range`]). Therefore we make it [`Sync`]
 /// if and only if [`&mut [T]`](slice) is [`Send`], which is when `T` is
 /// [`Send`].

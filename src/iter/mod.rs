@@ -16,7 +16,7 @@ use detail::{
     MinMaxAccumulator, ProductAccumulator, ShortCircuitingAccumulator, SumAccumulator,
     TryIterCollector, TryIterFolder,
 };
-pub use detail::{Map, MapInit, MinMaxResult};
+pub use detail::{Map, MinMaxResult};
 #[cfg(feature = "nightly")]
 pub use source::array::ArrayParallelSource;
 #[cfg(all(test, any(feature = "rayon", feature = "default-thread-pool")))]
@@ -30,9 +30,9 @@ pub use source::{
     BaseExactParallelIterator, BaseParallelIterator, Chain, Cloned, Copied, Enumerate,
     ExactParallelSource, ExactParallelSourceExt, ExactSourceDescriptor, Filter, FilterMap, Inspect,
     IntoExactParallelRefMutSource, IntoExactParallelRefSource, IntoExactParallelSource,
-    IntoParallelRefMutSource, IntoParallelRefSource, IntoParallelSource, ParallelSource,
-    ParallelSourceExt, Rev, Skip, SkipExact, SourceCleanup, SourceDescriptor, StepBy, Take,
-    TakeExact,
+    IntoParallelRefMutSource, IntoParallelRefSource, IntoParallelSource, MapInit, ParallelSource,
+    ParallelSourceExt, Rev, SimpleExactSourceDescriptor, SimpleSourceDescriptor, Skip, SkipExact,
+    SourceCleanup, SourceDescriptor, StepBy, Take, TakeExact,
 };
 use std::cmp::Ordering;
 use std::iter::{Product, Sum};
@@ -1556,9 +1556,6 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// Applies the function `f` to each item of this iterator, returning a
     /// parallel iterator producing the mapped items.
     ///
-    /// See also [`map_init()`](Self::map_init) if you need to initialize a
-    /// per-thread value and pass it together with each item.
-    ///
     /// ```
     /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
@@ -1601,49 +1598,6 @@ pub trait ParallelIteratorExt: ParallelIterator {
         F: Fn(Self::Item) -> T + Sync,
     {
         Map { inner: self, f }
-    }
-
-    /// Applies the function `f` to each item of this iterator, together with a
-    /// per-thread mutable value returned by `init`, and returns a parallel
-    /// iterator producing the mapped items.
-    ///
-    /// The `init` function will be called only once per worker thread. The
-    /// companion value returned by `init` doesn't need to be [`Send`] nor
-    /// [`Sync`].
-    ///
-    /// ```
-    /// # use paralight::prelude::*;
-    /// use rand::Rng;
-    ///
-    /// # let mut thread_pool = ThreadPoolBuilder {
-    /// #     num_threads: ThreadCount::AvailableParallelism,
-    /// #     range_strategy: RangeStrategy::WorkStealing,
-    /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # }
-    /// # .build();
-    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    /// let randomized_sum = input
-    ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
-    ///     .map_init(
-    ///         rand::rng, // A thread-local RNG that is neither Send nor Sync.
-    ///         |rng, &x| if rng.random() { x * 2 } else { x * 3 },
-    ///     )
-    ///     .sum::<i32>();
-    ///
-    /// assert!(randomized_sum >= 10 * 11);
-    /// assert!(randomized_sum <= 15 * 11);
-    /// ```
-    fn map_init<I, Init, T, F>(self, init: Init, f: F) -> MapInit<Self, Init, F>
-    where
-        Init: Fn() -> I + Sync,
-        F: Fn(&mut I, Self::Item) -> T + Sync,
-    {
-        MapInit {
-            inner: self,
-            init,
-            f,
-        }
     }
 
     /// Returns the maximal item of this iterator, or [`None`] if this iterator

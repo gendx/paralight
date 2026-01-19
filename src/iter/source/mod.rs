@@ -22,7 +22,7 @@ pub mod zip;
 use super::{Accumulator, ExactSizeAccumulator, GenericThreadPool, ParallelIterator};
 pub use detail::{
     Chain, Cloned, Copied, Enumerate, Filter, FilterExact, FilterMap, FilterMapExact, Inspect, Map,
-    Rev, Skip, SkipExact, StepBy, Take, TakeExact,
+    MapInit, Rev, Skip, SkipExact, StepBy, Take, TakeExact,
 };
 use std::ops::ControlFlow;
 
@@ -88,6 +88,14 @@ pub trait SourceDescriptor: SourceCleanup {
     /// The type of items that this parallel source produces.
     type Item;
 
+    /// Per-thread context to help fetching items. If you don't need this (i.e.
+    /// set the context to `()`), consider implementing
+    /// [`SimpleSourceDescriptor`] instead.
+    type ThreadContext;
+
+    /// Initializes the context for this thread.
+    fn init(&self) -> Self::ThreadContext;
+
     /// Fetch the item at the given index, returning [`None`] if there is no
     /// item.
     ///
@@ -111,13 +119,72 @@ pub trait SourceDescriptor: SourceCleanup {
     /// engine. This API is public to allow others to implement parallel
     /// sources: when implementing your own source(s), you can rely on these
     /// `unsafe` pre-conditions.
-    unsafe fn fetch_item(&self, index: usize) -> Option<Self::Item>;
+    unsafe fn fetch_item(
+        &self,
+        context: &mut Self::ThreadContext,
+        index: usize,
+    ) -> Option<Self::Item>;
+}
+
+/// A simple interface describing how to fetch items from a [`ParallelSource`].
+///
+/// This is a variant of [`SourceDescriptor`] where the
+/// [`ThreadContext`](SourceDescriptor::ThreadContext) parameter is `()`.
+pub trait SimpleSourceDescriptor: SourceCleanup {
+    /// The type of items that this parallel source produces.
+    type Item;
+
+    /// Fetch the item at the given index, returning [`None`] if there is no
+    /// item.
+    ///
+    /// # Safety
+    ///
+    /// Given the length `len` returned by [`len()`](SourceCleanup::len) in
+    /// [`SourceCleanup`]:
+    /// - indices passed to [`simple_fetch_item()`](Self::simple_fetch_item)
+    ///   must be in the `0..len` range,
+    /// - each index in `0..len` must be present at most once in all indices
+    ///   passed to calls to [`simple_fetch_item()`](Self::simple_fetch_item)
+    ///   and ranges passed to calls to [`SourceCleanup::cleanup_item_range()`].
+    ///
+    /// It is therefore undefined behavior to call this function twice with the
+    /// same index, with an index contained in a range for which
+    /// [`cleanup_item_range()`](SourceCleanup::cleanup_item_range) was
+    /// invoked, etc.
+    ///
+    /// You normally shouldn't have to worry about this, because this API is
+    /// intended to be called by Paralight's internal multi-threading
+    /// engine. This API is public to allow others to implement parallel
+    /// sources: when implementing your own source(s), you can rely on these
+    /// `unsafe` pre-conditions.
+    unsafe fn simple_fetch_item(&self, index: usize) -> Option<Self::Item>;
+}
+
+impl<T: SimpleSourceDescriptor> SourceDescriptor for T {
+    type Item = T::Item;
+    type ThreadContext = ();
+
+    fn init(&self) {}
+
+    unsafe fn fetch_item(&self, _context: &mut (), index: usize) -> Option<Self::Item> {
+        // SAFETY: This implementation simply extends the inner descriptor with an empty
+        // context type, therefore safety is preserved by induction.
+        unsafe { self.simple_fetch_item(index) }
+    }
 }
 
 /// An interface describing how to fetch items from an [`ExactParallelSource`].
 pub trait ExactSourceDescriptor: SourceCleanup {
     /// The type of items that this parallel source produces.
     type Item;
+
+    /// Per-thread context to help fetching items. If you don't need this (i.e.
+    /// set the context to `()`), consider implementing
+    /// [`SimpleExactSourceDescriptor`] instead.
+    type ThreadContext;
+
+    /// Initializes the context for this thread.
+    fn init(&self) -> Self::ThreadContext;
 
     /// Fetch the item at the given index.
     ///
@@ -141,7 +208,60 @@ pub trait ExactSourceDescriptor: SourceCleanup {
     /// engine. This API is public to allow others to implement parallel
     /// sources: when implementing your own source(s), you can rely on these
     /// `unsafe` pre-conditions.
-    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item;
+    unsafe fn exact_fetch_item(
+        &self,
+        context: &mut Self::ThreadContext,
+        index: usize,
+    ) -> Self::Item;
+}
+
+/// A simple interface describing how to fetch items from an
+/// [`ExactParallelSource`].
+///
+/// This is a variant of [`ExactSourceDescriptor`] where the
+/// [`ThreadContext`](ExactSourceDescriptor::ThreadContext) parameter is `()`.
+pub trait SimpleExactSourceDescriptor: SourceCleanup {
+    /// The type of items that this parallel source produces.
+    type Item;
+
+    /// Fetch the item at the given index.
+    ///
+    /// # Safety
+    ///
+    /// Given the length `len` returned by [`len()`](SourceCleanup::len) in
+    /// [`SourceCleanup`]:
+    /// - indices passed to
+    ///   [`simple_exact_fetch_item()`](Self::simple_exact_fetch_item) must be
+    ///   in the `0..len` range,
+    /// - each index in `0..len` must be present at most once in all indices
+    ///   passed to calls to
+    ///   [`simple_exact_fetch_item()`](Self::simple_exact_fetch_item) and
+    ///   ranges passed to calls to [`SourceCleanup::cleanup_item_range()`].
+    ///
+    /// It is therefore undefined behavior to call this function twice with the
+    /// same index, with an index contained in a range for which
+    /// [`cleanup_item_range()`](SourceCleanup::cleanup_item_range) was
+    /// invoked, etc.
+    ///
+    /// You normally shouldn't have to worry about this, because this API is
+    /// intended to be called by Paralight's internal multi-threading
+    /// engine. This API is public to allow others to implement parallel
+    /// sources: when implementing your own source(s), you can rely on these
+    /// `unsafe` pre-conditions.
+    unsafe fn simple_exact_fetch_item(&self, index: usize) -> Self::Item;
+}
+
+impl<T: SimpleExactSourceDescriptor> ExactSourceDescriptor for T {
+    type Item = T::Item;
+    type ThreadContext = ();
+
+    fn init(&self) {}
+
+    unsafe fn exact_fetch_item(&self, _context: &mut (), index: usize) -> Self::Item {
+        // SAFETY: This implementation simply extends the inner descriptor with an empty
+        // context type, therefore safety is preserved by induction.
+        unsafe { self.simple_exact_fetch_item(index) }
+    }
 }
 
 /// A source to produce items in parallel. The [`ParallelSourceExt`] trait
@@ -559,6 +679,9 @@ pub trait ParallelSourceExt: ParallelSource {
     /// Applies the function `f` to each item of this source, returning a
     /// parallel source producing the mapped items.
     ///
+    /// See also [`map_init()`](Self::map_init) if you need to initialize a
+    /// per-thread value and pass it together with each item.
+    ///
     /// ```
     /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
@@ -603,6 +726,50 @@ pub trait ParallelSourceExt: ParallelSource {
         F: Fn(Self::Item) -> T + Sync,
     {
         Map { inner: self, f }
+    }
+
+    /// Applies the function `f` to each item of this source, together with a
+    /// per-thread mutable value returned by `init`, and returns a parallel
+    /// source producing the mapped items.
+    ///
+    /// The `init` function will be called only once per worker thread. The
+    /// companion value returned by `init` doesn't need to be [`Send`] nor
+    /// [`Sync`].
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// use rand::Rng;
+    ///
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let randomized_sum = input
+    ///     .par_iter()
+    ///     .filter(|_| true) // ExactParallelSource -> ParallelSource
+    ///     .map_init(
+    ///         rand::rng, // A thread-local RNG that is neither Send nor Sync.
+    ///         |rng, &x| if rng.random() { x * 2 } else { x * 3 },
+    ///     )
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    ///
+    /// assert!(randomized_sum >= 10 * 11);
+    /// assert!(randomized_sum <= 15 * 11);
+    /// ```
+    fn map_init<I, Init, T, F>(self, init: Init, f: F) -> MapInit<Self, Init, F>
+    where
+        Init: Fn() -> I + Sync,
+        F: Fn(&mut I, Self::Item) -> T + Sync,
+    {
+        MapInit {
+            inner: self,
+            init,
+            f,
+        }
     }
 
     /// Returns a parallel source that produces items from this source in
@@ -913,6 +1080,9 @@ pub trait ExactParallelSourceExt: ExactParallelSource {
     /// Applies the function `f` to each item of this source, returning a
     /// parallel source producing the mapped items.
     ///
+    /// See also [`map_init()`](Self::map_init) if you need to initialize a
+    /// per-thread value and pass it together with each item.
+    ///
     /// ```
     /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
@@ -955,6 +1125,49 @@ pub trait ExactParallelSourceExt: ExactParallelSource {
         F: Fn(Self::Item) -> T + Sync,
     {
         Map { inner: self, f }
+    }
+
+    /// Applies the function `f` to each item of this source, together with a
+    /// per-thread mutable value returned by `init`, and returns a parallel
+    /// source producing the mapped items.
+    ///
+    /// The `init` function will be called only once per worker thread. The
+    /// companion value returned by `init` doesn't need to be [`Send`] nor
+    /// [`Sync`].
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// use rand::Rng;
+    ///
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let randomized_sum = input
+    ///     .par_iter()
+    ///     .map_init(
+    ///         rand::rng, // A thread-local RNG that is neither Send nor Sync.
+    ///         |rng, &x| if rng.random() { x * 2 } else { x * 3 },
+    ///     )
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    ///
+    /// assert!(randomized_sum >= 10 * 11);
+    /// assert!(randomized_sum <= 15 * 11);
+    /// ```
+    fn map_init<I, Init, T, F>(self, init: Init, f: F) -> MapInit<Self, Init, F>
+    where
+        Init: Fn() -> I + Sync,
+        F: Fn(&mut I, Self::Item) -> T + Sync,
+    {
+        MapInit {
+            inner: self,
+            init,
+            f,
+        }
     }
 
     /// Returns a parallel source that produces items from this source in
@@ -1314,19 +1527,22 @@ impl<T: GenericThreadPool, S: ParallelSource> ParallelIterator for BaseParallelI
         let source_descriptor = self.source.descriptor();
         self.thread_pool.upper_bounded_pipeline(
             source_descriptor.len(),
-            init,
-            |acc, index| {
+            || (init(), source_descriptor.init()),
+            |(acc, mut context), index| {
                 // SAFETY: The pre-conditions to the `source_descriptor`'s `fetch_item()` and
                 // `cleanup_item_range()` methods are ensured by the safety guarantees of
                 // `ThreadPool::upper_bounded_pipeline()`, i.e. that all the indices passed are
                 // in `0..len` and they are each passed exactly once.
-                let item = unsafe { source_descriptor.fetch_item(index) };
+                let item = unsafe { source_descriptor.fetch_item(&mut context, index) };
                 match item {
-                    None => ControlFlow::Continue(acc),
-                    Some(item) => process_item(acc, index, item),
+                    None => ControlFlow::Continue((acc, context)),
+                    Some(item) => match process_item(acc, index, item) {
+                        ControlFlow::Continue(acc) => ControlFlow::Continue((acc, context)),
+                        ControlFlow::Break(acc) => ControlFlow::Break((acc, context)),
+                    },
                 }
             },
-            finalize,
+            |(acc, _)| finalize(acc),
             reduce,
             &source_descriptor,
         )
@@ -1340,12 +1556,15 @@ impl<T: GenericThreadPool, S: ParallelSource> ParallelIterator for BaseParallelI
         let source_descriptor = self.source.descriptor();
         let accumulator = FetchAccumulator {
             inner: accum,
-            fetch_item: |index| {
+            init: || source_descriptor.init(),
+            // Note: the `&mut _` annotation is needed here to avoid compilation errors, see
+            // https://users.rust-lang.org/t/implementation-of-fnonce-is-not-general-enough/78006/4.
+            fetch_item: |context: &mut _, index| {
                 // SAFETY: The pre-conditions to the `source_descriptor`'s `fetch_item()` and
                 // `cleanup_item_range()` methods are ensured by the safety guarantees of
                 // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed are in
                 // `0..len` and they are each passed exactly once.
-                unsafe { source_descriptor.fetch_item(index) }
+                unsafe { source_descriptor.fetch_item(context, index) }
             },
         };
         self.thread_pool.iter_pipeline(
@@ -1372,19 +1591,19 @@ impl<T: GenericThreadPool, S: ExactParallelSource> ParallelIterator
         let source_descriptor = self.source.exact_descriptor();
         self.thread_pool.upper_bounded_pipeline(
             source_descriptor.len(),
-            init,
-            |acc, index| {
-                process_item(
-                    acc,
-                    index,
-                    // SAFETY: The pre-conditions to the `source_descriptor`'s `exact_fetch_item()`
-                    // and `cleanup_item_range()` methods are ensured by the safety guarantees of
-                    // `ThreadPool::upper_bounded_pipeline()`, i.e. that all the indices passed are
-                    // in `0..len` and they are each passed exactly once.
-                    unsafe { source_descriptor.exact_fetch_item(index) },
-                )
+            || (init(), source_descriptor.init()),
+            |(acc, mut context), index| {
+                // SAFETY: The pre-conditions to the `source_descriptor`'s `exact_fetch_item()`
+                // and `cleanup_item_range()` methods are ensured by the safety guarantees of
+                // `ThreadPool::upper_bounded_pipeline()`, i.e. that all the indices passed are
+                // in `0..len` and they are each passed exactly once.
+                let item = unsafe { source_descriptor.exact_fetch_item(&mut context, index) };
+                match process_item(acc, index, item) {
+                    ControlFlow::Continue(acc) => ControlFlow::Continue((acc, context)),
+                    ControlFlow::Break(acc) => ControlFlow::Break((acc, context)),
+                }
             },
-            finalize,
+            |(acc, _)| finalize(acc),
             reduce,
             &source_descriptor,
         )
@@ -1398,13 +1617,16 @@ impl<T: GenericThreadPool, S: ExactParallelSource> ParallelIterator
         let source_descriptor = self.source.exact_descriptor();
         let accumulator = ExactFetchAccumulator {
             inner: accum,
-            fetch_item: |index| {
+            init: || source_descriptor.init(),
+            // Note: the `&mut _` annotation is needed here to avoid compilation errors, see
+            // https://users.rust-lang.org/t/implementation-of-fnonce-is-not-general-enough/78006/4.
+            fetch_item: |context: &mut _, index| {
                 // SAFETY: The pre-conditions to the `source_descriptor`'s `exact_fetch_item()`
                 // and `cleanup_item_range()` methods are ensured by the safety
                 // guarantees of `ThreadPool::iter_pipeline()`, i.e. that all
                 // the indices passed are in `0..len` and they are each passed
                 // exactly once.
-                unsafe { source_descriptor.exact_fetch_item(index) }
+                unsafe { source_descriptor.exact_fetch_item(context, index) }
             },
         };
         self.thread_pool.iter_pipeline(
@@ -1416,36 +1638,44 @@ impl<T: GenericThreadPool, S: ExactParallelSource> ParallelIterator
     }
 }
 
-struct FetchAccumulator<Inner, FetchItem> {
+struct FetchAccumulator<Inner, Init, FetchItem> {
     inner: Inner,
+    init: Init,
     fetch_item: FetchItem,
 }
 
-impl<Item, Output, Inner, FetchItem> Accumulator<usize, Output>
-    for FetchAccumulator<Inner, FetchItem>
+impl<Item, Output, ThreadContext, Inner, Init, FetchItem> Accumulator<usize, Output>
+    for FetchAccumulator<Inner, Init, FetchItem>
 where
     Inner: Accumulator<Item, Output>,
-    FetchItem: Fn(usize) -> Option<Item>,
+    Init: Fn() -> ThreadContext,
+    FetchItem: Fn(&mut ThreadContext, usize) -> Option<Item>,
 {
     #[inline(always)]
     fn accumulate(&self, iter: impl Iterator<Item = usize>) -> Output {
-        self.inner.accumulate(iter.filter_map(&self.fetch_item))
+        let mut context = (self.init)();
+        self.inner
+            .accumulate(iter.filter_map(|index| (self.fetch_item)(&mut context, index)))
     }
 }
 
-struct ExactFetchAccumulator<Inner, FetchItem> {
+struct ExactFetchAccumulator<Inner, Init, FetchItem> {
     inner: Inner,
+    init: Init,
     fetch_item: FetchItem,
 }
 
-impl<Item, Output, Inner, FetchItem> Accumulator<usize, Output>
-    for ExactFetchAccumulator<Inner, FetchItem>
+impl<Item, Output, ThreadContext, Inner, Init, FetchItem> Accumulator<usize, Output>
+    for ExactFetchAccumulator<Inner, Init, FetchItem>
 where
     Inner: Accumulator<Item, Output>,
-    FetchItem: Fn(usize) -> Item,
+    Init: Fn() -> ThreadContext,
+    FetchItem: Fn(&mut ThreadContext, usize) -> Item,
 {
     #[inline(always)]
     fn accumulate(&self, iter: impl Iterator<Item = usize>) -> Output {
-        self.inner.accumulate(iter.map(&self.fetch_item))
+        let mut context = (self.init)();
+        self.inner
+            .accumulate(iter.map(|index| (self.fetch_item)(&mut context, index)))
     }
 }

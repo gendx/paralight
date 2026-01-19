@@ -9,7 +9,9 @@
 //! Helper module to test non-exact parallel sources, by implementing
 //! [`ParallelSource`] on a simplified hash set type.
 
-use super::{IntoParallelRefSource, ParallelSource, SourceCleanup, SourceDescriptor};
+use super::{
+    IntoParallelRefSource, ParallelSource, SimpleSourceDescriptor, SourceCleanup, SourceDescriptor,
+};
 use hashbrown::hash_table::Entry;
 use hashbrown::{DefaultHashBuilder, HashTable};
 use std::hash::{BuildHasher, Hash};
@@ -96,10 +98,10 @@ impl<T: Sync> SourceCleanup for HashTableSourceDescriptor<'_, T> {
     }
 }
 
-impl<'data, T: Sync> SourceDescriptor for HashTableSourceDescriptor<'data, T> {
+impl<'data, T: Sync> SimpleSourceDescriptor for HashTableSourceDescriptor<'data, T> {
     type Item = &'data T;
 
-    unsafe fn fetch_item(&self, index: usize) -> Option<Self::Item> {
+    unsafe fn simple_fetch_item(&self, index: usize) -> Option<Self::Item> {
         self.table.get_bucket(index)
     }
 }

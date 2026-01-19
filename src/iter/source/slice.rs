@@ -8,7 +8,7 @@
 
 use super::{
     ExactParallelSource, ExactSourceDescriptor, IntoExactParallelRefMutSource,
-    IntoExactParallelRefSource, SourceCleanup,
+    IntoExactParallelRefSource, SimpleExactSourceDescriptor, SourceCleanup,
 };
 use std::marker::PhantomData;
 
@@ -93,13 +93,13 @@ impl<T: Sync> SourceCleanup for SliceSourceDescriptor<'_, T> {
     }
 }
 
-impl<'data, T: Sync> ExactSourceDescriptor for SliceSourceDescriptor<'data, T> {
+impl<'data, T: Sync> SimpleExactSourceDescriptor for SliceSourceDescriptor<'data, T> {
     type Item = &'data T;
 
-    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn simple_exact_fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.slice.len());
         // SAFETY: The index is smaller than the length of the input slice, due to the
-        // safety pre-conditions of the `exact_fetch_item()` function.
+        // safety pre-conditions of the `simple_exact_fetch_item()` function.
         unsafe { self.slice.get_unchecked(index) }
     }
 }
@@ -194,16 +194,16 @@ impl<'data, T: Send + 'data> SourceCleanup for MutSliceSourceDescriptor<'data, T
     }
 }
 
-impl<'data, T: Send + 'data> ExactSourceDescriptor for MutSliceSourceDescriptor<'data, T> {
+impl<'data, T: Send + 'data> SimpleExactSourceDescriptor for MutSliceSourceDescriptor<'data, T> {
     type Item = &'data mut T;
 
-    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn simple_exact_fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.len);
         let base_ptr: *mut T = self.ptr.get();
         // SAFETY:
         // - The offset in bytes `index * size_of::<T>()` fits in an `isize`, because
         //   the index is smaller than the length of the (well-formed) input slice. This
-        //   is ensured by the safety pre-conditions of the `exact_fetch_item()`
+        //   is ensured by the safety pre-conditions of the `simple_exact_fetch_item()`
         //   function (the `index` must be in the range `0..self.len`), and further
         //   confirmed by the assertion.
         // - The `base_ptr` is derived from an allocated object (the input slice), and
@@ -228,8 +228,8 @@ impl<'data, T: Send + 'data> ExactSourceDescriptor for MutSliceSourceDescriptor<
         //   (within this scope and in particular during the call to `process_item()`),
         //   the memory it points to isn't accessed through any other pointer or
         //   reference. This is ensured by the safety pre-conditions of the
-        //   `exact_fetch_item()` function (each index must be passed at most once), and
-        //   because the slice is exclusively owned during the scope of this
+        //   `simple_exact_fetch_item()` function (each index must be passed at most
+        //   once), and because the slice is exclusively owned during the scope of this
         //   `ParallelIterator::pipeline()` function.
         //
         // Lastly, materializing this mutable reference on any thread is sound given
@@ -255,7 +255,7 @@ impl<T> MutPtrWrapper<T> {
 ///
 /// A [`MutPtrWrapper`] is meant to be shared among threads as a way to send
 /// items of type [`&mut T`](reference) to other threads (see the safety
-/// comments in [`MutSliceSourceDescriptor::exact_fetch_item`]). Therefore we
-/// make it [`Sync`] if and only if [`&mut T`](reference) is [`Send`], which is
-/// when `T` is [`Send`].
+/// comments in [`MutSliceSourceDescriptor::simple_exact_fetch_item`]).
+/// Therefore we make it [`Sync`] if and only if [`&mut T`](reference) is
+/// [`Send`], which is when `T` is [`Send`].
 unsafe impl<T: Send> Sync for MutPtrWrapper<T> {}

@@ -6,7 +6,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use super::{ExactParallelSource, ExactSourceDescriptor, IntoExactParallelSource, SourceCleanup};
+use super::{
+    ExactParallelSource, ExactSourceDescriptor, IntoExactParallelSource,
+    SimpleExactSourceDescriptor, SourceCleanup,
+};
 #[cfg(feature = "nightly")]
 use std::iter::Step;
 use std::ops::{Range, RangeInclusive};
@@ -29,20 +32,20 @@ impl<T> SourceCleanup for RangeSourceDescriptor<T> {
 }
 
 #[cfg(feature = "nightly")]
-impl<T: Step + Copy + Send + Sync> ExactSourceDescriptor for RangeSourceDescriptor<T> {
+impl<T: Step + Copy + Send + Sync> SimpleExactSourceDescriptor for RangeSourceDescriptor<T> {
     type Item = T;
 
-    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn simple_exact_fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.len);
         T::forward(self.start, index)
     }
 }
 
 #[cfg(not(feature = "nightly"))]
-impl ExactSourceDescriptor for RangeSourceDescriptor<usize> {
+impl SimpleExactSourceDescriptor for RangeSourceDescriptor<usize> {
     type Item = usize;
 
-    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn simple_exact_fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.len);
         self.start + index
     }

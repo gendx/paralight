@@ -160,6 +160,11 @@ where
     Second: SourceDescriptor<Item = T>,
 {
     type Item = T;
+    type ThreadContext = (First::ThreadContext, Second::ThreadContext);
+
+    fn init(&self) -> Self::ThreadContext {
+        (self.descriptor1.init(), self.descriptor2.init())
+    }
 
     // For safety comments: given two sources of lengths `len1` and `len2`, the
     // `ChainSourceDescriptor` creates a bijection of indices between `0..len1 +
@@ -172,16 +177,23 @@ where
     // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
     //   and `fetch_item()`, the chain adaptor doesn't repeat indices passed to the
     //   two downstream descriptors.
-    unsafe fn fetch_item(&self, index: usize) -> Option<Self::Item> {
+    unsafe fn fetch_item(
+        &self,
+        context: &mut Self::ThreadContext,
+        index: usize,
+    ) -> Option<Self::Item> {
         debug_assert!(index < self.len);
         if index < self.len1 {
             // SAFETY: See the function comment. This branch implements the mapping for an
             // index in `0..len1` to `0..len1`.
-            unsafe { self.descriptor1.fetch_item(index) }
+            unsafe { self.descriptor1.fetch_item(&mut context.0, index) }
         } else {
             // SAFETY: See the function comment. This branch implements the mapping for an
             // index in `len1..len1 + len2` to `0..len2`.
-            unsafe { self.descriptor2.fetch_item(index - self.len1) }
+            unsafe {
+                self.descriptor2
+                    .fetch_item(&mut context.1, index - self.len1)
+            }
         }
     }
 }
@@ -192,6 +204,11 @@ where
     Second: ExactSourceDescriptor<Item = T>,
 {
     type Item = T;
+    type ThreadContext = (First::ThreadContext, Second::ThreadContext);
+
+    fn init(&self) -> Self::ThreadContext {
+        (self.descriptor1.init(), self.descriptor2.init())
+    }
 
     // For safety comments: given two sources of lengths `len1` and `len2`, the
     // `ChainSourceDescriptor` creates a bijection of indices between `0..len1 +
@@ -204,16 +221,23 @@ where
     // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
     //   and `exact_fetch_item()`, the chain adaptor doesn't repeat indices passed
     //   to the two downstream descriptors.
-    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn exact_fetch_item(
+        &self,
+        context: &mut Self::ThreadContext,
+        index: usize,
+    ) -> Self::Item {
         debug_assert!(index < self.len);
         if index < self.len1 {
             // SAFETY: See the function comment. This branch implements the mapping for an
             // index in `0..len1` to `0..len1`.
-            unsafe { self.descriptor1.exact_fetch_item(index) }
+            unsafe { self.descriptor1.exact_fetch_item(&mut context.0, index) }
         } else {
             // SAFETY: See the function comment. This branch implements the mapping for an
             // index in `len1..len1 + len2` to `0..len2`.
-            unsafe { self.descriptor2.exact_fetch_item(index - self.len1) }
+            unsafe {
+                self.descriptor2
+                    .exact_fetch_item(&mut context.1, index - self.len1)
+            }
         }
     }
 }
@@ -364,8 +388,17 @@ impl<Inner: SourceCleanup> SourceCleanup for EnumerateSourceDescriptor<Inner> {
 
 impl<Inner: ExactSourceDescriptor> ExactSourceDescriptor for EnumerateSourceDescriptor<Inner> {
     type Item = (usize, Inner::Item);
+    type ThreadContext = Inner::ThreadContext;
 
-    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
+    fn init(&self) -> Self::ThreadContext {
+        self.inner.init()
+    }
+
+    unsafe fn exact_fetch_item(
+        &self,
+        context: &mut Self::ThreadContext,
+        index: usize,
+    ) -> Self::Item {
         // SAFETY: The `EnumerateSourceDescriptor` only implements a mapping of items,
         // while passing through indices to the inner descriptor.
         //
@@ -374,7 +407,9 @@ impl<Inner: ExactSourceDescriptor> ExactSourceDescriptor for EnumerateSourceDesc
         //   `exact_fetch_item()` function are also in the `0..len` range,
         // - if the caller doesn't repeat indices, the enumerate adaptor doesn't repeat
         //   indices passed to the inner descriptor.
-        (index, unsafe { self.inner.exact_fetch_item(index) })
+        (index, unsafe {
+            self.inner.exact_fetch_item(context, index)
+        })
     }
 }
 
@@ -522,11 +557,20 @@ where
     F: Fn(Inner::Item) -> Option<T> + Sync,
 {
     type Item = T;
+    type ThreadContext = Inner::ThreadContext;
 
-    unsafe fn fetch_item(&self, index: usize) -> Option<Self::Item> {
+    fn init(&self) -> Self::ThreadContext {
+        self.inner.init()
+    }
+
+    unsafe fn fetch_item(
+        &self,
+        context: &mut Self::ThreadContext,
+        index: usize,
+    ) -> Option<Self::Item> {
         // SAFETY: This descriptor implements a pass-through of indices to the inner
         // descriptor, therefore safety is preserved by induction.
-        let item = unsafe { self.inner.fetch_item(index) };
+        let item = unsafe { self.inner.fetch_item(context, index) };
         item.and_then(&self.f)
     }
 }
@@ -560,11 +604,20 @@ where
     F: Fn(Inner::Item) -> Option<T> + Sync,
 {
     type Item = T;
+    type ThreadContext = Inner::ThreadContext;
 
-    unsafe fn fetch_item(&self, index: usize) -> Option<Self::Item> {
+    fn init(&self) -> Self::ThreadContext {
+        self.inner.init()
+    }
+
+    unsafe fn fetch_item(
+        &self,
+        context: &mut Self::ThreadContext,
+        index: usize,
+    ) -> Option<Self::Item> {
         // SAFETY: This descriptor implements a pass-through of indices to the inner
         // descriptor, therefore safety is preserved by induction.
-        let item = unsafe { self.inner.exact_fetch_item(index) };
+        let item = unsafe { self.inner.exact_fetch_item(context, index) };
         (self.f)(item)
     }
 }
@@ -699,11 +752,20 @@ where
     F: Fn(Inner::Item) -> T + Sync,
 {
     type Item = T;
+    type ThreadContext = Inner::ThreadContext;
 
-    unsafe fn fetch_item(&self, index: usize) -> Option<Self::Item> {
+    fn init(&self) -> Self::ThreadContext {
+        self.inner.init()
+    }
+
+    unsafe fn fetch_item(
+        &self,
+        context: &mut Self::ThreadContext,
+        index: usize,
+    ) -> Option<Self::Item> {
         // SAFETY: This descriptor implements a pass-through of indices to the inner
         // descriptor, therefore safety is preserved by induction.
-        let item = unsafe { self.inner.fetch_item(index) };
+        let item = unsafe { self.inner.fetch_item(context, index) };
         item.map(&self.f)
     }
 }
@@ -714,12 +776,148 @@ where
     F: Fn(Inner::Item) -> T + Sync,
 {
     type Item = T;
+    type ThreadContext = Inner::ThreadContext;
 
-    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
+    fn init(&self) -> Self::ThreadContext {
+        self.inner.init()
+    }
+
+    unsafe fn exact_fetch_item(
+        &self,
+        context: &mut Self::ThreadContext,
+        index: usize,
+    ) -> Self::Item {
         // SAFETY: This descriptor implements a pass-through of indices to the inner
         // descriptor, therefore safety is preserved by induction.
-        let item = unsafe { self.inner.exact_fetch_item(index) };
+        let item = unsafe { self.inner.exact_fetch_item(context, index) };
         (self.f)(item)
+    }
+}
+
+/// This struct is created by the
+/// [`map_init()`](super::ParallelSourceExt::map_init) method on
+/// [`ParallelSourceExt`](super::ParallelSourceExt) and
+/// [`map_init()`](super::ExactParallelSourceExt::map_init) on
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt).
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the
+/// [`ParallelSource`]/[`ParallelSourceExt`](super::ParallelSourceExt) or
+/// [`ExactParallelSource`]/
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt) traits, but it is
+/// nonetheless public because of the `must_use` annotation.
+#[must_use = "iterator adaptors are lazy"]
+pub struct MapInit<Inner, Init, F> {
+    pub(super) inner: Inner,
+    pub(super) init: Init,
+    pub(super) f: F,
+}
+
+impl<Inner, I, Init, T, F> ParallelSource for MapInit<Inner, Init, F>
+where
+    Inner: ParallelSource,
+    Init: Fn() -> I + Sync,
+    F: Fn(&mut I, Inner::Item) -> T + Sync,
+{
+    type Item = T;
+
+    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
+        MapInitSourceDescriptor {
+            inner: self.inner.descriptor(),
+            init: self.init,
+            f: self.f,
+        }
+    }
+}
+
+impl<Inner, I, Init, T, F> ExactParallelSource for MapInit<Inner, Init, F>
+where
+    Inner: ExactParallelSource,
+    Init: Fn() -> I + Sync,
+    F: Fn(&mut I, Inner::Item) -> T + Sync,
+{
+    type Item = T;
+
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
+        MapInitSourceDescriptor {
+            inner: self.inner.exact_descriptor(),
+            init: self.init,
+            f: self.f,
+        }
+    }
+}
+
+struct MapInitSourceDescriptor<Inner, Init, F> {
+    inner: Inner,
+    init: Init,
+    f: F,
+}
+
+impl<Inner: SourceCleanup, Init, F> SourceCleanup for MapInitSourceDescriptor<Inner, Init, F> {
+    const NEEDS_CLEANUP: bool = Inner::NEEDS_CLEANUP;
+
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
+        if Self::NEEDS_CLEANUP {
+            // SAFETY: This descriptor implements a pass-through of indices to the inner
+            // descriptor, therefore safety is preserved by induction.
+            unsafe {
+                self.inner.cleanup_item_range(range);
+            }
+        }
+    }
+}
+
+impl<Inner, I, Init, T, F> SourceDescriptor for MapInitSourceDescriptor<Inner, Init, F>
+where
+    Inner: SourceDescriptor,
+    Init: Fn() -> I + Sync,
+    F: Fn(&mut I, Inner::Item) -> T + Sync,
+{
+    type Item = T;
+    type ThreadContext = (Inner::ThreadContext, I);
+
+    fn init(&self) -> Self::ThreadContext {
+        (self.inner.init(), (self.init)())
+    }
+
+    unsafe fn fetch_item(
+        &self,
+        context: &mut Self::ThreadContext,
+        index: usize,
+    ) -> Option<Self::Item> {
+        // SAFETY: This descriptor implements a pass-through of indices to the inner
+        // descriptor, therefore safety is preserved by induction.
+        let item = unsafe { self.inner.fetch_item(&mut context.0, index) };
+        item.map(|item| (self.f)(&mut context.1, item))
+    }
+}
+
+impl<Inner, I, Init, T, F> ExactSourceDescriptor for MapInitSourceDescriptor<Inner, Init, F>
+where
+    Inner: ExactSourceDescriptor,
+    Init: Fn() -> I + Sync,
+    F: Fn(&mut I, Inner::Item) -> T + Sync,
+{
+    type Item = T;
+    type ThreadContext = (Inner::ThreadContext, I);
+
+    fn init(&self) -> Self::ThreadContext {
+        (self.inner.init(), (self.init)())
+    }
+
+    unsafe fn exact_fetch_item(
+        &self,
+        context: &mut Self::ThreadContext,
+        index: usize,
+    ) -> Self::Item {
+        // SAFETY: This descriptor implements a pass-through of indices to the inner
+        // descriptor, therefore safety is preserved by induction.
+        let item = unsafe { self.inner.exact_fetch_item(&mut context.0, index) };
+        (self.f)(&mut context.1, item)
     }
 }
 
@@ -805,8 +1003,17 @@ impl<Inner: SourceCleanup> SourceCleanup for RevSourceDescriptor<Inner> {
 
 impl<Inner: SourceDescriptor> SourceDescriptor for RevSourceDescriptor<Inner> {
     type Item = Inner::Item;
+    type ThreadContext = Inner::ThreadContext;
 
-    unsafe fn fetch_item(&self, index: usize) -> Option<Self::Item> {
+    fn init(&self) -> Self::ThreadContext {
+        self.inner.init()
+    }
+
+    unsafe fn fetch_item(
+        &self,
+        context: &mut Self::ThreadContext,
+        index: usize,
+    ) -> Option<Self::Item> {
         debug_assert!(index < self.len);
         // SAFETY: Given an inner descriptor of length `len`, the `RevSourceDescriptor`
         // implements a bijective mapping of indices from `0..len` to `0..len` given by
@@ -817,14 +1024,23 @@ impl<Inner: SourceDescriptor> SourceDescriptor for RevSourceDescriptor<Inner> {
         //   `fetch_item()` function are also in the `0..len` range,
         // - if the caller doesn't repeat indices, the rev adaptor doesn't repeat
         //   indices passed to the inner descriptor.
-        unsafe { self.inner.fetch_item(self.len - index - 1) }
+        unsafe { self.inner.fetch_item(context, self.len - index - 1) }
     }
 }
 
 impl<Inner: ExactSourceDescriptor> ExactSourceDescriptor for RevSourceDescriptor<Inner> {
     type Item = Inner::Item;
+    type ThreadContext = Inner::ThreadContext;
 
-    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
+    fn init(&self) -> Self::ThreadContext {
+        self.inner.init()
+    }
+
+    unsafe fn exact_fetch_item(
+        &self,
+        context: &mut Self::ThreadContext,
+        index: usize,
+    ) -> Self::Item {
         debug_assert!(index < self.len);
         // SAFETY: Given an inner descriptor of length `len`, the `RevSourceDescriptor`
         // implements a bijective mapping of indices from `0..len` to `0..len` given by
@@ -835,7 +1051,7 @@ impl<Inner: ExactSourceDescriptor> ExactSourceDescriptor for RevSourceDescriptor
         //   `exact_fetch_item()` function are also in the `0..len` range,
         // - if the caller doesn't repeat indices, the rev adaptor doesn't repeat
         //   indices passed to the inner descriptor.
-        unsafe { self.inner.exact_fetch_item(self.len - index - 1) }
+        unsafe { self.inner.exact_fetch_item(context, self.len - index - 1) }
     }
 }
 
@@ -907,8 +1123,17 @@ impl<Inner: SourceCleanup> SourceCleanup for SkipSourceDescriptor<Inner> {
 
 impl<Inner: ExactSourceDescriptor> ExactSourceDescriptor for SkipSourceDescriptor<Inner> {
     type Item = Inner::Item;
+    type ThreadContext = Inner::ThreadContext;
 
-    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
+    fn init(&self) -> Self::ThreadContext {
+        self.inner.init()
+    }
+
+    unsafe fn exact_fetch_item(
+        &self,
+        context: &mut Self::ThreadContext,
+        index: usize,
+    ) -> Self::Item {
         debug_assert!(index < self.len);
         // SAFETY: Given an inner descriptor of length `len` as well as a parameter
         // `count <= len`, the `SkipSourceDescriptor` implements a bijective mapping of
@@ -920,7 +1145,7 @@ impl<Inner: ExactSourceDescriptor> ExactSourceDescriptor for SkipSourceDescripto
         //   the inner `exact_fetch_item()` function are in the `count..len` range,
         // - if the caller doesn't repeat indices, the skip adaptor doesn't repeat
         //   indices passed to the inner descriptor.
-        unsafe { self.inner.exact_fetch_item(self.count + index) }
+        unsafe { self.inner.exact_fetch_item(context, self.count + index) }
     }
 }
 
@@ -1059,12 +1284,21 @@ impl<Inner: SourceCleanup> SourceCleanup for StepBySourceDescriptor<Inner> {
 
 impl<Inner: ExactSourceDescriptor> ExactSourceDescriptor for StepBySourceDescriptor<Inner> {
     type Item = Inner::Item;
+    type ThreadContext = Inner::ThreadContext;
 
-    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
+    fn init(&self) -> Self::ThreadContext {
+        self.inner.init()
+    }
+
+    unsafe fn exact_fetch_item(
+        &self,
+        context: &mut Self::ThreadContext,
+        index: usize,
+    ) -> Self::Item {
         debug_assert!(index < self.len);
         // SAFETY: See the function comment in `Self::cleanup_item_range`. This
         // implements the mapping `i -> step * i`.
-        unsafe { self.inner.exact_fetch_item(self.step * index) }
+        unsafe { self.inner.exact_fetch_item(context, self.step * index) }
     }
 }
 
@@ -1164,8 +1398,17 @@ impl<Inner: SourceCleanup> SourceCleanup for TakeSourceDescriptor<Inner> {
 
 impl<Inner: ExactSourceDescriptor> ExactSourceDescriptor for TakeSourceDescriptor<Inner> {
     type Item = Inner::Item;
+    type ThreadContext = Inner::ThreadContext;
 
-    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
+    fn init(&self) -> Self::ThreadContext {
+        self.inner.init()
+    }
+
+    unsafe fn exact_fetch_item(
+        &self,
+        context: &mut Self::ThreadContext,
+        index: usize,
+    ) -> Self::Item {
         debug_assert!(index < self.count);
         // SAFETY: Given an inner descriptor of length `len` as well as a parameter
         // `count <= len`, the `TakeSourceDescriptor` implements a pass-through mapping
@@ -1177,7 +1420,7 @@ impl<Inner: ExactSourceDescriptor> ExactSourceDescriptor for TakeSourceDescripto
         //   included in `0..len`),
         // - if the caller doesn't repeat indices, the take adaptor doesn't repeat
         //   indices passed to the inner descriptor.
-        unsafe { self.inner.exact_fetch_item(index) }
+        unsafe { self.inner.exact_fetch_item(context, index) }
     }
 }
 

@@ -2943,11 +2943,11 @@ mod test {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let sum = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .map_init(
                 rand::rng,
                 |rng, &x| if rng.random() { x * 2 } else { x * 3 },
             )
+            .with_thread_pool(&mut thread_pool)
             .sum::<u64>();
 
         assert!(sum >= INPUT_LEN * (INPUT_LEN + 1));
@@ -2961,11 +2961,11 @@ mod test {
         let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let needle = input
             .par_iter()
-            .with_thread_pool(&mut thread_pool)
             .map_init(
                 rand::rng,
                 |rng, &x| if rng.random() { 2 * x } else { 2 * x + 1 },
             )
+            .with_thread_pool(&mut thread_pool)
             .find_first(|&x| x >= 10);
         let needle = needle.unwrap();
         assert!(needle == 10 || needle == 11);

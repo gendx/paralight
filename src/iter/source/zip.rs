@@ -309,8 +309,17 @@ macro_rules! zipable_tuple {
         impl<$($tuple,)+> ExactSourceDescriptor for ZipEqSourceDescriptor<($($tuple,)+)>
         where $($tuple: ExactSourceDescriptor,)+ {
             type Item = ( $($tuple::Item,)+ );
+            type ThreadContext = ( $($tuple::ThreadContext,)+ );
 
-            unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
+            fn init(&self) -> Self::ThreadContext {
+                ( $( self.descriptors.$i.init(), )+ )
+            }
+
+            unsafe fn exact_fetch_item(
+                &self,
+                context: &mut Self::ThreadContext,
+                index: usize,
+            ) -> Self::Item {
                 debug_assert!(index < self.len);
                 ( $(
                     // SAFETY: Given descriptors of equal lengths `len`, the `ZipEqSourceDescriptor`
@@ -323,7 +332,7 @@ macro_rules! zipable_tuple {
                     //   and `exact_fetch_item()`, the zip-eq adaptor doesn't repeat indices passed to the
                     //   downstream descriptors.
                     unsafe {
-                        self.descriptors.$i.exact_fetch_item(index)
+                        self.descriptors.$i.exact_fetch_item(&mut context.$i, index)
                     },
                 )+ )
             }
@@ -369,8 +378,17 @@ macro_rules! zipable_tuple {
         impl<$($tuple,)+> ExactSourceDescriptor for ZipMaxSourceDescriptor<($($tuple,)+)>
         where $($tuple: ExactSourceDescriptor,)+ {
             type Item = ( $(Option<$tuple::Item>,)+ );
+            type ThreadContext = ( $($tuple::ThreadContext,)+ );
 
-            unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
+            fn init(&self) -> Self::ThreadContext {
+                ( $( self.descriptors.$i.init(), )+ )
+            }
+
+            unsafe fn exact_fetch_item(
+                &self,
+                context: &mut Self::ThreadContext,
+                index: usize,
+            ) -> Self::Item {
                 debug_assert!(index < self.len);
                 ( $( if index < self.descriptors.$i.len() {
                     // SAFETY: Given descriptors of maximal length `len`, the
@@ -387,7 +405,7 @@ macro_rules! zipable_tuple {
                     // This line implements the pass-through function, when the index is lower than
                     // the current descriptor length.
                     unsafe {
-                        Some(self.descriptors.$i.exact_fetch_item(index))
+                        Some(self.descriptors.$i.exact_fetch_item(&mut context.$i, index))
                     }
                 } else {
                     None
@@ -447,8 +465,17 @@ macro_rules! zipable_tuple {
             impl<$($tuple,)+> ExactSourceDescriptor for ZipMinSourceDescriptor<$($tuple,)+>
             where $($tuple: ExactSourceDescriptor,)+ {
                 type Item = ( $($tuple::Item,)+ );
+                type ThreadContext = ( $($tuple::ThreadContext,)+ );
 
-                unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
+                fn init(&self) -> Self::ThreadContext {
+                    ( $( self.descriptors.$i.init(), )+ )
+                }
+
+                unsafe fn exact_fetch_item(
+                    &self,
+                    context: &mut Self::ThreadContext,
+                    index: usize,
+                ) -> Self::Item {
                     debug_assert!(index < self.len);
                     ( $(
                         // SAFETY: Given descriptors of minimal length `len`, the
@@ -463,7 +490,7 @@ macro_rules! zipable_tuple {
                         //   and `exact_fetch_item()`, the zip-min adaptor doesn't repeat indices passed to
                         //   the downstream descriptors.
                         unsafe {
-                            self.descriptors.$i.exact_fetch_item(index)
+                            self.descriptors.$i.exact_fetch_item(&mut context.$i, index)
                         },
                     )+ )
                 }
@@ -604,10 +631,22 @@ where
     T: ExactSourceDescriptor,
 {
     type Item = [T::Item; N];
+    type ThreadContext = [T::ThreadContext; N];
 
-    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
+    fn init(&self) -> Self::ThreadContext {
+        self.descriptors.each_ref().map(|desc| desc.init())
+    }
+
+    unsafe fn exact_fetch_item(
+        &self,
+        context: &mut Self::ThreadContext,
+        index: usize,
+    ) -> Self::Item {
         debug_assert!(index < self.len);
-        self.descriptors.each_ref().map(|desc| {
+        let mut i = 0;
+        context.each_mut().map(|ctxt| {
+            let desc = &self.descriptors[i];
+            i += 1;
             // SAFETY: Given descriptors of equal lengths `len`, the `ZipEqSourceDescriptor`
             // implements a pass-through of indices in `0..len` to all of them.
             //
@@ -617,7 +656,7 @@ where
             // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
             //   and `exact_fetch_item()`, the zip-eq adaptor doesn't repeat indices passed
             //   to the downstream descriptors.
-            unsafe { desc.exact_fetch_item(index) }
+            unsafe { desc.exact_fetch_item(ctxt, index) }
         })
     }
 }
@@ -666,10 +705,22 @@ where
     T: ExactSourceDescriptor,
 {
     type Item = [Option<T::Item>; N];
+    type ThreadContext = [T::ThreadContext; N];
 
-    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
+    fn init(&self) -> Self::ThreadContext {
+        self.descriptors.each_ref().map(|desc| desc.init())
+    }
+
+    unsafe fn exact_fetch_item(
+        &self,
+        context: &mut Self::ThreadContext,
+        index: usize,
+    ) -> Self::Item {
         debug_assert!(index < self.len);
-        self.descriptors.each_ref().map(|desc| {
+        let mut i = 0;
+        context.each_mut().map(|ctxt| {
+            let desc = &self.descriptors[i];
+            i += 1;
             if index < desc.len() {
                 // SAFETY: Given descriptors of maximal length `len`, the
                 // `ZipMaxSourceDescriptor` implements a pass-through of indices in `0..len` to
@@ -684,7 +735,7 @@ where
                 //
                 // This line implements the pass-through function, when the index is lower than
                 // the current descriptor length.
-                unsafe { Some(desc.exact_fetch_item(index)) }
+                unsafe { Some(desc.exact_fetch_item(ctxt, index)) }
             } else {
                 None
             }
@@ -741,10 +792,22 @@ where
     T: ExactSourceDescriptor,
 {
     type Item = [T::Item; N];
+    type ThreadContext = [T::ThreadContext; N];
 
-    unsafe fn exact_fetch_item(&self, index: usize) -> Self::Item {
+    fn init(&self) -> Self::ThreadContext {
+        self.descriptors.each_ref().map(|desc| desc.init())
+    }
+
+    unsafe fn exact_fetch_item(
+        &self,
+        context: &mut Self::ThreadContext,
+        index: usize,
+    ) -> Self::Item {
         debug_assert!(index < self.len);
-        self.descriptors.each_ref().map(|desc| {
+        let mut i = 0;
+        context.each_mut().map(|ctxt| {
+            let desc = &self.descriptors[i];
+            i += 1;
             // SAFETY: Given descriptors of minimal length `len`, the
             // `ZipMinSourceDescriptor` implements a pass-through of indices in `0..len`
             // to all of them.
@@ -756,7 +819,7 @@ where
             // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
             //   and `exact_fetch_item()`, the zip-min adaptor doesn't repeat indices passed
             //   to the downstream descriptors.
-            unsafe { desc.exact_fetch_item(index) }
+            unsafe { desc.exact_fetch_item(ctxt, index) }
         })
     }
 }
