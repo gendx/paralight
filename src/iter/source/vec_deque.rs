@@ -130,7 +130,7 @@ impl<'data, T: Sync> ExactParallelSource for VecDequeRefParallelSource<'data, T>
 /// let mut values: VecDeque<_> = [Rc::new(1), Rc::new(2), Rc::new(3), Rc::new(4)]
 ///     .into_iter()
 ///     .collect();
-/// let iter: VecDequeRefMutParallelSource<_> = input.par_iter_mut();
+/// let iter: VecDequeRefMutParallelSource<_> = values.par_iter_mut();
 /// ```
 #[must_use = "iterator adaptors are lazy"]
 pub struct VecDequeRefMutParallelSource<'data, T> {
