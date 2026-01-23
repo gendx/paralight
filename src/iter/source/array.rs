@@ -110,8 +110,7 @@ impl<T: Send, const N: usize> SourceCleanup for ArraySourceDescriptor<T, N> {
             // - The offset in bytes `range.start * size_of::<T>()` fits in an `isize`,
             //   because the range is included in the length of the (well-formed) wrapped
             //   array. This is ensured by the safety pre-conditions of the
-            //   `cleanup_item_range()` function (the `range` must be included in
-            //   `0..self.len`).
+            //   `cleanup_item_range()` function (the `range` must be included in `0..N`).
             // - The `base_ptr` is derived from an allocated object (the wrapped array), and
             //   the entire range between `base_ptr` and the resulting `start_ptr` is in
             //   bounds of that allocated object. This is because the range start is smaller
@@ -151,7 +150,7 @@ impl<T: Send, const N: usize> SimpleExactSourceDescriptor for ArraySourceDescrip
         //   the index is smaller than the length of the (well-formed) wrapped array.
         //   This is ensured by the safety pre-conditions of the
         //   `simple_exact_fetch_item()` function (the `index` must be in the range
-        //   `0..self.len`), and further confirmed by the assertion.
+        //   `0..N`), and further confirmed by the assertion.
         // - The `base_ptr` is derived from an allocated object (the wrapped array), and
         //   the entire range between `base_ptr` and the resulting `item_ptr` is in
         //   bounds of that allocated object. This is because the index is smaller than

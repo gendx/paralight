@@ -11,6 +11,7 @@
 use super::{
     ExactParallelSource, ExactSourceDescriptor, ParallelSource, SourceCleanup, SourceDescriptor,
 };
+use crate::iter::{Accumulator, ExactParallelSink, ExactSizeAccumulator};
 
 /// This struct is created by the [`chain()`](super::ParallelSourceExt::chain)
 /// method on [`ParallelSourceExt`](super::ParallelSourceExt) and
@@ -1470,6 +1471,62 @@ impl<Inner: ExactParallelSource> ExactParallelSource for TakeExact<Inner> {
             inner: descriptor,
             count: self.count,
             inner_len,
+        }
+    }
+}
+
+// Collect helpers
+
+pub struct CollectAccumulator<Init, ProcessItem> {
+    pub(super) init: Init,
+    pub(super) process_item: ProcessItem,
+}
+
+impl<ThreadContext, Init, ProcessItem> Accumulator<usize, ()>
+    for CollectAccumulator<Init, ProcessItem>
+where
+    Init: Fn() -> ThreadContext,
+    ProcessItem: Fn(&mut ThreadContext, usize),
+{
+    #[inline(always)]
+    fn accumulate(&self, iter: impl Iterator<Item = usize>) {
+        let mut context = (self.init)();
+        iter.for_each(|index| (self.process_item)(&mut context, index));
+    }
+}
+
+pub struct NoopAccumulator;
+
+impl ExactSizeAccumulator<(), ()> for NoopAccumulator {
+    fn accumulate_exact(&self, _: impl ExactSizeIterator<Item = ()>) {}
+}
+
+pub struct CollectCleaner<'a, Source, Sink> {
+    pub(super) source: &'a Source,
+    pub(super) sink: &'a Sink,
+}
+
+impl<Source, Sink> SourceCleanup for CollectCleaner<'_, Source, Sink>
+where
+    Source: SourceCleanup,
+    Sink: ExactParallelSink,
+{
+    const NEEDS_CLEANUP: bool = Source::NEEDS_CLEANUP || Sink::NEEDS_CLEANUP;
+
+    fn len(&self) -> usize {
+        self.source.len()
+    }
+
+    unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
+        // SAFETY: This function implements a pass-through of indices to cleanup to the
+        // inner source, so safety is guaranteed by induction.
+        unsafe {
+            self.source.cleanup_item_range(range.clone());
+        }
+        // SAFETY: This function implements a pass-through of indices to cleanup to the
+        // inner sink, so safety is guaranteed by induction.
+        unsafe {
+            self.sink.skip_item_range(range);
         }
     }
 }

@@ -85,6 +85,7 @@ impl<T: Send> ExactParallelSource for VecParallelSource<T> {
     type Item = T;
 
     fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
+        // TODO(MSRV >= 1.93.0): Use Vec::into_raw_parts().
         let mut vec = ManuallyDrop::new(self.vec);
         let mut_ptr = vec.as_mut_ptr();
         let len = vec.len();

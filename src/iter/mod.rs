@@ -9,6 +9,7 @@
 //! Iterator adaptors to define parallel pipelines more conveniently.
 
 mod detail;
+mod sink;
 mod source;
 
 use detail::{
@@ -17,6 +18,10 @@ use detail::{
     TryIterCollector, TryIterFolder,
 };
 pub use detail::{Map, MinMaxResult};
+#[cfg(feature = "nightly")]
+pub use sink::array::ArrayParallelSink;
+pub use sink::vec::VecParallelSink;
+pub use sink::{ExactParallelSink, FromExactParallelSink};
 #[cfg(feature = "nightly")]
 pub use source::array::ArrayParallelSource;
 #[cfg(all(test, any(feature = "rayon", feature = "default-thread-pool")))]

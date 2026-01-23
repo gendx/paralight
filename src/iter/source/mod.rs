@@ -19,11 +19,16 @@ pub mod vec;
 pub mod vec_deque;
 pub mod zip;
 
-use super::{Accumulator, ExactSizeAccumulator, GenericThreadPool, ParallelIterator};
+use super::{
+    Accumulator, ExactParallelSink, ExactSizeAccumulator, FromExactParallelSink, GenericThreadPool,
+    ParallelIterator,
+};
 pub use detail::{
     Chain, Cloned, Copied, Enumerate, Filter, FilterExact, FilterMap, FilterMapExact, Inspect, Map,
     MapInit, Rev, Skip, SkipExact, StepBy, Take, TakeExact,
 };
+use detail::{CollectAccumulator, CollectCleaner, NoopAccumulator};
+use scopeguard::ScopeGuard;
 use std::ops::ControlFlow;
 
 /// An interface to cleanup a range of items that aren't fetched from a source.
@@ -1514,6 +1519,174 @@ pub struct BaseExactParallelIterator<T: GenericThreadPool, S: ExactParallelSourc
     source: S,
 }
 
+impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, S> {
+    /// Collects this parallel iterator into the given collection (a type that
+    /// implements [`FromExactParallelSink`]).
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let collection: Vec<_> = (1..=10)
+    ///     .into_par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .collect();
+    /// assert_eq!(collection, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    /// ```
+    ///
+    /// You can only call this on an _exact_ parallel source, which for example
+    /// excludes pipelines containing
+    /// [`filter()`](ExactParallelSourceExt::filter).
+    ///
+    /// If the parallel source is inexact, you can use
+    /// [`collect_per_thread()`](super::ParallelIteratorExt::collect_per_thread)
+    /// instead.
+    ///
+    /// ```compile_fail
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let collection: Vec<_> = (1..=10)
+    ///     .into_par_iter()
+    ///     .filter(|x| **x % 2 == 0) // After this, the pipeline isn't exact anymore.
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .collect();
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let _collection: Vec<Vec<_>> = (1..=10)
+    ///     .into_par_iter()
+    ///     .filter(|x| *x % 2 == 0)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .collect_per_thread();
+    /// ```
+    ///
+    /// This is only implemented for target types that are indexed. To collect
+    /// into an arbitrary collection such as
+    /// [`HashMap`](std::collections::HashMap) or
+    /// [`BTreeMap`](std::collections::BTreeMap), use
+    /// [`for_each()`](super::ParallelIteratorExt::for_each), with a separate
+    /// synchronization mechanism.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// use std::collections::HashSet;
+    /// use std::sync::Mutex;
+    ///
+    /// // Tip: use the dashmap crate instead to avoid lock contention on the mutex.
+    /// let collection = Mutex::new(HashSet::new());
+    /// (1..=10)
+    ///     .into_par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .for_each(|x| {
+    ///         collection.lock().unwrap().insert(x);
+    ///     });
+    /// let collection = collection.into_inner().unwrap();
+    /// assert_eq!(collection, (1..=10).collect());
+    /// ```
+    pub fn collect<C>(self) -> C
+    where
+        C: FromExactParallelSink<Item = S::Item>,
+    {
+        let source_descriptor = self.source.exact_descriptor();
+        let len = source_descriptor.len();
+
+        // If creating the sink panics, we need to make sure that the source is cleaned
+        // up.
+        let cleanup_guard = scopeguard::guard(source_descriptor, |descriptor| {
+            // SAFETY: This scope guard is only invoked if the next statement (creating the
+            // sink via `Sink::new()`) panics. In that case, it is safe (and desired) to
+            // cleanup the entire `0..len` range before the descriptor goes out
+            // of scope.
+            unsafe {
+                descriptor.cleanup_item_range(0..len);
+            }
+        });
+        let sink = C::Sink::new(len);
+        let source_descriptor = ScopeGuard::into_inner(cleanup_guard);
+
+        // If the pipeline panics, we need to cancel this sink.
+        let sink = scopeguard::guard(sink, |sink| {
+            // SAFETY: This scope guard is only invoked if the pipeline panics. The
+            // `CollectAccumulator` and `CollectCleaner` make sure that each index in
+            // `0..len` is passed to calls to `Sink::push_item()` or
+            // `Sink::skip_item_range()` before this scope guard is invoked.
+            unsafe {
+                sink.cancel();
+            }
+        });
+
+        let accumulator = CollectAccumulator {
+            init: || source_descriptor.init(),
+            process_item: |context: &mut _, index| {
+                // If fetching this item panics, we need to skip the sink at this index.
+                let item_guard = scopeguard::guard((), |()| {
+                    // SAFETY: This scope guard is only invoked if a panic occurs during
+                    // `exact_fetch_item`. This ensures that this index is passed once to this
+                    // sink (as the regular `push_item` call doesn't happen).
+                    unsafe {
+                        sink.skip_item_range(index..index + 1);
+                    }
+                });
+
+                // SAFETY: The pre-conditions to the `source_descriptor`'s `exact_fetch_item()`
+                // and `cleanup_item_range()` methods are ensured by the safety guarantees of
+                // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed are in
+                // `0..len` and they are each passed exactly once.
+                let item = unsafe { source_descriptor.exact_fetch_item(context, index) };
+
+                // Defuse the guard.
+                ScopeGuard::into_inner(item_guard);
+
+                // SAFETY: The pre-conditions to the sink's `push_item()` and
+                // `skip_item_range()` methods are ensured by the safety guarantees of
+                // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed are in
+                // `0..len` and they are each passed exactly once.
+                unsafe { sink.push_item(index, item) };
+            },
+        };
+
+        let reduce = NoopAccumulator;
+
+        let sink_ref: &C::Sink = &sink;
+        let cleanup = CollectCleaner {
+            source: &source_descriptor,
+            sink: sink_ref,
+        };
+
+        self.thread_pool
+            .iter_pipeline(len, accumulator, reduce, &cleanup);
+
+        let sink = ScopeGuard::into_inner(sink);
+        // SAFETY: The pre-conditions are ensured by the safety guaranties of
+        // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed to the sink's
+        // `push_item()` and `skip_item_range()` are in `0..len` and they are each
+        // passed exactly once.
+        unsafe { C::finalize(sink) }
+    }
+}
+
 impl<T: GenericThreadPool, S: ParallelSource> ParallelIterator for BaseParallelIterator<T, S> {
     type Item = S::Item;
 
@@ -1622,10 +1795,9 @@ impl<T: GenericThreadPool, S: ExactParallelSource> ParallelIterator
             // https://users.rust-lang.org/t/implementation-of-fnonce-is-not-general-enough/78006/4.
             fetch_item: |context: &mut _, index| {
                 // SAFETY: The pre-conditions to the `source_descriptor`'s `exact_fetch_item()`
-                // and `cleanup_item_range()` methods are ensured by the safety
-                // guarantees of `ThreadPool::iter_pipeline()`, i.e. that all
-                // the indices passed are in `0..len` and they are each passed
-                // exactly once.
+                // and `cleanup_item_range()` methods are ensured by the safety guarantees of
+                // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed are in
+                // `0..len` and they are each passed exactly once.
                 unsafe { source_descriptor.exact_fetch_item(context, index) }
             },
         };
