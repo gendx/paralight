@@ -145,7 +145,7 @@ impl<T: Send> ExactParallelSink for VecParallelSink<T> {
         if Self::NEEDS_CLEANUP {
             // Drop all items, except those that were skipped.
             let mut skipped = self.skipped.into_inner().unwrap();
-            skipped.sort_unstable_by(|a, b| a.start.cmp(&b.start));
+            skipped.sort_unstable_by_key(|range| range.start);
 
             let mut prev = 0..0;
             for range in skipped.into_iter() {
