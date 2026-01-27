@@ -292,7 +292,6 @@ pub trait ParallelIterator: Sized {
     /// type).
     ///
     /// ```
-    /// # #![allow(clippy::bool_assert_comparison)]
     /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,

@@ -1556,7 +1556,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
     /// # .build();
     /// let collection: Vec<_> = (1..=10)
     ///     .into_par_iter()
-    ///     .filter(|x| **x % 2 == 0) // After this, the pipeline isn't exact anymore.
+    ///     .filter(|x| *x % 2 == 0) // After this, the pipeline isn't exact anymore.
     ///     .with_thread_pool(&mut thread_pool)
     ///     .collect();
     /// ```
