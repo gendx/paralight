@@ -208,12 +208,13 @@ pub trait ParallelIterator: Sized {
     ) -> Output {
         self.iter_pipeline(
             IterAccumulator {
-                init,
+                init: &init,
                 process_item,
-                finalize,
+                finalize: &finalize,
             },
             IterReducer { reduce },
         )
+        .unwrap_or_else(|| finalize(init()))
     }
 
     /// Runs the pipeline defined by the given functions on this iterator.
@@ -267,12 +268,13 @@ pub trait ParallelIterator: Sized {
         self.iter_pipeline(
             ShortCircuitingAccumulator {
                 fuse: Fuse::new(),
-                init,
+                init: &init,
                 process_item,
-                finalize,
+                finalize: &finalize,
             },
             IterReducer { reduce },
         )
+        .unwrap_or_else(|| finalize(ControlFlow::Continue(init())))
     }
 
     /// Runs the pipeline defined by the given functions on this iterator.
@@ -329,12 +331,13 @@ pub trait ParallelIterator: Sized {
         self.iter_pipeline(
             ShortCircuitingAccumulator {
                 fuse: Fuse::new(),
-                init,
+                init: &init,
                 process_item,
-                finalize,
+                finalize: &finalize,
             },
             IterReducer { reduce },
         )
+        .unwrap_or_else(|| finalize(Try::from_output(init())))
     }
 
     /// Runs the pipeline defined by the given functions on this iterator.

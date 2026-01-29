@@ -63,13 +63,13 @@ pub struct IterReducer<Reduce> {
     pub(super) reduce: Reduce,
 }
 
-impl<Output, Reduce> ExactSizeAccumulator<Output, Output> for IterReducer<Reduce>
+impl<Output, Reduce> ExactSizeAccumulator<Output, Option<Output>> for IterReducer<Reduce>
 where
     Reduce: Fn(Output, Output) -> Output,
 {
     #[inline(always)]
-    fn accumulate_exact(&self, iter: impl ExactSizeIterator<Item = Output>) -> Output {
-        iter.reduce(&self.reduce).unwrap()
+    fn accumulate_exact(&self, iter: impl ExactSizeIterator<Item = Output>) -> Option<Output> {
+        iter.reduce(&self.reduce)
     }
 }
 
