@@ -27,9 +27,13 @@ pub use detail::{
     Chain, Cloned, Copied, Enumerate, Filter, FilterExact, FilterMap, FilterMapExact, Inspect, Map,
     MapInit, Rev, Skip, SkipExact, StepBy, Take, TakeExact,
 };
-use detail::{CollectAccumulator, CollectCleaner, NoopAccumulator};
+use detail::{
+    CollectAccumulator, CollectCleaner, ErrorAccumulator, NoopAccumulator, TryCollectAccumulator,
+};
 use scopeguard::ScopeGuard;
 use std::ops::ControlFlow;
+#[cfg(feature = "nightly")]
+use std::ops::{Residual, Try};
 
 /// An interface to cleanup a range of items that aren't fetched from a source.
 ///
@@ -1523,6 +1527,8 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
     /// Collects this parallel iterator into the given collection (a type that
     /// implements [`FromExactParallelSink`]).
     ///
+    /// See also [`try_collect()`](Self::try_collect).
+    ///
     /// ```
     /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
@@ -1703,6 +1709,503 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
         // `push_item()` and `skip_item_range()` are in `0..len` and they are each
         // passed exactly once.
         unsafe { C::finalize(sink) }
+    }
+
+    /// Try collecting this parallel iterator into the given collection (a type
+    /// that implements [`FromExactParallelSink`]), breaking early and
+    /// returning the failure if any item contains a failure.
+    ///
+    /// See also [`collect()`](Self::collect).
+    ///
+    /// # Stability blockers
+    ///
+    /// On stable Rust, this adaptor is currently only implemented for
+    /// [`Result`] items. Items of arbitrary [`Try`] types are only available on
+    /// Rust nightly with the `nightly` feature of Paralight enabled. This is
+    /// because the implementation depends on the
+    /// [`try_trait_v2`](https://github.com/rust-lang/rust/issues/84277) and
+    /// [`try_trait_v2_residual`](https://github.com/rust-lang/rust/issues/91285)
+    /// nightly Rust features.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let collection: Result<Vec<_>, ()> = (1..=10)
+    ///     .into_par_iter()
+    ///     .map(Ok)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_collect();
+    /// assert_eq!(collection, Ok(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]));
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let collection: Result<Vec<_>, _> = (1..=10)
+    ///     .into_par_iter()
+    ///     .map(|i| if i == 7 { Err(i) } else { Ok(i) })
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_collect();
+    /// assert_eq!(collection, Err(7));
+    /// ```
+    ///
+    /// You can only call this for a combination of:
+    /// - an _exact_ parallel source: this for example excludes pipelines
+    ///   containing [`filter()`](ExactParallelSourceExt::filter),
+    /// - a target type that is indexed: this excludes collections such as
+    ///   [`HashMap`](std::collections::HashMap) or
+    ///   [`BTreeMap`](std::collections::BTreeMap).
+    ///
+    /// ```compile_fail
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let collection: Result<Vec<_>, ()> = (1..=10)
+    ///     .into_par_iter()
+    ///     .filter(|x| *x % 2 == 0) // After this, the pipeline isn't exact anymore.
+    ///     .map(Ok)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_collect();
+    /// ```
+    ///
+    /// ```compile_fail
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// use std::collections::HashSet;
+    ///
+    /// let collection: Result<HashSet<_>, ()> = (1..=10)
+    ///     .into_par_iter()
+    ///     .map(Ok)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_collect(); // A HashSet isn't an indexed collection, one cannot collect into it.
+    /// ```
+    ///
+    /// In other cases, you can either use
+    /// [`try_collect_per_thread()`](super::ParallelIteratorExt::try_collect_per_thread)
+    /// or [`try_for_each()`](super::ParallelIteratorExt::try_for_each) with a
+    /// separate synchronization mechanism.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// use std::collections::HashSet;
+    ///
+    /// let collection: Result<Vec<Vec<_>>, ()> = (1..=10)
+    ///     .into_par_iter()
+    ///     .filter(|x| *x % 2 == 0)
+    ///     .map(Ok)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_collect_per_thread();
+    /// assert!(collection.is_ok());
+    ///
+    /// // All even numbers will be in the resulting collection (in arbitrary order).
+    /// let values: HashSet<_> = collection.unwrap().into_iter().flatten().collect();
+    /// assert_eq!(values, [2, 4, 6, 8, 10].into_iter().collect());
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// use std::collections::HashSet;
+    /// use std::sync::Mutex;
+    ///
+    /// // Tip: use the dashmap crate instead to avoid lock contention on the mutex.
+    /// let collection = Mutex::new(HashSet::new());
+    /// let result: Result<(), ()> = (1..=10)
+    ///     .into_par_iter()
+    ///     .map(Ok)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_for_each(|x| {
+    ///         collection.lock().unwrap().insert(x?);
+    ///         Ok(())
+    ///     });
+    /// assert_eq!(result, Ok(()));
+    ///
+    /// let collection = collection.into_inner().unwrap();
+    /// assert_eq!(collection, (1..=10).collect());
+    /// ```
+    #[cfg(not(feature = "nightly"))]
+    pub fn try_collect<I, E, C>(self) -> Result<C, E>
+    where
+        S: ExactParallelSource<Item = Result<I, E>>,
+        C: FromExactParallelSink<Item = I>,
+        E: Send,
+    {
+        let source_descriptor = self.source.exact_descriptor();
+        let len = source_descriptor.len();
+
+        let cleanup_guard = scopeguard::guard(source_descriptor, |descriptor| {
+            // SAFETY: This scope guard is only invoked if the next statement (creating the
+            // sink via `Sink::new()`) panics. In that case, it is safe (and desired) to
+            // cleanup the entire `0..len` range before the descriptor goes out
+            // of scope.
+            unsafe {
+                descriptor.cleanup_item_range(0..len);
+            }
+        });
+        let sink = C::Sink::new(len);
+        let source_descriptor = ScopeGuard::into_inner(cleanup_guard);
+
+        let sink = scopeguard::guard(sink, |sink| {
+            // SAFETY: This scope guard is only invoked if the pipeline panics or is
+            // interrupted early by an error. The `CollectAccumulator` and `CollectCleaner`
+            // make sure that each index in `0..len` is passed to calls to
+            // `Sink::push_item()` or `Sink::skip_item_range()` before this scope guard is
+            // invoked.
+            unsafe {
+                sink.cancel();
+            }
+        });
+
+        let accumulator = TryCollectAccumulator {
+            init: || source_descriptor.init(),
+            process_item: |context: &mut _, index| {
+                // If fetching this item panics or returns an error, we need to skip the sink at
+                // this index.
+                let item_guard = scopeguard::guard((), |()| {
+                    // SAFETY: This scope guard is only invoked if `exact_fetch_item` panics or
+                    // returns an error. This ensures that this index is passed once to this sink
+                    // (as the regular `push_item` call doesn't happen).
+                    unsafe {
+                        sink.skip_item_range(index..index + 1);
+                    }
+                });
+
+                // SAFETY: The pre-conditions to the `source_descriptor`'s `exact_fetch_item()`
+                // and `cleanup_item_range()` methods are ensured by the safety guarantees of
+                // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed are in
+                // `0..len` and they are each passed exactly once.
+                let item = unsafe { source_descriptor.exact_fetch_item(context, index) };
+                let item = item?;
+
+                // Defuse the guard.
+                ScopeGuard::into_inner(item_guard);
+
+                // SAFETY: The pre-conditions to the sink's `push_item()` and
+                // `skip_item_range()` methods are ensured by the safety guarantees of
+                // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed are in
+                // `0..len` and they are each passed exactly once.
+                unsafe { sink.push_item(index, item) };
+                Ok(())
+            },
+        };
+
+        let reduce = ErrorAccumulator;
+
+        let sink_ref: &C::Sink = &sink;
+        let cleanup = CollectCleaner {
+            source: &source_descriptor,
+            sink: sink_ref,
+        };
+
+        self.thread_pool
+            .iter_pipeline(len, accumulator, reduce, &cleanup)?;
+
+        let sink = ScopeGuard::into_inner(sink);
+        // SAFETY: The pre-conditions are ensured by the safety guaranties of
+        // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed to the sink's
+        // `push_item()` and `skip_item_range()` are in `0..len` and they are each
+        // passed exactly once.
+        let collection = unsafe { C::finalize(sink) };
+        Ok(collection)
+    }
+
+    /// Try collecting this parallel iterator into the given collection (a type
+    /// that implements [`FromExactParallelSink`]), breaking early and
+    /// returning the failure if any item contains a failure.
+    ///
+    /// See also [`collect()`](Self::collect).
+    ///
+    /// # Stability blockers
+    ///
+    /// On stable Rust, this adaptor is currently only implemented for
+    /// [`Result`] items. Items of arbitrary [`Try`] types are only available on
+    /// Rust nightly with the `nightly` feature of Paralight enabled. This is
+    /// because the implementation depends on the
+    /// [`try_trait_v2`](https://github.com/rust-lang/rust/issues/84277) and
+    /// [`try_trait_v2_residual`](https://github.com/rust-lang/rust/issues/91285)
+    /// nightly Rust features.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let collection: Result<Vec<_>, ()> = (1..=10)
+    ///     .into_par_iter()
+    ///     .map(Ok)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_collect();
+    /// assert_eq!(collection, Ok(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]));
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let collection: Result<Vec<_>, _> = (1..=10)
+    ///     .into_par_iter()
+    ///     .map(|i| if i == 7 { Err(i) } else { Ok(i) })
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_collect();
+    /// assert_eq!(collection, Err(7));
+    /// ```
+    ///
+    /// With the `nightly` feature on a nightly compiler:
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let collection: Option<Vec<_>> = (1..=10)
+    ///     .into_par_iter()
+    ///     .map(Some)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_collect();
+    /// assert_eq!(collection, Some(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]));
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let collection: Option<Vec<_>> = (1..=10)
+    ///     .into_par_iter()
+    ///     .map(|i| if i == 7 { None } else { Some(i) })
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_collect();
+    /// assert_eq!(collection, None);
+    /// ```
+    ///
+    /// You can only call this for a combination of:
+    /// - an _exact_ parallel source: this for example excludes pipelines
+    ///   containing [`filter()`](ExactParallelSourceExt::filter),
+    /// - a target type that is indexed: this excludes collections such as
+    ///   [`HashMap`](std::collections::HashMap) or
+    ///   [`BTreeMap`](std::collections::BTreeMap).
+    ///
+    /// ```compile_fail
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let collection: Result<Vec<_>, ()> = (1..=10)
+    ///     .into_par_iter()
+    ///     .filter(|x| *x % 2 == 0) // After this, the pipeline isn't exact anymore.
+    ///     .map(Ok)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_collect();
+    /// ```
+    ///
+    /// ```compile_fail
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// use std::collections::HashSet;
+    ///
+    /// let collection: Result<HashSet<_>, ()> = (1..=10)
+    ///     .into_par_iter()
+    ///     .map(Ok)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_collect(); // A HashSet isn't an indexed collection, one cannot collect into it.
+    /// ```
+    ///
+    /// In other cases, you can either use
+    /// [`try_collect_per_thread()`](super::ParallelIteratorExt::try_collect_per_thread)
+    /// or [`try_for_each()`](super::ParallelIteratorExt::try_for_each) with a
+    /// separate synchronization mechanism.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// use std::collections::HashSet;
+    ///
+    /// let collection: Result<Vec<Vec<_>>, ()> = (1..=10)
+    ///     .into_par_iter()
+    ///     .filter(|x| *x % 2 == 0)
+    ///     .map(Ok)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_collect_per_thread();
+    /// assert!(collection.is_ok());
+    ///
+    /// // All even numbers will be in the resulting collection (in arbitrary order).
+    /// let values: HashSet<_> = collection.unwrap().into_iter().flatten().collect();
+    /// assert_eq!(values, [2, 4, 6, 8, 10].into_iter().collect());
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// use std::collections::HashSet;
+    /// use std::sync::Mutex;
+    ///
+    /// // Tip: use the dashmap crate instead to avoid lock contention on the mutex.
+    /// let collection = Mutex::new(HashSet::new());
+    /// let result: Result<(), ()> = (1..=10)
+    ///     .into_par_iter()
+    ///     .map(Ok)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_for_each(|x| {
+    ///         collection.lock().unwrap().insert(x?);
+    ///         Ok(())
+    ///     });
+    /// assert_eq!(result, Ok(()));
+    ///
+    /// let collection = collection.into_inner().unwrap();
+    /// assert_eq!(collection, (1..=10).collect());
+    /// ```
+    #[cfg(feature = "nightly")]
+    pub fn try_collect<C>(self) -> <<S::Item as Try>::Residual as Residual<C>>::TryType
+    where
+        // ~ Result<T, E>
+        S::Item: Try,
+        // ~ Result<!, E>: Result<(), E> + Result<C, E>
+        <S::Item as Try>::Residual: Residual<()> + Residual<C>,
+        // ~ C: FromExactParallelSink<Item = T>
+        C: FromExactParallelSink<Item = <S::Item as Try>::Output>,
+        // ~ Result<(), E>: Send
+        <<S::Item as Try>::Residual as Residual<()>>::TryType: Send,
+    {
+        let source_descriptor = self.source.exact_descriptor();
+        let len = source_descriptor.len();
+
+        let cleanup_guard = scopeguard::guard(source_descriptor, |descriptor| {
+            // SAFETY: This scope guard is only invoked if the next statement (creating the
+            // sink via `Sink::new()`) panics. In that case, it is safe (and desired) to
+            // cleanup the entire `0..len` range before the descriptor goes out
+            // of scope.
+            unsafe {
+                descriptor.cleanup_item_range(0..len);
+            }
+        });
+        let sink = C::Sink::new(len);
+        let source_descriptor = ScopeGuard::into_inner(cleanup_guard);
+
+        let sink = scopeguard::guard(sink, |sink| {
+            // SAFETY: This scope guard is only invoked if the pipeline panics or is
+            // interrupted early by an error. The `CollectAccumulator` and `CollectCleaner`
+            // make sure that each index in `0..len` is passed to calls to
+            // `Sink::push_item()` or `Sink::skip_item_range()` before this scope guard is
+            // invoked.
+            unsafe {
+                sink.cancel();
+            }
+        });
+
+        let accumulator = TryCollectAccumulator {
+            init: || source_descriptor.init(),
+            process_item: |context: &mut _,
+                           index|
+             -> <<S::Item as Try>::Residual as Residual<()>>::TryType {
+                // If fetching this item panics or returns an error, we need to skip the sink at
+                // this index.
+                let item_guard = scopeguard::guard((), |()| {
+                    // SAFETY: This scope guard is only invoked if `exact_fetch_item` panics or
+                    // returns an error. This ensures that this index is passed once to this sink
+                    // (as the regular `push_item` call doesn't happen).
+                    unsafe {
+                        sink.skip_item_range(index..index + 1);
+                    }
+                });
+
+                // SAFETY: The pre-conditions to the `source_descriptor`'s `exact_fetch_item()`
+                // and `cleanup_item_range()` methods are ensured by the safety guarantees of
+                // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed are in
+                // `0..len` and they are each passed exactly once.
+                let item = unsafe { source_descriptor.exact_fetch_item(context, index) };
+                let item = item?;
+
+                // Defuse the guard.
+                ScopeGuard::into_inner(item_guard);
+
+                // SAFETY: The pre-conditions to the sink's `push_item()` and
+                // `skip_item_range()` methods are ensured by the safety guarantees of
+                // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed are in
+                // `0..len` and they are each passed exactly once.
+                unsafe { sink.push_item(index, item) };
+                Try::from_output(())
+            },
+        };
+
+        let reduce = ErrorAccumulator;
+
+        let sink_ref: &C::Sink = &sink;
+        let cleanup = CollectCleaner {
+            source: &source_descriptor,
+            sink: sink_ref,
+        };
+
+        self.thread_pool
+            .iter_pipeline(len, accumulator, reduce, &cleanup)?;
+
+        let sink = ScopeGuard::into_inner(sink);
+        // SAFETY: The pre-conditions are ensured by the safety guaranties of
+        // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed to the sink's
+        // `push_item()` and `skip_item_range()` are in `0..len` and they are each
+        // passed exactly once.
+        let collection = unsafe { C::finalize(sink) };
+        Try::from_output(collection)
     }
 }
 

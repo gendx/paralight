@@ -306,6 +306,11 @@ mod test {
                 test_adaptor_product,
                 test_adaptor_reduce,
                 test_adaptor_sum,
+                test_adaptor_try_collect,
+                test_adaptor_try_collect_panic => fail("worker thread(s) panicked!", "arithmetic panic"),
+                test_adaptor_try_collect_one_panic => fail("worker thread(s) panicked!", "arithmetic panic"),
+                #[cfg(feature = "nightly")]
+                test_adaptor_try_collect_option,
                 test_adaptor_try_collect_per_thread,
                 #[cfg(feature = "nightly")]
                 test_adaptor_try_collect_per_thread_option,
@@ -4108,6 +4113,105 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .sum::<u64>();
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_adaptor_try_collect<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
+        let collection: Result<Vec<Box<u64>>, ()> = input
+            .par_iter()
+            .cloned()
+            .map(Ok)
+            .with_thread_pool(&mut thread_pool)
+            .try_collect();
+        assert_eq!(collection.unwrap(), input);
+
+        let collection: Result<Vec<Box<u64>>, _> = input
+            .par_iter()
+            .cloned()
+            .map(|x| if *x % 2 == 0 { Ok(x) } else { Err(x) })
+            .with_thread_pool(&mut thread_pool)
+            .try_collect();
+        assert!(collection.is_err());
+        assert!(*collection.unwrap_err() % 2 == 1);
+
+        let collection: Result<Vec<Box<u64>>, _> = input
+            .par_iter()
+            .cloned()
+            .map(|x| if *x != 7 { Ok(x) } else { Err(x) })
+            .with_thread_pool(&mut thread_pool)
+            .try_collect();
+        assert!(collection.is_err());
+        assert!(*collection.unwrap_err() == 7);
+    }
+
+    fn test_adaptor_try_collect_panic<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN)
+            .map(|x| Ok(Box::new(x)))
+            .collect::<Vec<Result<Box<u64>, ()>>>();
+        let _: Result<Vec<Box<u64>>, _> = input
+            .into_par_iter()
+            .inspect(|x| {
+                if x.as_ref().is_ok_and(|x| **x % 10 == 9) {
+                    panic!("arithmetic panic")
+                }
+            })
+            .with_thread_pool(&mut thread_pool)
+            .try_collect();
+    }
+
+    fn test_adaptor_try_collect_one_panic<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN)
+            .map(|x| Ok(Box::new(x)))
+            .collect::<Vec<Result<Box<u64>, ()>>>();
+        let _: Result<Vec<Box<u64>>, _> = input
+            .into_par_iter()
+            .inspect(|x| {
+                if x.as_ref().is_ok_and(|x| **x == 1) {
+                    panic!("arithmetic panic")
+                }
+            })
+            .with_thread_pool(&mut thread_pool)
+            .try_collect();
+    }
+
+    #[cfg(feature = "nightly")]
+    fn test_adaptor_try_collect_option<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
+        let collection: Option<Vec<Box<u64>>> = input
+            .par_iter()
+            .cloned()
+            .map(Some)
+            .with_thread_pool(&mut thread_pool)
+            .try_collect();
+        assert_eq!(collection.unwrap(), input);
+
+        let collection: Option<Vec<Box<u64>>> = input
+            .par_iter()
+            .cloned()
+            .map(|x| if *x % 2 == 0 { Some(x) } else { None })
+            .with_thread_pool(&mut thread_pool)
+            .try_collect();
+        assert!(collection.is_none());
+
+        let collection: Option<Vec<Box<u64>>> = input
+            .par_iter()
+            .cloned()
+            .map(|x| if *x != 7 { Some(x) } else { None })
+            .with_thread_pool(&mut thread_pool)
+            .try_collect();
+        assert!(collection.is_none());
     }
 
     fn test_adaptor_try_collect_per_thread<T>(mut thread_pool: T)

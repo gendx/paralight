@@ -12,6 +12,8 @@ use super::{
     ExactParallelSource, ExactSourceDescriptor, ParallelSource, SourceCleanup, SourceDescriptor,
 };
 use crate::iter::{Accumulator, ExactParallelSink, ExactSizeAccumulator};
+#[cfg(feature = "nightly")]
+use std::ops::Try;
 
 /// This struct is created by the [`chain()`](super::ParallelSourceExt::chain)
 /// method on [`ParallelSourceExt`](super::ParallelSourceExt) and
@@ -1528,5 +1530,58 @@ where
         unsafe {
             self.sink.skip_item_range(range);
         }
+    }
+}
+
+pub struct TryCollectAccumulator<Init, ProcessItem> {
+    pub(super) init: Init,
+    pub(super) process_item: ProcessItem,
+}
+
+#[cfg(not(feature = "nightly"))]
+impl<E, ThreadContext, Init, ProcessItem> Accumulator<usize, Result<(), E>>
+    for TryCollectAccumulator<Init, ProcessItem>
+where
+    Init: Fn() -> ThreadContext,
+    ProcessItem: Fn(&mut ThreadContext, usize) -> Result<(), E>,
+{
+    #[inline(always)]
+    fn accumulate(&self, mut iter: impl Iterator<Item = usize>) -> Result<(), E> {
+        let mut context = (self.init)();
+        iter.try_for_each(|index| (self.process_item)(&mut context, index))
+    }
+}
+
+#[cfg(feature = "nightly")]
+impl<R, ThreadContext, Init, ProcessItem> Accumulator<usize, R>
+    for TryCollectAccumulator<Init, ProcessItem>
+where
+    R: Try<Output = ()>,
+    Init: Fn() -> ThreadContext,
+    ProcessItem: Fn(&mut ThreadContext, usize) -> R,
+{
+    #[inline(always)]
+    fn accumulate(&self, mut iter: impl Iterator<Item = usize>) -> R {
+        let mut context = (self.init)();
+        iter.try_for_each(|index| (self.process_item)(&mut context, index))
+    }
+}
+
+pub struct ErrorAccumulator;
+
+#[cfg(not(feature = "nightly"))]
+impl<E> ExactSizeAccumulator<Result<(), E>, Result<(), E>> for ErrorAccumulator {
+    fn accumulate_exact(
+        &self,
+        mut iter: impl ExactSizeIterator<Item = Result<(), E>>,
+    ) -> Result<(), E> {
+        iter.try_fold((), |(), result| result)
+    }
+}
+
+#[cfg(feature = "nightly")]
+impl<R: Try<Output = ()>> ExactSizeAccumulator<R, R> for ErrorAccumulator {
+    fn accumulate_exact(&self, mut iter: impl ExactSizeIterator<Item = R>) -> R {
+        iter.try_fold((), |(), result| result)
     }
 }
