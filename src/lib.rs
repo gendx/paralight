@@ -235,10 +235,6 @@ mod test {
                 test_source_exact_adaptor_zip_max_cleanup,
                 test_source_exact_adaptor_zip_min,
                 test_source_exact_adaptor_zip_min_cleanup,
-                test_sink_vec,
-                test_sink_vec_boxed,
-                test_sink_vec_panic => fail("worker thread(s) panicked!", "arithmetic panic"),
-                test_sink_vec_one_panic => fail("worker thread(s) panicked!", "arithmetic panic"),
                 #[cfg(feature = "nightly")]
                 test_sink_array,
                 #[cfg(feature = "nightly")]
@@ -249,6 +245,14 @@ mod test {
                 test_sink_array_panic => fail("worker thread(s) panicked!", "arithmetic panic"),
                 #[cfg(feature = "nightly")]
                 test_sink_array_one_panic => fail("worker thread(s) panicked!", "arithmetic panic"),
+                test_sink_boxed_slice,
+                test_sink_boxed_slice_panic => fail("worker thread(s) panicked!", "arithmetic panic"),
+                test_sink_vec,
+                test_sink_vec_boxed,
+                test_sink_vec_panic => fail("worker thread(s) panicked!", "arithmetic panic"),
+                test_sink_vec_one_panic => fail("worker thread(s) panicked!", "arithmetic panic"),
+                test_sink_vec_deque,
+                test_sink_vec_deque_panic => fail("worker thread(s) panicked!", "arithmetic panic"),
                 test_adaptor_all,
                 test_adaptor_any,
                 test_adaptor_cloned,
@@ -2293,66 +2297,6 @@ mod test {
         assert_eq!(needle, Some([Box::new(9), Box::new(INPUT_LEN + 9)]));
     }
 
-    fn test_sink_vec<T>(mut thread_pool: T)
-    where
-        for<'a> &'a mut T: GenericThreadPool,
-    {
-        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-        let collection = input
-            .into_par_iter()
-            .with_thread_pool(&mut thread_pool)
-            .collect::<Vec<u64>>();
-        for (i, x) in collection.iter().enumerate() {
-            assert_eq!(i as u64, *x);
-        }
-    }
-
-    fn test_sink_vec_boxed<T>(mut thread_pool: T)
-    where
-        for<'a> &'a mut T: GenericThreadPool,
-    {
-        let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
-        let collection = input
-            .into_par_iter()
-            .with_thread_pool(&mut thread_pool)
-            .collect::<Vec<Box<u64>>>();
-        for (i, x) in collection.iter().enumerate() {
-            assert_eq!(i as u64, **x);
-        }
-    }
-
-    fn test_sink_vec_panic<T>(mut thread_pool: T)
-    where
-        for<'a> &'a mut T: GenericThreadPool,
-    {
-        let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
-        input
-            .into_par_iter()
-            .inspect(|x| {
-                if **x % 10 == 9 {
-                    panic!("arithmetic panic")
-                }
-            })
-            .with_thread_pool(&mut thread_pool)
-            .collect::<Vec<Box<u64>>>();
-    }
-
-    fn test_sink_vec_one_panic<T>(mut thread_pool: T)
-    where
-        for<'a> &'a mut T: GenericThreadPool,
-    {
-        let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
-        input
-            .into_par_iter()
-            .inspect(|x| {
-                if **x == 1 {
-                    panic!("arithmetic panic")
-                }
-            })
-            .with_thread_pool(&mut thread_pool)
-            .collect::<Vec<Box<u64>>>();
-    }
-
     #[cfg(feature = "nightly")]
     fn test_sink_array<T>(mut thread_pool: T)
     where
@@ -2427,6 +2371,126 @@ mod test {
             })
             .with_thread_pool(&mut thread_pool)
             .collect();
+    }
+
+    fn test_sink_boxed_slice<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
+        let collection = input
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .collect::<Box<[Box<u64>]>>();
+        for (i, x) in collection.iter().enumerate() {
+            assert_eq!(i as u64, **x);
+        }
+    }
+
+    fn test_sink_boxed_slice_panic<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
+        input
+            .into_par_iter()
+            .inspect(|x| {
+                if **x % 10 == 9 {
+                    panic!("arithmetic panic")
+                }
+            })
+            .with_thread_pool(&mut thread_pool)
+            .collect::<Box<[Box<u64>]>>();
+    }
+
+    fn test_sink_vec<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let collection = input
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .collect::<Vec<u64>>();
+        for (i, x) in collection.iter().enumerate() {
+            assert_eq!(i as u64, *x);
+        }
+    }
+
+    fn test_sink_vec_boxed<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
+        let collection = input
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .collect::<Vec<Box<u64>>>();
+        for (i, x) in collection.iter().enumerate() {
+            assert_eq!(i as u64, **x);
+        }
+    }
+
+    fn test_sink_vec_panic<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
+        input
+            .into_par_iter()
+            .inspect(|x| {
+                if **x % 10 == 9 {
+                    panic!("arithmetic panic")
+                }
+            })
+            .with_thread_pool(&mut thread_pool)
+            .collect::<Vec<Box<u64>>>();
+    }
+
+    fn test_sink_vec_one_panic<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
+        input
+            .into_par_iter()
+            .inspect(|x| {
+                if **x == 1 {
+                    panic!("arithmetic panic")
+                }
+            })
+            .with_thread_pool(&mut thread_pool)
+            .collect::<Vec<Box<u64>>>();
+    }
+
+    fn test_sink_vec_deque<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
+        let collection = input
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .collect::<VecDeque<Box<u64>>>();
+        for (i, x) in collection.iter().enumerate() {
+            assert_eq!(i as u64, **x);
+        }
+    }
+
+    fn test_sink_vec_deque_panic<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
+        input
+            .into_par_iter()
+            .inspect(|x| {
+                if **x % 10 == 9 {
+                    panic!("arithmetic panic")
+                }
+            })
+            .with_thread_pool(&mut thread_pool)
+            .collect::<VecDeque<Box<u64>>>();
     }
 
     fn test_adaptor_all<T>(mut thread_pool: T)
