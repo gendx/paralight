@@ -205,13 +205,29 @@ mod test {
                 test_source_vec_deque_ref,
                 test_source_vec_deque_ref_mut,
                 test_source_adaptor_chain,
+                test_source_adaptor_cloned,
+                test_source_adaptor_copied,
+                test_source_adaptor_filter,
+                test_source_adaptor_filter_map,
+                test_source_adaptor_inspect,
+                test_source_adaptor_map,
+                test_source_adaptor_map_init,
                 test_source_adaptor_rev,
                 test_source_exact_adaptor_chain,
                 test_source_exact_adaptor_chain_cleanup,
                 test_source_exact_adaptor_chain_overflow => fail("called chain() with sources that together produce more than usize::MAX items", "called chain() with sources that together produce more than usize::MAX items"),
                 test_source_exact_adaptor_chains_cleanup,
+                test_source_exact_adaptor_cloned,
+                test_source_exact_adaptor_copied,
                 test_source_exact_adaptor_enumerate,
                 test_source_exact_adaptor_enumerate_cleanup,
+                test_source_exact_adaptor_filter,
+                test_source_exact_adaptor_filter_find_first,
+                test_source_exact_adaptor_filter_map,
+                test_source_exact_adaptor_inspect,
+                test_source_exact_adaptor_map,
+                test_source_exact_adaptor_map_init,
+                test_source_exact_adaptor_map_init_find_first,
                 test_source_exact_adaptor_rev,
                 test_source_exact_adaptor_rev_cleanup,
                 test_source_exact_adaptor_skip,
@@ -255,19 +271,14 @@ mod test {
                 test_sink_vec_deque_panic => fail("worker thread(s) panicked!", "arithmetic panic"),
                 test_adaptor_all,
                 test_adaptor_any,
-                test_adaptor_cloned,
                 test_adaptor_cmp,
                 test_adaptor_cmp_by,
                 test_adaptor_cmp_by_key,
                 test_adaptor_cmp_by_keys,
                 test_adaptor_collect_per_thread,
-                test_adaptor_copied,
                 test_adaptor_eq,
                 test_adaptor_eq_by_key,
                 test_adaptor_eq_by_keys,
-                test_adaptor_filter,
-                test_adaptor_filter_find_first,
-                test_adaptor_filter_map,
                 test_adaptor_find_any,
                 test_adaptor_find_first,
                 test_adaptor_find_map_any,
@@ -275,10 +286,7 @@ mod test {
                 test_adaptor_fold_per_thread,
                 test_adaptor_for_each,
                 test_adaptor_for_each_init,
-                test_adaptor_inspect,
                 test_adaptor_map,
-                test_adaptor_map_init,
-                test_adaptor_map_init_find_first,
                 test_adaptor_max,
                 test_adaptor_max_by,
                 test_adaptor_max_by_key,
@@ -1468,6 +1476,136 @@ mod test {
         assert_eq!(needle, Some(INPUT_LEN / 2 - 1));
     }
 
+    fn test_source_adaptor_cloned<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN)
+            .map(Box::new)
+            .collect::<MyHashSet<Box<u64>>>();
+        let sum = input
+            .par_iter()
+            .cloned()
+            .with_thread_pool(&mut thread_pool)
+            .reduce(
+                || Box::new(0u64),
+                |mut x, y| {
+                    *x += *y;
+                    x
+                },
+            );
+        assert_eq!(*sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_source_adaptor_copied<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<MyHashSet<u64>>();
+        let sum = input
+            .par_iter()
+            .copied()
+            .with_thread_pool(&mut thread_pool)
+            .reduce(|| 0, |x, y| x + y);
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_source_adaptor_filter<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<MyHashSet<u64>>();
+        let sum = input
+            .par_iter()
+            .filter(|&&x| x % 2 == 0)
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+        assert_eq!(sum, (INPUT_LEN / 2) * (INPUT_LEN / 2 + 1));
+    }
+
+    fn test_source_adaptor_filter_map<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<MyHashSet<u64>>();
+        let sum = input
+            .par_iter()
+            .filter_map(|&x| if x % 2 == 0 { Some(x * 3) } else { None })
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+        assert_eq!(sum, 3 * (INPUT_LEN / 2) * (INPUT_LEN / 2 + 1));
+    }
+
+    fn test_source_adaptor_inspect<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        use std::sync::atomic::Ordering;
+
+        let input = (0..=INPUT_LEN).collect::<MyHashSet<u64>>();
+        let sum = AtomicU64::new(0);
+        let max = input
+            .par_iter()
+            .copied()
+            .inspect(|&x| {
+                sum.fetch_add(x, Ordering::Relaxed);
+            })
+            .with_thread_pool(&mut thread_pool)
+            .max();
+        assert_eq!(max, Some(INPUT_LEN));
+
+        let sum = sum.into_inner();
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_source_adaptor_map<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<MyHashSet<u64>>();
+        let sum1 = input
+            .par_iter()
+            .map(|&x| x * 42)
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+        assert_eq!(sum1, 42 * INPUT_LEN * (INPUT_LEN + 1) / 2);
+
+        let sum2 = input
+            .par_iter()
+            .map(|&x| x * 6)
+            .map(|x| x * 7)
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+        assert_eq!(sum2, 42 * INPUT_LEN * (INPUT_LEN + 1) / 2);
+
+        let sum3 = input
+            .par_iter()
+            // Mapping to a non-Send non-Sync type is fine, as the item stays on the same thread
+            // and isn't shared with other threads.
+            .map(|&x| Rc::new(x))
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
+        assert_eq!(sum3, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_source_adaptor_map_init<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<MyHashSet<u64>>();
+        let sum = input
+            .par_iter()
+            .map_init(
+                rand::rng,
+                |rng, &x| if rng.random() { x * 2 } else { x * 3 },
+            )
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+
+        assert!(sum >= INPUT_LEN * (INPUT_LEN + 1));
+        assert!(sum <= 3 * INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
     fn test_source_adaptor_rev<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
@@ -1601,6 +1739,38 @@ mod test {
         assert_eq!(needle, Some(Box::new(9)));
     }
 
+    fn test_source_exact_adaptor_cloned<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
+        let sum = input
+            .par_iter()
+            .cloned()
+            .with_thread_pool(&mut thread_pool)
+            .reduce(
+                || Box::new(0u64),
+                |mut x, y| {
+                    *x += *y;
+                    x
+                },
+            );
+        assert_eq!(*sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_source_exact_adaptor_copied<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let sum = input
+            .par_iter()
+            .copied()
+            .with_thread_pool(&mut thread_pool)
+            .reduce(|| 0, |x, y| x + y);
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
     fn test_source_exact_adaptor_enumerate<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
@@ -1652,6 +1822,132 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .find_first(|(_, x)| **x % 10 == 9);
         assert_eq!(needle, Some((9, Box::new(9))));
+    }
+
+    fn test_source_exact_adaptor_filter<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let sum = input
+            .par_iter()
+            .filter(|&&x| x % 2 == 0)
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+        assert_eq!(sum, (INPUT_LEN / 2) * (INPUT_LEN / 2 + 1));
+    }
+
+    fn test_source_exact_adaptor_filter_find_first<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let needle = input
+            .par_iter()
+            .filter(|&&x| x % 6 == 5)
+            .with_thread_pool(&mut thread_pool)
+            .find_first(|&x| x % 7 == 6);
+        assert_eq!(needle, Some(&41));
+    }
+
+    fn test_source_exact_adaptor_filter_map<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let sum = input
+            .par_iter()
+            .filter_map(|&x| if x % 2 == 0 { Some(x * 3) } else { None })
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+        assert_eq!(sum, 3 * (INPUT_LEN / 2) * (INPUT_LEN / 2 + 1));
+    }
+
+    fn test_source_exact_adaptor_inspect<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        use std::sync::atomic::Ordering;
+
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let sum = AtomicU64::new(0);
+        let max = input
+            .par_iter()
+            .copied()
+            .inspect(|&x| {
+                sum.fetch_add(x, Ordering::Relaxed);
+            })
+            .with_thread_pool(&mut thread_pool)
+            .max();
+        assert_eq!(max, Some(INPUT_LEN));
+
+        let sum = sum.into_inner();
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_source_exact_adaptor_map<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let sum1 = input
+            .par_iter()
+            .map(|&x| x * 42)
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+        assert_eq!(sum1, 42 * INPUT_LEN * (INPUT_LEN + 1) / 2);
+
+        let sum2 = input
+            .par_iter()
+            .map(|&x| x * 6)
+            .map(|x| x * 7)
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+        assert_eq!(sum2, 42 * INPUT_LEN * (INPUT_LEN + 1) / 2);
+
+        let sum3 = input
+            .par_iter()
+            // Mapping to a non-Send non-Sync type is fine, as the item stays on the same thread
+            // and isn't shared with other threads.
+            .map(|&x| Rc::new(x))
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
+        assert_eq!(sum3, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_source_exact_adaptor_map_init<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let sum = input
+            .par_iter()
+            .map_init(
+                rand::rng,
+                |rng, &x| if rng.random() { x * 2 } else { x * 3 },
+            )
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+
+        assert!(sum >= INPUT_LEN * (INPUT_LEN + 1));
+        assert!(sum <= 3 * INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_source_exact_adaptor_map_init_find_first<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let needle = input
+            .par_iter()
+            .map_init(
+                rand::rng,
+                |rng, &x| if rng.random() { 2 * x } else { 2 * x + 1 },
+            )
+            .with_thread_pool(&mut thread_pool)
+            .find_first(|&x| x >= 10);
+        let needle = needle.unwrap();
+        assert!(needle == 10 || needle == 11);
     }
 
     fn test_source_exact_adaptor_rev<T>(mut thread_pool: T)
@@ -2553,25 +2849,6 @@ mod test {
         assert!(!any_empty);
     }
 
-    fn test_adaptor_cloned<T>(mut thread_pool: T)
-    where
-        for<'a> &'a mut T: GenericThreadPool,
-    {
-        let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
-        let sum = input
-            .par_iter()
-            .cloned()
-            .with_thread_pool(&mut thread_pool)
-            .reduce(
-                || Box::new(0u64),
-                |mut x, y| {
-                    *x += *y;
-                    x
-                },
-            );
-        assert_eq!(*sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
-    }
-
     fn test_adaptor_cmp<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
@@ -2722,19 +2999,6 @@ mod test {
         assert_eq!(values, input);
     }
 
-    fn test_adaptor_copied<T>(mut thread_pool: T)
-    where
-        for<'a> &'a mut T: GenericThreadPool,
-    {
-        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-        let sum = input
-            .par_iter()
-            .copied()
-            .with_thread_pool(&mut thread_pool)
-            .reduce(|| 0, |x, y| x + y);
-        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
-    }
-
     fn test_adaptor_eq<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
@@ -2792,45 +3056,6 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .eq_by_keys(|x| x.1, |y| y.0);
         assert!(!equal);
-    }
-
-    fn test_adaptor_filter<T>(mut thread_pool: T)
-    where
-        for<'a> &'a mut T: GenericThreadPool,
-    {
-        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-        let sum = input
-            .par_iter()
-            .filter(|&&x| x % 2 == 0)
-            .with_thread_pool(&mut thread_pool)
-            .sum::<u64>();
-        assert_eq!(sum, (INPUT_LEN / 2) * (INPUT_LEN / 2 + 1));
-    }
-
-    fn test_adaptor_filter_find_first<T>(mut thread_pool: T)
-    where
-        for<'a> &'a mut T: GenericThreadPool,
-    {
-        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-        let needle = input
-            .par_iter()
-            .filter(|&&x| x % 6 == 5)
-            .with_thread_pool(&mut thread_pool)
-            .find_first(|&x| x % 7 == 6);
-        assert_eq!(needle, Some(&41));
-    }
-
-    fn test_adaptor_filter_map<T>(mut thread_pool: T)
-    where
-        for<'a> &'a mut T: GenericThreadPool,
-    {
-        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-        let sum = input
-            .par_iter()
-            .filter_map(|&x| if x % 2 == 0 { Some(x * 3) } else { None })
-            .with_thread_pool(&mut thread_pool)
-            .sum::<u64>();
-        assert_eq!(sum, 3 * (INPUT_LEN / 2) * (INPUT_LEN / 2 + 1));
     }
 
     fn test_adaptor_find_any<T>(mut thread_pool: T)
@@ -3098,28 +3323,6 @@ mod test {
         assert!(sum <= INPUT_LEN * (INPUT_LEN + 1));
     }
 
-    fn test_adaptor_inspect<T>(mut thread_pool: T)
-    where
-        for<'a> &'a mut T: GenericThreadPool,
-    {
-        use std::sync::atomic::Ordering;
-
-        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-        let sum = AtomicU64::new(0);
-        let max = input
-            .par_iter()
-            .copied()
-            .inspect(|&x| {
-                sum.fetch_add(x, Ordering::Relaxed);
-            })
-            .with_thread_pool(&mut thread_pool)
-            .max();
-        assert_eq!(max, Some(INPUT_LEN));
-
-        let sum = sum.into_inner();
-        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
-    }
-
     fn test_adaptor_map<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
@@ -3148,41 +3351,6 @@ mod test {
             .map(|&x| Rc::new(x))
             .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
         assert_eq!(sum3, INPUT_LEN * (INPUT_LEN + 1) / 2);
-    }
-
-    fn test_adaptor_map_init<T>(mut thread_pool: T)
-    where
-        for<'a> &'a mut T: GenericThreadPool,
-    {
-        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-        let sum = input
-            .par_iter()
-            .map_init(
-                rand::rng,
-                |rng, &x| if rng.random() { x * 2 } else { x * 3 },
-            )
-            .with_thread_pool(&mut thread_pool)
-            .sum::<u64>();
-
-        assert!(sum >= INPUT_LEN * (INPUT_LEN + 1));
-        assert!(sum <= 3 * INPUT_LEN * (INPUT_LEN + 1) / 2);
-    }
-
-    fn test_adaptor_map_init_find_first<T>(mut thread_pool: T)
-    where
-        for<'a> &'a mut T: GenericThreadPool,
-    {
-        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
-        let needle = input
-            .par_iter()
-            .map_init(
-                rand::rng,
-                |rng, &x| if rng.random() { 2 * x } else { 2 * x + 1 },
-            )
-            .with_thread_pool(&mut thread_pool)
-            .find_first(|&x| x >= 10);
-        let needle = needle.unwrap();
-        assert!(needle == 10 || needle == 11);
     }
 
     fn test_adaptor_max<T>(mut thread_pool: T)
