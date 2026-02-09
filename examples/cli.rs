@@ -1,4 +1,4 @@
-// Copyright 2025 Google LLC
+// Copyright 2025-2026 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -8,10 +8,10 @@
 
 //! CLI tool to run examples of parallel tasks.
 
+use chacha20::ChaCha12Rng;
 use clap::{Parser, ValueEnum};
 use rand::seq::index;
 use rand::SeedableRng;
-use rand_chacha::ChaCha12Rng;
 use std::hint::black_box;
 use std::num::NonZeroUsize;
 

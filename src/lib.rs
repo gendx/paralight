@@ -60,7 +60,7 @@ pub mod prelude {
 mod test {
     use crate::iter::MyHashSet;
     use crate::prelude::*;
-    use rand::Rng;
+    use rand::RngExt;
     use std::cell::Cell;
     use std::collections::{HashSet, VecDeque};
     use std::rc::Rc;

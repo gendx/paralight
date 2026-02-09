@@ -1520,7 +1520,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// ```
     /// # use paralight::prelude::*;
-    /// use rand::Rng;
+    /// use rand::RngExt;
     ///
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -2588,8 +2588,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// On stable Rust, this adaptor is currently only implemented for
     /// [`Result`] items. Items of arbitrary [`Try`] types are only available on
-    /// Rust nightly with the `nightly` feature of Paralight enabled. This
-    /// is because the implementation depends on the
+    /// Rust nightly with the `nightly` feature of Paralight enabled. This is
+    /// because the implementation depends on the
     /// [`try_trait_v2`](https://github.com/rust-lang/rust/issues/84277) and
     /// [`try_trait_v2_residual`](https://github.com/rust-lang/rust/issues/91285)
     /// nightly Rust features.
@@ -2693,8 +2693,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// On stable Rust, this adaptor is currently only implemented for
     /// [`Result`] items. Items of arbitrary [`Try`] types are only available on
-    /// Rust nightly with the `nightly` feature of Paralight enabled. This
-    /// is because the implementation depends on the
+    /// Rust nightly with the `nightly` feature of Paralight enabled. This is
+    /// because the implementation depends on the
     /// [`try_trait_v2`](https://github.com/rust-lang/rust/issues/84277) and
     /// [`try_trait_v2_residual`](https://github.com/rust-lang/rust/issues/91285)
     /// nightly Rust features.
@@ -3439,7 +3439,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// ```
     /// # use paralight::prelude::*;
-    /// use rand::Rng;
+    /// use rand::RngExt;
     ///
     /// # use std::collections::HashSet;
     /// # use std::sync::Mutex;
@@ -3509,7 +3509,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// ```
     /// # use paralight::prelude::*;
-    /// use rand::Rng;
+    /// use rand::RngExt;
     ///
     /// # use std::collections::HashSet;
     /// # use std::sync::Mutex;
@@ -3542,7 +3542,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     ///
     /// ```
     /// # use paralight::prelude::*;
-    /// use rand::Rng;
+    /// use rand::RngExt;
     ///
     /// # use std::collections::HashSet;
     /// # use std::sync::Mutex;

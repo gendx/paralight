@@ -743,7 +743,7 @@ pub trait ParallelSourceExt: ParallelSource {
     ///
     /// ```
     /// # use paralight::prelude::*;
-    /// use rand::Rng;
+    /// use rand::RngExt;
     ///
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
@@ -1142,7 +1142,7 @@ pub trait ExactParallelSourceExt: ExactParallelSource {
     ///
     /// ```
     /// # use paralight::prelude::*;
-    /// use rand::Rng;
+    /// use rand::RngExt;
     ///
     /// # let mut thread_pool = ThreadPoolBuilder {
     /// #     num_threads: ThreadCount::AvailableParallelism,
