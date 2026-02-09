@@ -1538,13 +1538,12 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
     /// assert_eq!(collection, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
     /// ```
     ///
-    /// You can only call this on an _exact_ parallel source, which for example
-    /// excludes pipelines containing
-    /// [`filter()`](ExactParallelSourceExt::filter).
-    ///
-    /// If the parallel source is inexact, you can use
-    /// [`collect_per_thread()`](super::ParallelIteratorExt::collect_per_thread)
-    /// instead.
+    /// You can only call this for a combination of:
+    /// - an _exact_ parallel source: this for example excludes pipelines
+    ///   containing [`filter()`](ExactParallelSourceExt::filter),
+    /// - a target type that is indexed: this excludes collections such as
+    ///   [`HashMap`](std::collections::HashMap) or
+    ///   [`BTreeMap`](std::collections::BTreeMap).
     ///
     /// ```compile_fail
     /// # use paralight::prelude::*;
@@ -1561,6 +1560,27 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
     ///     .collect();
     /// ```
     ///
+    /// ```compile_fail
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// use std::collections::HashSet;
+    ///
+    /// let collection: HashSet<_> = (1..=10)
+    ///     .into_par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .collect(); // A HashSet isn't an indexed collection, one cannot collect into it.
+    /// ```
+    ///
+    /// In other cases, you can either use
+    /// [`collect_per_thread()`](super::ParallelIteratorExt::collect_per_thread)
+    /// or [`for_each()`](super::ParallelIteratorExt::for_each) with a separate
+    /// synchronization mechanism.
+    ///
     /// ```
     /// # use paralight::prelude::*;
     /// # let mut thread_pool = ThreadPoolBuilder {
@@ -1569,19 +1589,18 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
     /// #     cpu_pinning: CpuPinningPolicy::No,
     /// # }
     /// # .build();
-    /// let _collection: Vec<Vec<_>> = (1..=10)
+    /// use std::collections::HashSet;
+    ///
+    /// let collection: Vec<Vec<_>> = (1..=10)
     ///     .into_par_iter()
     ///     .filter(|x| *x % 2 == 0)
     ///     .with_thread_pool(&mut thread_pool)
     ///     .collect_per_thread();
-    /// ```
     ///
-    /// This is only implemented for target types that are indexed. To collect
-    /// into an arbitrary collection such as
-    /// [`HashMap`](std::collections::HashMap) or
-    /// [`BTreeMap`](std::collections::BTreeMap), use
-    /// [`for_each()`](super::ParallelIteratorExt::for_each), with a separate
-    /// synchronization mechanism.
+    /// // All even numbers will be in the resulting collection (in arbitrary order).
+    /// let values: HashSet<_> = collection.into_iter().flatten().collect();
+    /// assert_eq!(values, [2, 4, 6, 8, 10].into_iter().collect());
+    /// ```
     ///
     /// ```
     /// # use paralight::prelude::*;
