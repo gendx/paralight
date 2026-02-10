@@ -6,6 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.0.11 - 2026-02-10
+
+### Added
+
+- `map()` adaptor to `(Exact)ParallelSourceExt`.
+- `collect()` and `try_collect()` adaptors to `BaseExactParallelIterator`.
+- The `ExactParallelSink` and related traits, implemented to collect into a
+  `Vec<T>`, `Box<[T]>`, `VecDeque<T>` and (on nightly) `[T; N]`.
+
+### Changed
+
+- Moved the following adaptors from `ParallelIteratorExt` to
+  `(Exact)ParallelSourceExt`: `cloned()`, `copied()`, `filter()`,
+  `filter_map()`, `inspect()`, `map_init()`.
+- Removed the `Item: Send` bound on `(Exact)ParallelSource` and
+  `(Exact)SourceDescriptor`.
+- The API of `(Exact)SourceDescriptor` now also takes a thread context. New
+  traits named `Simple(Exact)SourceDescriptor` reuse the old API, and should be
+  the basis for custom parallel sources in most cases.
+- Upgraded the `nix` dependency to version 0.31.1.
+- Upgraded the `criterion` dev-dependency to version 0.8.2.
+- Upgraded the `rand` dev-dependency to version 0.10.0.
+- Replaced the `rand_chacha` dev-dependency by `chacha20`.
+
+### Fixes
+
+- Stop panicking on empty pipelines when the ExactSizeAccumulator is given an
+  empty iterator, which could happen with user-defined thread pool
+  implementations.
+- Set the default linker on Windows to `rust-lld` to avoid crashing on large
+  symbols when compiling tests.
+
 ## 0.0.10 - 2026-01-09
 
 ### Added
