@@ -285,7 +285,6 @@ macro_rules! zipable_tuple {
             unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
                 if Self::NEEDS_CLEANUP {
                     debug_assert!(range.start <= range.end);
-                    debug_assert!(range.start <= self.len);
                     debug_assert!(range.end <= self.len);
                     $(
                         // SAFETY: Given descriptors of equal lengths `len`, the `ZipEqSourceDescriptor`
@@ -349,7 +348,6 @@ macro_rules! zipable_tuple {
             unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
                 if Self::NEEDS_CLEANUP {
                     debug_assert!(range.start <= range.end);
-                    debug_assert!(range.start <= self.len);
                     debug_assert!(range.end <= self.len);
                     $( {
                         let this_len = self.descriptors.$i.len();
@@ -439,7 +437,6 @@ macro_rules! zipable_tuple {
                 unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
                     if Self::NEEDS_CLEANUP {
                         debug_assert!(range.start <= range.end);
-                        debug_assert!(range.start <= self.len);
                         debug_assert!(range.end <= self.len);
                         $(
                             // SAFETY: Given descriptors of minimal length `len`, the
@@ -607,7 +604,6 @@ where
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
             debug_assert!(range.start <= range.end);
-            debug_assert!(range.start <= self.len);
             debug_assert!(range.end <= self.len);
             for desc in &self.descriptors {
                 // SAFETY: Given descriptors of equal lengths `len`, the `ZipEqSourceDescriptor`
@@ -674,7 +670,6 @@ where
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
             debug_assert!(range.start <= range.end);
-            debug_assert!(range.start <= self.len);
             debug_assert!(range.end <= self.len);
             for desc in &self.descriptors {
                 let this_len = desc.len();
@@ -764,7 +759,6 @@ where
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
             debug_assert!(range.start <= range.end);
-            debug_assert!(range.start <= self.len);
             debug_assert!(range.end <= self.len);
             for desc in &self.descriptors {
                 // SAFETY: Given descriptors of minimal length `len`, the

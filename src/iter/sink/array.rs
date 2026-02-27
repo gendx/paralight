@@ -130,7 +130,6 @@ impl<T: Send, const N: usize> ExactParallelSink for ArrayParallelSink<T, N> {
     unsafe fn skip_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
             debug_assert!(range.start <= range.end);
-            debug_assert!(range.start <= N);
             debug_assert!(range.end <= N);
             self.skipped.lock().unwrap().push(range);
         }
@@ -161,7 +160,6 @@ impl<T: Send, const N: usize> ArrayParallelSink<T, N> {
     fn cleanup_item_range(base_ptr: *mut T, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
             debug_assert!(range.start <= range.end);
-            debug_assert!(range.start <= N);
             debug_assert!(range.end <= N);
             // SAFETY:
             // - The offset in bytes `range.start * size_of::<T>()` fits in an `isize`,

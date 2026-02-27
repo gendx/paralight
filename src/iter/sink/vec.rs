@@ -202,7 +202,6 @@ impl<T: Send> ExactParallelSink for VecParallelSink<T> {
     unsafe fn skip_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
             debug_assert!(range.start <= range.end);
-            debug_assert!(range.start <= self.len);
             debug_assert!(range.end <= self.len);
             self.skipped.lock().unwrap().push(range);
         }
@@ -248,7 +247,6 @@ impl<T: Send> VecParallelSink<T> {
     fn cleanup_item_range(base_ptr: *mut T, len: usize, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
             debug_assert!(range.start <= range.end);
-            debug_assert!(range.start <= len);
             debug_assert!(range.end <= len);
             // SAFETY:
             // - The offset in bytes `range.start * size_of::<T>()` fits in an `isize`,

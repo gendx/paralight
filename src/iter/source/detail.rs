@@ -122,7 +122,6 @@ where
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
             debug_assert!(range.start <= range.end);
-            debug_assert!(range.start <= self.len);
             debug_assert!(range.end <= self.len);
             if range.end <= self.len1 {
                 // SAFETY: See the function comment. This branch implements the mapping for a
@@ -981,7 +980,6 @@ impl<Inner: SourceCleanup> SourceCleanup for RevSourceDescriptor<Inner> {
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
             debug_assert!(range.start <= range.end);
-            debug_assert!(range.start <= self.len);
             debug_assert!(range.end <= self.len);
             // SAFETY: Given an inner descriptor of length `len`, the `RevSourceDescriptor`
             // implements a bijective mapping of indices from `0..len` to `0..len` given by
@@ -1103,7 +1101,6 @@ impl<Inner: SourceCleanup> SourceCleanup for SkipSourceDescriptor<Inner> {
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
             debug_assert!(range.start <= range.end);
-            debug_assert!(range.start <= self.len);
             debug_assert!(range.end <= self.len);
             // SAFETY: Given an inner descriptor of length `len` as well as a parameter
             // `count <= len`, the `SkipSourceDescriptor` implements a bijective mapping of
@@ -1262,7 +1259,6 @@ impl<Inner: SourceCleanup> SourceCleanup for StepBySourceDescriptor<Inner> {
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
             debug_assert!(range.start <= range.end);
-            debug_assert!(range.start <= self.len);
             debug_assert!(range.end <= self.len);
             if self.step == 1 {
                 // SAFETY: See the function comment. When the step is 1 the mapping is the
@@ -1380,7 +1376,6 @@ impl<Inner: SourceCleanup> SourceCleanup for TakeSourceDescriptor<Inner> {
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
             debug_assert!(range.start <= range.end);
-            debug_assert!(range.start <= self.count);
             debug_assert!(range.end <= self.count);
             // SAFETY: Given an inner descriptor of length `len` as well as a parameter
             // `count <= len`, the `TakeSourceDescriptor` implements a pass-through mapping
