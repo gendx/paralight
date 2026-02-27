@@ -36,6 +36,49 @@ impl<T: Send, const N: usize> FromExactParallelSink for [T; N] {
 /// implements the [`ExactParallelSink`] trait, but it is nonetheless public as
 /// it is an associated type of [`FromExactParallelSink`] for [array](array) and
 /// similar collections.
+///
+/// ### Stability blockers
+///
+/// This struct is currently only available on Rust nightly with the `nightly`
+/// feature of Paralight enabled. This is because the implementation depends on
+/// the following nightly Rust features:
+/// - [`array_ptr_get`](https://github.com/rust-lang/rust/issues/119834),
+/// - [`maybe_uninit_uninit_array_transpose`](https://github.com/rust-lang/rust/issues/96097).
+///
+/// ```
+/// # use paralight::prelude::*;
+/// # let mut thread_pool = ThreadPoolBuilder {
+/// #     num_threads: ThreadCount::AvailableParallelism,
+/// #     range_strategy: RangeStrategy::WorkStealing,
+/// #     cpu_pinning: CpuPinningPolicy::No,
+/// # }
+/// # .build();
+/// let array: [_; 10] = (1..=10)
+///     .into_par_iter()
+///     .with_thread_pool(&mut thread_pool)
+///     .collect();
+/// assert_eq!(array, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+/// ```
+///
+/// The array element type must be [`Send`], so the following example doesn't
+/// compile.
+///
+/// ```compile_fail
+/// # use paralight::prelude::*;
+/// use std::rc::Rc;
+///
+/// # let mut thread_pool = ThreadPoolBuilder {
+/// #     num_threads: ThreadCount::AvailableParallelism,
+/// #     range_strategy: RangeStrategy::WorkStealing,
+/// #     cpu_pinning: CpuPinningPolicy::No,
+/// # }
+/// # .build();
+/// let array: [Rc<_>; 10] = (1..=10)
+///     .into_par_iter()
+///     .map(Rc::new)
+///     .with_thread_pool(&mut thread_pool)
+///     .collect();
+/// ```
 #[must_use = "iterator adaptors are lazy"]
 pub struct ArrayParallelSink<T: Send, const N: usize> {
     array: ArrayWrapper<T, N>,

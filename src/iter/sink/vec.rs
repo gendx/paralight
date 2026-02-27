@@ -41,6 +41,22 @@ impl<T: Send> FromExactParallelSink for Vec<T> {
     }
 }
 
+/// ```
+/// # use paralight::prelude::*;
+/// use std::ops::Deref;
+///
+/// # let mut thread_pool = ThreadPoolBuilder {
+/// #     num_threads: ThreadCount::AvailableParallelism,
+/// #     range_strategy: RangeStrategy::WorkStealing,
+/// #     cpu_pinning: CpuPinningPolicy::No,
+/// # }
+/// # .build();
+/// let boxed_slice: Box<[_]> = (1..=10)
+///     .into_par_iter()
+///     .with_thread_pool(&mut thread_pool)
+///     .collect();
+/// assert_eq!(boxed_slice.deref(), &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+/// ```
 impl<T: Send> FromExactParallelSink for Box<[T]> {
     type Item = T;
     type Sink = VecParallelSink<T>;
@@ -54,6 +70,25 @@ impl<T: Send> FromExactParallelSink for Box<[T]> {
     }
 }
 
+/// ```
+/// # use paralight::prelude::*;
+/// use std::collections::VecDeque;
+///
+/// # let mut thread_pool = ThreadPoolBuilder {
+/// #     num_threads: ThreadCount::AvailableParallelism,
+/// #     range_strategy: RangeStrategy::WorkStealing,
+/// #     cpu_pinning: CpuPinningPolicy::No,
+/// # }
+/// # .build();
+/// let vec_deque: VecDeque<_> = (1..=10)
+///     .into_par_iter()
+///     .with_thread_pool(&mut thread_pool)
+///     .collect();
+/// assert_eq!(
+///     vec_deque.as_slices(),
+///     (&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10][..], &[][..])
+/// );
+/// ```
 impl<T: Send> FromExactParallelSink for VecDeque<T> {
     type Item = T;
     type Sink = VecParallelSink<T>;
@@ -75,6 +110,40 @@ impl<T: Send> FromExactParallelSink for VecDeque<T> {
 /// implements the [`ExactParallelSink`] trait, but it is nonetheless public as
 /// it is an associated type of [`FromExactParallelSink`] for [`Vec`] and
 /// similar collections.
+///
+/// ```
+/// # use paralight::prelude::*;
+/// # let mut thread_pool = ThreadPoolBuilder {
+/// #     num_threads: ThreadCount::AvailableParallelism,
+/// #     range_strategy: RangeStrategy::WorkStealing,
+/// #     cpu_pinning: CpuPinningPolicy::No,
+/// # }
+/// # .build();
+/// let vec: Vec<_> = (1..=10)
+///     .into_par_iter()
+///     .with_thread_pool(&mut thread_pool)
+///     .collect();
+/// assert_eq!(vec, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+/// ```
+///
+/// The element type must be [`Send`], so the following example doesn't compile.
+///
+/// ```compile_fail
+/// # use paralight::prelude::*;
+/// use std::rc::Rc;
+///
+/// # let mut thread_pool = ThreadPoolBuilder {
+/// #     num_threads: ThreadCount::AvailableParallelism,
+/// #     range_strategy: RangeStrategy::WorkStealing,
+/// #     cpu_pinning: CpuPinningPolicy::No,
+/// # }
+/// # .build();
+/// let vec: Vec<Rc<_>> = (1..=10)
+///     .into_par_iter()
+///     .map(Rc::new)
+///     .with_thread_pool(&mut thread_pool)
+///     .collect();
+/// ```
 #[must_use = "iterator adaptors are lazy"]
 pub struct VecParallelSink<T: Send> {
     ptr: MutPtrWrapper<T>,

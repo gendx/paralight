@@ -13,6 +13,15 @@ pub mod array;
 pub mod vec;
 
 /// A sink to collect items in parallel.
+///
+/// You most likely won't need to interact with this trait directly, as it is an
+/// associated type of the [`FromExactParallelSink`] trait, itself used to
+/// express output types of the
+/// [`collect()`](super::BaseExactParallelIterator::collect) and
+/// [`try_collect()`](super::BaseExactParallelIterator::try_collect) adaptors on
+/// [`BaseExactParallelIterator`](super::BaseExactParallelIterator). You can
+/// however implement this trait if you want to allow your types to be collected
+/// by these adaptors.
 pub trait ExactParallelSink {
     /// The type of items that this parallel sink collects.
     type Item: Send;
@@ -87,6 +96,14 @@ pub trait ExactParallelSink {
 }
 
 /// Trait for collecting items from an [`ExactParallelSink`].
+///
+/// You most likely won't need to interact with this trait directly, as it is
+/// only used to express output types of the
+/// [`collect()`](super::BaseExactParallelIterator::collect) and
+/// [`try_collect()`](super::BaseExactParallelIterator::try_collect) adaptors on
+/// [`BaseExactParallelIterator`](super::BaseExactParallelIterator). You can
+/// however implement this trait if you want to allow your types to be collected
+/// by these adaptors.
 pub trait FromExactParallelSink {
     /// The type of items that this parallel sink collects.
     type Item: Send;
