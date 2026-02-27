@@ -105,3 +105,18 @@ impl<'data, T: Sync> SimpleSourceDescriptor for HashTableSourceDescriptor<'data,
         self.table.get_bucket(index)
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_inserts() {
+        let mut set = MyHashSet::with_capacity(0);
+
+        for i in 0..100 {
+            assert!(set.insert(i));
+            assert!(!set.insert(i));
+        }
+    }
+}

@@ -205,10 +205,12 @@ mod test {
                 test_source_vec_deque_ref,
                 test_source_vec_deque_ref_mut,
                 test_source_adaptor_chain,
+                test_source_adaptor_chain_overflow => fail("called chain() with sources that together produce more than usize::MAX items", "called chain() with sources that together produce more than usize::MAX items"),
                 test_source_adaptor_cloned,
                 test_source_adaptor_copied,
                 test_source_adaptor_filter,
                 test_source_adaptor_filter_map,
+                test_source_adaptor_filter_map_cleanup,
                 test_source_adaptor_inspect,
                 test_source_adaptor_map,
                 test_source_adaptor_map_init,
@@ -224,10 +226,12 @@ mod test {
                 test_source_exact_adaptor_filter,
                 test_source_exact_adaptor_filter_find_first,
                 test_source_exact_adaptor_filter_map,
+                test_source_exact_adaptor_filter_map_cleanup,
                 test_source_exact_adaptor_inspect,
                 test_source_exact_adaptor_map,
                 test_source_exact_adaptor_map_init,
                 test_source_exact_adaptor_map_init_find_first,
+                test_source_exact_adaptor_map_init_cleanup,
                 test_source_exact_adaptor_rev,
                 test_source_exact_adaptor_rev_cleanup,
                 test_source_exact_adaptor_skip,
@@ -311,6 +315,8 @@ mod test {
                 test_adaptor_try_collect_one_panic => fail("worker thread(s) panicked!", "arithmetic panic"),
                 #[cfg(feature = "nightly")]
                 test_adaptor_try_collect_option,
+                #[cfg(feature = "nightly")]
+                test_adaptor_try_collect_array_incorrect_length => fail("tried to collect an iterator into an array of the wrong length", "tried to collect an iterator into an array of the wrong length"),
                 test_adaptor_try_collect_per_thread,
                 #[cfg(feature = "nightly")]
                 test_adaptor_try_collect_per_thread_option,
@@ -1481,6 +1487,18 @@ mod test {
         assert_eq!(needle, Some(INPUT_LEN / 2 - 1));
     }
 
+    fn test_source_adaptor_chain_overflow<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        (0..usize::MAX)
+            .into_par_iter()
+            .filter(|_| true)
+            .chain((0..1).into_par_iter().filter(|_| true))
+            .with_thread_pool(&mut thread_pool)
+            .sum::<usize>();
+    }
+
     fn test_source_adaptor_cloned<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
@@ -1539,6 +1557,20 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .sum::<u64>();
         assert_eq!(sum, 3 * (INPUT_LEN / 2) * (INPUT_LEN / 2 + 1));
+    }
+
+    fn test_source_adaptor_filter_map_cleanup<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
+        let needle = input
+            .into_par_iter()
+            .filter(|_| true)
+            .filter_map(|x| if *x % 2 == 0 { Some(*x * 3) } else { None })
+            .with_thread_pool(&mut thread_pool)
+            .find_first(|x| *x % 10 == 8);
+        assert_eq!(needle, Some(18));
     }
 
     fn test_source_adaptor_inspect<T>(mut thread_pool: T)
@@ -1868,6 +1900,19 @@ mod test {
         assert_eq!(sum, 3 * (INPUT_LEN / 2) * (INPUT_LEN / 2 + 1));
     }
 
+    fn test_source_exact_adaptor_filter_map_cleanup<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
+        let needle = input
+            .into_par_iter()
+            .filter_map(|x| if *x % 2 == 0 { Some(*x * 3) } else { None })
+            .with_thread_pool(&mut thread_pool)
+            .find_first(|x| *x % 10 == 8);
+        assert_eq!(needle, Some(18));
+    }
+
     fn test_source_exact_adaptor_inspect<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
@@ -1948,6 +1993,23 @@ mod test {
             .map_init(
                 rand::rng,
                 |rng, &x| if rng.random() { 2 * x } else { 2 * x + 1 },
+            )
+            .with_thread_pool(&mut thread_pool)
+            .find_first(|&x| x >= 10);
+        let needle = needle.unwrap();
+        assert!(needle == 10 || needle == 11);
+    }
+
+    fn test_source_exact_adaptor_map_init_cleanup<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
+        let needle = input
+            .into_par_iter()
+            .map_init(
+                rand::rng,
+                |rng, x| if rng.random() { 2 * *x } else { 2 * *x + 1 },
             )
             .with_thread_pool(&mut thread_pool)
             .find_first(|&x| x >= 10);
@@ -4212,6 +4274,20 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .try_collect();
         assert!(collection.is_none());
+    }
+
+    #[cfg(feature = "nightly")]
+    fn test_adaptor_try_collect_array_incorrect_length<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=ARRAY_LEN)
+            .map(|x| Ok(Box::new(x)))
+            .collect::<Vec<Result<Box<u64>, ()>>>();
+        let _: Result<[Box<u64>; ARRAY_LEN as usize], _> = input
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .try_collect();
     }
 
     fn test_adaptor_try_collect_per_thread<T>(mut thread_pool: T)

@@ -574,6 +574,7 @@ mod test {
         use crate::iter::{ExactParallelSourceExt, IntoExactParallelSource, ParallelIteratorExt};
         use std::ops::Range;
 
+        #[derive(Debug, PartialEq, Eq)]
         enum Tree<T> {
             Leaf(T),
             Node(Vec<Tree<T>>),
@@ -601,6 +602,35 @@ mod test {
                         .collect(),
                 )
             }
+        }
+
+        #[test]
+        fn test_build_tree() {
+            assert_eq!(build_tree(3, 0..1, &|i| i), Tree::Leaf(0));
+            assert_eq!(
+                build_tree(3, 0..2, &|i| i),
+                Tree::Node(vec![Tree::Leaf(0), Tree::Leaf(1)])
+            );
+            assert_eq!(
+                build_tree(3, 0..3, &|i| i),
+                Tree::Node(vec![Tree::Leaf(0), Tree::Leaf(1), Tree::Leaf(2)])
+            );
+            assert_eq!(
+                build_tree(3, 0..4, &|i| i),
+                Tree::Node(vec![
+                    Tree::Leaf(0),
+                    Tree::Leaf(1),
+                    Tree::Node(vec![Tree::Leaf(2), Tree::Leaf(3)]),
+                ])
+            );
+            assert_eq!(
+                build_tree(3, 0..5, &|i| i),
+                Tree::Node(vec![
+                    Tree::Leaf(0),
+                    Tree::Node(vec![Tree::Leaf(1), Tree::Leaf(2)]),
+                    Tree::Node(vec![Tree::Leaf(3), Tree::Leaf(4)]),
+                ])
+            );
         }
 
         fn reduce_tree<T: Send, U: Default + Send>(
