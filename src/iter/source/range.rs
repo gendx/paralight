@@ -7,7 +7,7 @@
 // except according to those terms.
 
 use super::{
-    ExactParallelSource, ExactSourceDescriptor, IntoExactParallelSource,
+    ExactParallelSource, ExactSourceDescriptor, IntoExactParallelSource, RewindableSource,
     SimpleExactSourceDescriptor, SourceCleanup,
 };
 #[cfg(feature = "nightly")]
@@ -150,6 +150,11 @@ impl ExactParallelSource for RangeParallelSource<usize> {
     }
 }
 
+// SAFETY: If the underlying type is Copy, then:
+// - it is safe to fetch any item an unlimited number of times and concurrently,
+// - the source doesn't need cleanup.
+unsafe impl<T: Copy> RewindableSource for RangeParallelSource<T> {}
+
 /// A parallel source over a [`RangeInclusive`]. This struct is created by the
 /// [`into_par_iter()`](IntoExactParallelSource::into_par_iter) method on
 /// [`IntoExactParallelSource`].
@@ -253,3 +258,8 @@ impl ExactParallelSource for RangeInclusiveParallelSource<usize> {
         RangeSourceDescriptor { start, len }
     }
 }
+
+// SAFETY: If the underlying type is Copy, then:
+// - it is safe to fetch any item an unlimited number of times and concurrently,
+// - the source doesn't need cleanup.
+unsafe impl<T: Copy> RewindableSource for RangeInclusiveParallelSource<T> {}

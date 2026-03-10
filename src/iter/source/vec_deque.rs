@@ -8,7 +8,7 @@
 
 use super::{
     ExactParallelSource, ExactParallelSourceExt, ExactSourceDescriptor,
-    IntoExactParallelRefMutSource, IntoExactParallelRefSource,
+    IntoExactParallelRefMutSource, IntoExactParallelRefSource, RewindableSource,
 };
 use std::collections::VecDeque;
 
@@ -79,6 +79,12 @@ impl<'data, T: Sync> ExactParallelSource for VecDequeRefParallelSource<'data, T>
         first.par_iter().chain(second.par_iter()).exact_descriptor()
     }
 }
+
+// SAFETY: As the chain of two parallel sources over slices:
+// - it is safe to fetch a reference to any item an unlimited number of times
+//   and concurrently,
+// - the source doesn't need cleanup.
+unsafe impl<'data, T> RewindableSource for VecDequeRefParallelSource<'data, T> {}
 
 /// A parallel source over a mutable reference to a [`VecDeque`]. This struct is
 /// created by the

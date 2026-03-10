@@ -215,6 +215,7 @@ mod test {
                 test_source_adaptor_map,
                 test_source_adaptor_map_init,
                 test_source_adaptor_rev,
+                test_source_exact_adaptor_array_windows,
                 test_source_exact_adaptor_chain,
                 test_source_exact_adaptor_chain_cleanup,
                 test_source_exact_adaptor_chain_overflow => fail("called chain() with sources that together produce more than usize::MAX items", "called chain() with sources that together produce more than usize::MAX items"),
@@ -1667,6 +1668,38 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .find_first(|x| *x <= INPUT_LEN / 2);
         assert_eq!(needle, Some(INPUT_LEN / 2));
+    }
+
+    fn test_source_exact_adaptor_array_windows<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let pairs: Vec<[u64; 2]> = input
+            .par_iter()
+            .array_windows()
+            .map(|[x, y]| [*x, *y])
+            .with_thread_pool(&mut thread_pool)
+            .collect();
+        assert_eq!(
+            pairs,
+            (0..INPUT_LEN).map(|i| [i, i + 1]).collect::<Vec<_>>()
+        );
+
+        let is_strictly_sorted = input
+            .par_iter()
+            .array_windows()
+            .with_thread_pool(&mut thread_pool)
+            .all(|[x, y]| x < y);
+        assert!(is_strictly_sorted);
+
+        let input = (0..=INPUT_LEN).map(|_| 42).collect::<Vec<u64>>();
+        let all_equal = input
+            .par_iter()
+            .array_windows()
+            .with_thread_pool(&mut thread_pool)
+            .all(|[x, y]| x == y);
+        assert!(all_equal);
     }
 
     fn test_source_exact_adaptor_chain<T>(mut thread_pool: T)

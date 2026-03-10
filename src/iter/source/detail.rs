@@ -9,11 +9,123 @@
 //! Implementation details of source adaptors.
 
 use super::{
-    ExactParallelSource, ExactSourceDescriptor, ParallelSource, SourceCleanup, SourceDescriptor,
+    ExactParallelSource, ExactSourceDescriptor, ParallelSource, RewindableSource, SourceCleanup,
+    SourceDescriptor,
 };
 use crate::iter::{Accumulator, ExactParallelSink, ExactSizeAccumulator};
 #[cfg(feature = "nightly")]
 use std::ops::Try;
+
+/// This struct is created by the
+/// [`array_windows()`](super::ExactParallelSourceExt::array_windows)
+/// method on [`ExactParallelSourceExt`](super::ExactParallelSourceExt).
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ExactParallelSource`] and
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt) traits, but it is
+/// nonetheless public because of the `must_use` annotation.
+#[must_use = "iterator adaptors are lazy"]
+pub struct ArrayWindows<Inner, const N: usize> {
+    pub(super) inner: Inner,
+}
+
+// SAFETY: If the inner source is rewindable, then by induction:
+// - it is also safe to fetch each window an unlimited number of times,
+// - the resulting source doesn't need cleanup.
+unsafe impl<Inner, const N: usize> RewindableSource for ArrayWindows<Inner, N> where
+    Inner: RewindableSource
+{
+}
+
+impl<T: Send, Inner, const N: usize> ExactParallelSource for ArrayWindows<Inner, N>
+where
+    Inner: ExactParallelSource<Item = T> + RewindableSource,
+{
+    type Item = [T; N];
+
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
+        let inner = self.inner.exact_descriptor();
+        let inner_len = inner.len();
+        let len = inner_len.saturating_sub(N - 1);
+        ArrayWindowsSourceDescriptor {
+            inner,
+            len,
+            #[cfg(debug_assertions)]
+            inner_len,
+        }
+    }
+}
+
+struct ArrayWindowsSourceDescriptor<Inner, const N: usize> {
+    inner: Inner,
+    len: usize,
+    #[cfg(debug_assertions)]
+    inner_len: usize,
+}
+
+impl<Inner: SourceCleanup, const N: usize> SourceCleanup
+    for ArrayWindowsSourceDescriptor<Inner, N>
+{
+    const NEEDS_CLEANUP: bool = {
+        assert!(
+            !Inner::NEEDS_CLEANUP,
+            "called array_windows() on a source that needs cleanup"
+        );
+        false
+    };
+
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    unsafe fn cleanup_item_range(&self, _range: std::ops::Range<usize>) {
+        // Nothing to cleanup
+    }
+}
+
+impl<Inner, const N: usize> ExactSourceDescriptor for ArrayWindowsSourceDescriptor<Inner, N>
+where
+    Inner: ExactSourceDescriptor,
+{
+    type Item = [Inner::Item; N];
+    type ThreadContext = Inner::ThreadContext;
+
+    fn init(&self) -> Self::ThreadContext {
+        const {
+            assert!(
+                std::mem::size_of::<Self::ThreadContext>() == 0,
+                "called array_windows() on a source which has a non-trivial thread context"
+            );
+        }
+        self.inner.init()
+    }
+
+    unsafe fn exact_fetch_item(
+        &self,
+        context: &mut Self::ThreadContext,
+        index: usize,
+    ) -> Self::Item {
+        #[cfg(debug_assertions)]
+        debug_assert!(index + N <= self.inner_len);
+        // SAFETY: The ArrayWindowsSourceDescriptor type is private and only constructed
+        // in ArrayWindows::exact_descriptor, which requires that the underlying
+        // ExactParallelSource implements RewindableSource. This lowers the
+        // requirements: it's only necessary that each index passed to the inner
+        // exact_fetch_item is in the 0..inner_len range.
+        //
+        // This is itself confirmed by the debug assertion, and guaranteed by the
+        // following equations:
+        // - 0 <= index < len
+        // - len = inner_len.saturating_sub(N - 1)
+        //
+        // which imply that index <= inner_len - N for any index passed as argument to
+        // this function.
+        //
+        // Besides the indices i below satisfy 0 <= i < N, therefore 0 <= index + i <
+        // inner_len.
+        std::array::from_fn(|i| unsafe { self.inner.exact_fetch_item(context, index + i) })
+    }
+}
 
 /// This struct is created by the [`chain()`](super::ParallelSourceExt::chain)
 /// method on [`ParallelSourceExt`](super::ParallelSourceExt) and
@@ -30,6 +142,17 @@ use std::ops::Try;
 pub struct Chain<First, Second> {
     pub(super) first: First,
     pub(super) second: Second,
+}
+
+// SAFETY: If the inner sources are rewindable, then by induction:
+// - it is also safe to fetch each item of the chained source an unlimited
+//   number of times,
+// - the chained source doesn't need cleanup.
+unsafe impl<First, Second> RewindableSource for Chain<First, Second>
+where
+    First: RewindableSource,
+    Second: RewindableSource,
+{
 }
 
 impl<T: Send, First, Second> ParallelSource for Chain<First, Second>
@@ -260,6 +383,11 @@ pub struct Cloned<Inner> {
     pub(super) inner: Inner,
 }
 
+// SAFETY: If the inner source is rewindable, then by induction:
+// - it is also safe to fetch each cloned item an unlimited number of times,
+// - the resulting source doesn't need cleanup.
+unsafe impl<Inner> RewindableSource for Cloned<Inner> where Inner: RewindableSource {}
+
 impl<'a, T, Inner> ParallelSource for Cloned<Inner>
 where
     T: Clone + 'a,
@@ -306,6 +434,11 @@ pub struct Copied<Inner> {
     pub(super) inner: Inner,
 }
 
+// SAFETY: If the inner source is rewindable, then by induction:
+// - it is also safe to fetch each copied item an unlimited number of times,
+// - the resulting source doesn't need cleanup.
+unsafe impl<Inner> RewindableSource for Copied<Inner> where Inner: RewindableSource {}
+
 impl<'a, T, Inner> ParallelSource for Copied<Inner>
 where
     T: Copy + 'a,
@@ -348,6 +481,11 @@ where
 pub struct Enumerate<Inner> {
     pub(super) inner: Inner,
 }
+
+// SAFETY: If the inner source is rewindable, then by induction:
+// - it is also safe to fetch each enumerated item an unlimited number of times,
+// - the resulting source doesn't need cleanup.
+unsafe impl<Inner> RewindableSource for Enumerate<Inner> where Inner: RewindableSource {}
 
 impl<Inner: ExactParallelSource> ExactParallelSource for Enumerate<Inner> {
     type Item = (usize, Inner::Item);
@@ -428,6 +566,11 @@ pub struct Filter<Inner, F> {
     pub(super) f: F,
 }
 
+// SAFETY: If the inner source is rewindable, then by induction:
+// - it is also safe to fetch each filtered item an unlimited number of times,
+// - the resulting source doesn't need cleanup.
+unsafe impl<Inner, F> RewindableSource for Filter<Inner, F> where Inner: RewindableSource {}
+
 impl<Inner, F> ParallelSource for Filter<Inner, F>
 where
     Inner: ParallelSource,
@@ -456,6 +599,11 @@ pub struct FilterExact<Inner, F> {
     pub(super) inner: Inner,
     pub(super) f: F,
 }
+
+// SAFETY: If the inner source is rewindable, then by induction:
+// - it is also safe to fetch each filtered item an unlimited number of times,
+// - the resulting source doesn't need cleanup.
+unsafe impl<Inner, F> RewindableSource for FilterExact<Inner, F> where Inner: RewindableSource {}
 
 impl<Inner, F> ParallelSource for FilterExact<Inner, F>
 where
@@ -486,6 +634,12 @@ pub struct FilterMap<Inner, F> {
     pub(super) f: F,
 }
 
+// SAFETY: If the inner source is rewindable, then by induction:
+// - it is also safe to fetch each filtered then mapped item an unlimited number
+//   of times,
+// - the resulting source doesn't need cleanup.
+unsafe impl<Inner, F> RewindableSource for FilterMap<Inner, F> where Inner: RewindableSource {}
+
 impl<Inner, T, F> ParallelSource for FilterMap<Inner, F>
 where
     Inner: ParallelSource,
@@ -514,6 +668,12 @@ pub struct FilterMapExact<Inner, F> {
     pub(super) inner: Inner,
     pub(super) f: F,
 }
+
+// SAFETY: If the inner source is rewindable, then by induction:
+// - it is also safe to fetch each filtered then mapped item an unlimited number
+//   of times,
+// - the resulting source doesn't need cleanup.
+unsafe impl<Inner, F> RewindableSource for FilterMapExact<Inner, F> where Inner: RewindableSource {}
 
 impl<Inner, T, F> ParallelSource for FilterMapExact<Inner, F>
 where
@@ -642,6 +802,11 @@ pub struct Inspect<Inner, F> {
     pub(super) f: F,
 }
 
+// SAFETY: If the inner source is rewindable, then by induction:
+// - it is also safe to fetch each inspected item an unlimited number of times,
+// - the resulting source doesn't need cleanup.
+unsafe impl<Inner, F> RewindableSource for Inspect<Inner, F> where Inner: RewindableSource {}
+
 impl<Inner, F> ParallelSource for Inspect<Inner, F>
 where
     Inner: ParallelSource,
@@ -694,6 +859,11 @@ pub struct Map<Inner, F> {
     pub(super) inner: Inner,
     pub(super) f: F,
 }
+
+// SAFETY: If the inner source is rewindable, then by induction:
+// - it is also safe to fetch each mapped item an unlimited number of times,
+// - the resulting source doesn't need cleanup.
+unsafe impl<Inner, F> RewindableSource for Map<Inner, F> where Inner: RewindableSource {}
 
 impl<Inner, T, F> ParallelSource for Map<Inner, F>
 where
@@ -939,6 +1109,12 @@ pub struct Rev<Inner> {
     pub(super) inner: Inner,
 }
 
+// SAFETY: If the inner source is rewindable, then by induction:
+// - it is also safe to fetch each item in reverse order an unlimited number of
+//   times,
+// - the resulting source doesn't need cleanup.
+unsafe impl<Inner> RewindableSource for Rev<Inner> where Inner: RewindableSource {}
+
 impl<Inner: ParallelSource> ParallelSource for Rev<Inner> {
     type Item = Inner::Item;
 
@@ -1070,6 +1246,12 @@ pub struct Skip<Inner> {
     pub(super) count: usize,
 }
 
+// SAFETY: If the inner source is rewindable, then by induction:
+// - it is also safe to fetch each non-skipped item an unlimited number of
+//   times,
+// - the resulting source doesn't need cleanup.
+unsafe impl<Inner> RewindableSource for Skip<Inner> where Inner: RewindableSource {}
+
 impl<Inner: ExactParallelSource> ExactParallelSource for Skip<Inner> {
     type Item = Inner::Item;
 
@@ -1182,6 +1364,12 @@ pub struct SkipExact<Inner> {
     pub(super) count: usize,
 }
 
+// SAFETY: If the inner source is rewindable, then by induction:
+// - it is also safe to fetch each non-skipped item an unlimited number of
+//   times,
+// - the resulting source doesn't need cleanup.
+unsafe impl<Inner> RewindableSource for SkipExact<Inner> where Inner: RewindableSource {}
+
 impl<Inner: ExactParallelSource> ExactParallelSource for SkipExact<Inner> {
     type Item = Inner::Item;
 
@@ -1213,6 +1401,11 @@ pub struct StepBy<Inner> {
     pub(super) inner: Inner,
     pub(super) step: usize,
 }
+
+// SAFETY: If the inner source is rewindable, then by induction:
+// - it is also safe to fetch each stepped item an unlimited number of times,
+// - the resulting source doesn't need cleanup.
+unsafe impl<Inner> RewindableSource for StepBy<Inner> where Inner: RewindableSource {}
 
 impl<Inner: ExactParallelSource> ExactParallelSource for StepBy<Inner> {
     type Item = Inner::Item;
@@ -1345,6 +1538,11 @@ pub struct Take<Inner> {
     pub(super) count: usize,
 }
 
+// SAFETY: If the inner source is rewindable, then by induction:
+// - it is also safe to fetch each taken item an unlimited number of times,
+// - the resulting source doesn't need cleanup.
+unsafe impl<Inner> RewindableSource for Take<Inner> where Inner: RewindableSource {}
+
 impl<Inner: ExactParallelSource> ExactParallelSource for Take<Inner> {
     type Item = Inner::Item;
 
@@ -1453,6 +1651,11 @@ pub struct TakeExact<Inner> {
     pub(super) inner: Inner,
     pub(super) count: usize,
 }
+
+// SAFETY: If the inner source is rewindable, then by induction:
+// - it is also safe to fetch each taken item an unlimited number of times,
+// - the resulting source doesn't need cleanup.
+unsafe impl<Inner> RewindableSource for TakeExact<Inner> where Inner: RewindableSource {}
 
 impl<Inner: ExactParallelSource> ExactParallelSource for TakeExact<Inner> {
     type Item = Inner::Item;

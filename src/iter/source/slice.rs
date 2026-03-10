@@ -8,7 +8,7 @@
 
 use super::{
     ExactParallelSource, ExactSourceDescriptor, IntoExactParallelRefMutSource,
-    IntoExactParallelRefSource, SimpleExactSourceDescriptor, SourceCleanup,
+    IntoExactParallelRefSource, RewindableSource, SimpleExactSourceDescriptor, SourceCleanup,
 };
 use std::marker::PhantomData;
 
@@ -76,6 +76,12 @@ impl<'data, T: Sync> ExactParallelSource for SliceParallelSource<'data, T> {
         SliceSourceDescriptor { slice: self.slice }
     }
 }
+
+// SAFETY:
+// - it is safe to fetch a reference to any item an unlimited number of times
+//   and concurrently,
+// - the source doesn't need cleanup.
+unsafe impl<'data, T> RewindableSource for SliceParallelSource<'data, T> {}
 
 struct SliceSourceDescriptor<'data, T: Sync> {
     slice: &'data [T],

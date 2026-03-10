@@ -24,8 +24,8 @@ use super::{
     ParallelIterator,
 };
 pub use detail::{
-    Chain, Cloned, Copied, Enumerate, Filter, FilterExact, FilterMap, FilterMapExact, Inspect, Map,
-    MapInit, Rev, Skip, SkipExact, StepBy, Take, TakeExact,
+    ArrayWindows, Chain, Cloned, Copied, Enumerate, Filter, FilterExact, FilterMap, FilterMapExact,
+    Inspect, Map, MapInit, Rev, Skip, SkipExact, StepBy, Take, TakeExact,
 };
 use detail::{
     CollectAccumulator, CollectCleaner, ErrorAccumulator, NoopAccumulator, TryCollectAccumulator,
@@ -318,6 +318,48 @@ pub trait ExactParallelSource: Sized {
     /// Returns an object that describes how to fetch items from this source.
     fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync;
 }
+
+/// A marker trait on top of [`ParallelSource`] or [`ExactParallelSource`] to
+/// indicate that it is safe to fetch items multiple times and concurrently.
+///
+/// Conceptually, this is as if one was allowed to rewind an iterator and fetch
+/// items again, but for parallel sources.
+///
+/// For example, this trait is a requirement to call the
+/// [`array_windows()`](ExactParallelSourceExt::array_windows) adaptor, because
+/// each item will be fetched multiple times, and several threads may fetch
+/// overlapping windows at the same time.
+///
+/// To give some implementation examples: a parallel source over a slice
+/// implements this trait, because it is safe to obtain several references to
+/// the same item concurrently. However, a parallel source over a mutable slice
+/// doesn't implement this, because obtaining several mutable references to the
+/// same item concurrently isn't safe. Likewise, a draining source over a
+/// collection doesn't implement this, because each item can only be moved out
+/// once.
+///
+/// The associated [`ThreadContext`](ExactSourceDescriptor::ThreadContext)
+/// should be a zero-sized type, such as the empty tuple `()`, an arbitrary
+/// combination of empty tuples like `((), ())` (as created by
+/// [`ZipableSource`](zip::ZipableSource)s), etc. This isn't a safety
+/// requirement, but may affect correctness as fetching the same item twice with
+/// different contexts may produce different values. In particular, a parallel
+/// source obtained after the [`map_init()`](ExactParallelSourceExt::map_init)
+/// adaptor isn't rewindable.
+///
+/// # Safety
+///
+/// Implementors of this trait guarantee that if the corresponding type
+/// implements [`ParallelSource`] and/or [`ExactParallelSource`], then it will
+/// be safe to call [`fetch_item()`](SourceDescriptor::fetch_item) or
+/// [`exact_fetch_item()`](ExactSourceDescriptor::exact_fetch_item) on the
+/// respective source descriptor an unlimited amount of times and concurrently
+/// on each item.
+///
+/// Additionally, the corresponding [`SourceCleanup::NEEDS_CLEANUP`] must be
+/// [`false`] and [`cleanup_item_range()`](SourceCleanup::cleanup_item_range) be
+/// a noop.
+pub unsafe trait RewindableSource {}
 
 /// Trait for converting into a [`ParallelSource`].
 pub trait IntoParallelSource {
@@ -847,6 +889,136 @@ impl<T: ParallelSource> ParallelSourceExt for T {}
 /// Additional methods provided for types that implement
 /// [`ExactParallelSource`].
 pub trait ExactParallelSourceExt: ExactParallelSource {
+    /// Returns a parallel source that produces overlapping arrays of `N`
+    /// contiguous items from this source.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5];
+    /// let collection: Vec<_> = input
+    ///     .par_iter()
+    ///     .copied()
+    ///     .array_windows()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .collect();
+    /// assert_eq!(collection, [[1, 2], [2, 3], [3, 4], [4, 5]]);
+    /// ```
+    ///
+    /// You can leverage this adaptor to build more complex pipelines, such as
+    /// checking if a slice is sorted.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let is_sorted = input
+    ///     .par_iter()
+    ///     .array_windows()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .all(|[x, y]| x < y);
+    /// assert!(is_sorted);
+    /// ```
+    ///
+    /// If the window size exceeds the input length, the resulting parallel
+    /// source is empty. However, a window size that matches the input length
+    /// produces exactly one item.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5];
+    ///
+    /// let collection: Vec<_> = input
+    ///     .par_iter()
+    ///     .copied()
+    ///     .array_windows::<5>()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .collect();
+    /// assert_eq!(collection, [[1, 2, 3, 4, 5]]);
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5];
+    ///
+    /// let collection: Vec<_> = input
+    ///     .par_iter()
+    ///     .copied()
+    ///     .array_windows::<6>()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .collect();
+    /// assert!(collection.is_empty());
+    /// ```
+    ///
+    /// This doesn't compile if the window length `N` is zero, even if the
+    /// underlying source is empty.
+    ///
+    /// ```compile_fail
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// input
+    ///     .par_iter()
+    ///     .array_windows::<0>()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .for_each(|[]| ());
+    /// ```
+    ///
+    /// ```compile_fail
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input: [i32; 0] = [];
+    /// input
+    ///     .par_iter()
+    ///     .array_windows::<0>()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .for_each(|[]| ());
+    /// ```
+    fn array_windows<const N: usize>(self) -> ArrayWindows<Self, N>
+    where
+        Self: RewindableSource,
+    {
+        const {
+            assert!(
+                N != 0,
+                "called array_windows() with a window length of zero"
+            );
+        }
+        ArrayWindows { inner: self }
+    }
+
     /// Returns a parallel source that produces items from this source followed
     /// by items from the next source.
     ///
