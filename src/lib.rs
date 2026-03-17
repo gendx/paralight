@@ -215,6 +215,7 @@ mod test {
                 test_source_adaptor_map,
                 test_source_adaptor_map_init,
                 test_source_adaptor_rev,
+                test_source_adaptor_update,
                 test_source_exact_adaptor_array_windows,
                 test_source_exact_adaptor_chain,
                 test_source_exact_adaptor_chain_cleanup,
@@ -248,6 +249,8 @@ mod test {
                 test_source_exact_adaptor_take_cleanup,
                 test_source_exact_adaptor_take_exact,
                 test_source_exact_adaptor_take_exact_too_much => fail("called take_exact() with more items than this source produces", "called take_exact() with more items than this source produces"),
+                test_source_exact_adaptor_update,
+                test_source_exact_adaptor_update_cleanup,
                 test_source_exact_adaptor_zip_eq,
                 test_source_exact_adaptor_zip_eq_cleanup,
                 test_source_exact_adaptor_zip_eq_unequal_array => fail("called zip_eq() with sources of different lengths", "called zip_eq() with sources of different lengths"),
@@ -1670,6 +1673,29 @@ mod test {
         assert_eq!(needle, Some(INPUT_LEN / 2));
     }
 
+    fn test_source_adaptor_update<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let mut values = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let sum = values
+            .par_iter_mut()
+            .filter(|x| **x % 2 == 0)
+            .update(|x| {
+                **x *= 3;
+            })
+            .map(|x| *x)
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+        assert_eq!(sum, (INPUT_LEN / 2) * (INPUT_LEN / 2 + 1) * 3);
+        assert_eq!(
+            values,
+            (0..=INPUT_LEN)
+                .map(|x| if x % 2 == 0 { x * 3 } else { x })
+                .collect::<Vec<_>>()
+        );
+    }
+
     fn test_source_exact_adaptor_array_windows<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
@@ -2415,6 +2441,39 @@ mod test {
             .take_exact(2 * INPUT_LEN as usize)
             .with_thread_pool(&mut thread_pool)
             .sum::<u64>();
+    }
+
+    fn test_source_exact_adaptor_update<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let mut values = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let sum = values
+            .par_iter_mut()
+            .update(|x| {
+                **x *= 3;
+            })
+            .map(|x| *x)
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) * 3 / 2);
+        assert_eq!(values, (0..=INPUT_LEN).map(|x| x * 3).collect::<Vec<_>>());
+    }
+
+    fn test_source_exact_adaptor_update_cleanup<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let values = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
+        let needle = values
+            .into_par_iter()
+            .update(|x| {
+                **x *= 3;
+            })
+            .with_thread_pool(&mut thread_pool)
+            .find_first(|x| **x >= 10);
+        let needle = needle.unwrap();
+        assert_eq!(needle, Box::new(12));
     }
 
     fn test_source_exact_adaptor_zip_eq<T>(mut thread_pool: T)

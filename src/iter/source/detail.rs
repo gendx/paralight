@@ -1675,6 +1675,131 @@ impl<Inner: ExactParallelSource> ExactParallelSource for TakeExact<Inner> {
     }
 }
 
+/// This struct is created by the [`update()`](super::ParallelSourceExt::update)
+/// method on [`ParallelSourceExt`](super::ParallelSourceExt) and
+/// [`update()`](super::ExactParallelSourceExt::update) on
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt).
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the
+/// [`ParallelSource`]/[`ParallelSourceExt`](super::ParallelSourceExt) or
+/// [`ExactParallelSource`]/
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt) traits, but it is
+/// nonetheless public because of the `must_use` annotation.
+#[must_use = "iterator adaptors are lazy"]
+pub struct Update<Inner, F> {
+    pub(super) inner: Inner,
+    pub(super) f: F,
+}
+
+// SAFETY: If the inner source is rewindable, then by induction:
+// - it is also safe to fetch each updated item an unlimited number of times,
+// - the resulting source doesn't need cleanup.
+unsafe impl<Inner, F> RewindableSource for Update<Inner, F> where Inner: RewindableSource {}
+
+impl<Inner, F> ParallelSource for Update<Inner, F>
+where
+    Inner: ParallelSource,
+    F: Fn(&mut Inner::Item) + Sync,
+{
+    type Item = Inner::Item;
+
+    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
+        UpdateSourceDescriptor {
+            inner: self.inner.descriptor(),
+            f: self.f,
+        }
+    }
+}
+
+impl<Inner, F> ExactParallelSource for Update<Inner, F>
+where
+    Inner: ExactParallelSource,
+    F: Fn(&mut Inner::Item) + Sync,
+{
+    type Item = Inner::Item;
+
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
+        UpdateSourceDescriptor {
+            inner: self.inner.exact_descriptor(),
+            f: self.f,
+        }
+    }
+}
+
+struct UpdateSourceDescriptor<Inner, F> {
+    inner: Inner,
+    f: F,
+}
+
+impl<Inner: SourceCleanup, F> SourceCleanup for UpdateSourceDescriptor<Inner, F> {
+    const NEEDS_CLEANUP: bool = Inner::NEEDS_CLEANUP;
+
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
+        if Self::NEEDS_CLEANUP {
+            // SAFETY: This descriptor implements a pass-through of indices to the inner
+            // descriptor, therefore safety is preserved by induction.
+            unsafe {
+                self.inner.cleanup_item_range(range);
+            }
+        }
+    }
+}
+
+impl<Inner, F> SourceDescriptor for UpdateSourceDescriptor<Inner, F>
+where
+    Inner: SourceDescriptor,
+    F: Fn(&mut Inner::Item) + Sync,
+{
+    type Item = Inner::Item;
+    type ThreadContext = Inner::ThreadContext;
+
+    fn init(&self) -> Self::ThreadContext {
+        self.inner.init()
+    }
+
+    unsafe fn fetch_item(
+        &self,
+        context: &mut Self::ThreadContext,
+        index: usize,
+    ) -> Option<Self::Item> {
+        // SAFETY: This descriptor implements a pass-through of indices to the inner
+        // descriptor, therefore safety is preserved by induction.
+        let mut item = unsafe { self.inner.fetch_item(context, index) };
+        item.as_mut().map(&self.f);
+        item
+    }
+}
+
+impl<Inner, F> ExactSourceDescriptor for UpdateSourceDescriptor<Inner, F>
+where
+    Inner: ExactSourceDescriptor,
+    F: Fn(&mut Inner::Item) + Sync,
+{
+    type Item = Inner::Item;
+    type ThreadContext = Inner::ThreadContext;
+
+    fn init(&self) -> Self::ThreadContext {
+        self.inner.init()
+    }
+
+    unsafe fn exact_fetch_item(
+        &self,
+        context: &mut Self::ThreadContext,
+        index: usize,
+    ) -> Self::Item {
+        // SAFETY: This descriptor implements a pass-through of indices to the inner
+        // descriptor, therefore safety is preserved by induction.
+        let mut item = unsafe { self.inner.exact_fetch_item(context, index) };
+        (self.f)(&mut item);
+        item
+    }
+}
+
 // Collect helpers
 
 pub struct CollectAccumulator<Init, ProcessItem> {

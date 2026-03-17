@@ -25,7 +25,7 @@ use super::{
 };
 pub use detail::{
     ArrayWindows, Chain, Cloned, Copied, Enumerate, Filter, FilterExact, FilterMap, FilterMapExact,
-    Inspect, Map, MapInit, Rev, Skip, SkipExact, StepBy, Take, TakeExact,
+    Inspect, Map, MapInit, Rev, Skip, SkipExact, StepBy, Take, TakeExact, Update,
 };
 use detail::{
     CollectAccumulator, CollectCleaner, ErrorAccumulator, NoopAccumulator, TryCollectAccumulator,
@@ -853,6 +853,35 @@ pub trait ParallelSourceExt: ParallelSource {
         Rev { inner: self }
     }
 
+    /// Applies the function `f` to each item of this source, returning a
+    /// parallel source producing the updated items.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let mut values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let double_sum = values
+    ///     .par_iter_mut()
+    ///     .filter(|_| true) // ExactParallelSource -> ParallelSource
+    ///     .update(|x| **x *= 2)
+    ///     .map(|x| *x)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// assert_eq!(double_sum, 10 * 11);
+    /// assert_eq!(values, [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]);
+    /// ```
+    fn update<F>(self, f: F) -> Update<Self, F>
+    where
+        F: Fn(&mut Self::Item) + Sync,
+    {
+        Update { inner: self, f }
+    }
+
     /// Attaches the given [`GenericThreadPool`] to this [`ParallelSource`] and
     /// obtain a [`ParallelIterator`].
     ///
@@ -1633,6 +1662,34 @@ pub trait ExactParallelSourceExt: ExactParallelSource {
             inner: self,
             count: n,
         }
+    }
+
+    /// Applies the function `f` to each item of this source, returning a
+    /// parallel source producing the updated items.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let mut values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let double_sum = values
+    ///     .par_iter_mut()
+    ///     .update(|x| **x *= 2)
+    ///     .map(|x| *x)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// assert_eq!(double_sum, 10 * 11);
+    /// assert_eq!(values, [2, 4, 6, 8, 10, 12, 14, 16, 18, 20]);
+    /// ```
+    fn update<F>(self, f: F) -> Update<Self, F>
+    where
+        F: Fn(&mut Self::Item) + Sync,
+    {
+        Update { inner: self, f }
     }
 
     /// Attaches the given [`GenericThreadPool`] to this [`ExactParallelSource`]
