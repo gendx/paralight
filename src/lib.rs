@@ -9,6 +9,7 @@
 #![doc = include_str!("../README.md")]
 #![forbid(
     missing_docs,
+    non_ascii_idents,
     unsafe_op_in_unsafe_fn,
     clippy::missing_safety_doc,
     clippy::multiple_unsafe_ops_per_block
