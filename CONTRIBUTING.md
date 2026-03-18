@@ -36,3 +36,11 @@ All submissions, including submissions by project members, require review. We
 use GitHub pull requests for this purpose. Consult
 [GitHub Help](https://help.github.com/articles/about-pull-requests/) for more
 information on using pull requests.
+
+### Copyright notice
+
+If you wish to be explicitly listed in the
+[AUTHORS](https://github.com/gendx/paralight/blob/main/AUTHORS) file, simply
+edit it in the pull request where you contribute. You can also send a separate
+pull request or file an issue. Note that this isn't necessary for copyright
+ownership, as the revision history in source control is the source of truth.

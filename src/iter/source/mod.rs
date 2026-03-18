@@ -1,4 +1,4 @@
-// Copyright 2024-2026 Google LLC
+// Copyright 2024-2026 The Paralight Authors
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
