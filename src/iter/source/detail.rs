@@ -155,7 +155,7 @@ where
 {
 }
 
-impl<T: Send, First, Second> ParallelSource for Chain<First, Second>
+impl<T, First, Second> ParallelSource for Chain<First, Second>
 where
     First: ParallelSource<Item = T>,
     Second: ParallelSource<Item = T>,
@@ -184,7 +184,7 @@ where
     }
 }
 
-impl<T: Send, First, Second> ExactParallelSource for Chain<First, Second>
+impl<T, First, Second> ExactParallelSource for Chain<First, Second>
 where
     First: ExactParallelSource<Item = T>,
     Second: ExactParallelSource<Item = T>,
@@ -279,7 +279,7 @@ where
     }
 }
 
-impl<T: Send, First, Second> SourceDescriptor for ChainSourceDescriptor<First, Second>
+impl<T, First, Second> SourceDescriptor for ChainSourceDescriptor<First, Second>
 where
     First: SourceDescriptor<Item = T>,
     Second: SourceDescriptor<Item = T>,
@@ -323,7 +323,7 @@ where
     }
 }
 
-impl<T: Send, First, Second> ExactSourceDescriptor for ChainSourceDescriptor<First, Second>
+impl<T, First, Second> ExactSourceDescriptor for ChainSourceDescriptor<First, Second>
 where
     First: ExactSourceDescriptor<Item = T>,
     Second: ExactSourceDescriptor<Item = T>,
