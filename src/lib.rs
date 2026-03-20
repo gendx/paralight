@@ -279,6 +279,7 @@ mod test {
                 test_sink_vec_deque,
                 test_sink_vec_deque_panic => fail("worker thread(s) panicked!", "arithmetic panic"),
                 test_adaptor_all,
+                test_adaptor_all_equal,
                 test_adaptor_any,
                 test_adaptor_cmp,
                 test_adaptor_cmp_by,
@@ -295,6 +296,9 @@ mod test {
                 test_adaptor_fold_per_thread,
                 test_adaptor_for_each,
                 test_adaptor_for_each_init,
+                test_adaptor_is_sorted,
+                test_adaptor_is_sorted_by,
+                test_adaptor_is_sorted_by_key,
                 test_adaptor_map,
                 test_adaptor_max,
                 test_adaptor_max_by,
@@ -2979,6 +2983,25 @@ mod test {
         assert!(all_empty);
     }
 
+    fn test_adaptor_all_equal<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let all_equal = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .all_equal();
+        assert!(!all_equal);
+
+        let all_equal = input
+            .par_iter()
+            .map(|_| 0)
+            .with_thread_pool(&mut thread_pool)
+            .all_equal();
+        assert!(all_equal);
+    }
+
     fn test_adaptor_any<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
@@ -3481,6 +3504,78 @@ mod test {
         let sum: u64 = values.iter().sum();
         assert!(sum >= INPUT_LEN * (INPUT_LEN + 1) / 2);
         assert!(sum <= INPUT_LEN * (INPUT_LEN + 1));
+    }
+
+    fn test_adaptor_is_sorted<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let is_sorted = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .is_sorted();
+        assert!(is_sorted);
+
+        let equal_is_sorted = input
+            .par_iter()
+            .map(|_| 0)
+            .with_thread_pool(&mut thread_pool)
+            .is_sorted();
+        assert!(equal_is_sorted);
+
+        let reverse_is_sorted = input
+            .par_iter()
+            .rev()
+            .with_thread_pool(&mut thread_pool)
+            .is_sorted();
+        assert!(!reverse_is_sorted);
+    }
+
+    fn test_adaptor_is_sorted_by<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let is_strictly_sorted = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .is_sorted_by(|x, y| x < y);
+        assert!(is_strictly_sorted);
+
+        let equal_is_strictly_sorted = input
+            .par_iter()
+            .map(|_| 0)
+            .with_thread_pool(&mut thread_pool)
+            .is_sorted_by(|x, y| x < y);
+        assert!(!equal_is_strictly_sorted);
+
+        let reverse_is_strictly_sorted = input
+            .par_iter()
+            .rev()
+            .with_thread_pool(&mut thread_pool)
+            .is_sorted_by(|x, y| x < y);
+        assert!(!reverse_is_strictly_sorted);
+    }
+
+    fn test_adaptor_is_sorted_by_key<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN)
+            .map(|i| (i, INPUT_LEN - i))
+            .collect::<Vec<(u64, u64)>>();
+        let is_sorted_by_first = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .is_sorted_by_key(|x| x.0);
+        assert!(is_sorted_by_first);
+
+        let is_sorted_by_second = input
+            .par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .is_sorted_by_key(|x| x.1);
+        assert!(!is_sorted_by_second);
     }
 
     fn test_adaptor_map<T>(mut thread_pool: T)

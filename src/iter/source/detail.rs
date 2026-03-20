@@ -37,7 +37,7 @@ unsafe impl<Inner, const N: usize> RewindableSource for ArrayWindows<Inner, N> w
 {
 }
 
-impl<T: Send, Inner, const N: usize> ExactParallelSource for ArrayWindows<Inner, N>
+impl<T, Inner, const N: usize> ExactParallelSource for ArrayWindows<Inner, N>
 where
     Inner: ExactParallelSource<Item = T> + RewindableSource,
 {

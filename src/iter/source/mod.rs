@@ -21,7 +21,7 @@ pub mod zip;
 
 use super::{
     Accumulator, ExactParallelSink, ExactSizeAccumulator, FromExactParallelSink, GenericThreadPool,
-    ParallelIterator,
+    ParallelIterator, ParallelIteratorExt,
 };
 pub use detail::{
     ArrayWindows, Chain, Cloned, Copied, Enumerate, Filter, FilterExact, FilterMap, FilterMapExact,
@@ -1729,8 +1729,7 @@ impl<T: ExactParallelSource> ExactParallelSourceExt for T {}
 /// [`ParallelSourceExt`].
 ///
 /// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelIterator`] and
-/// [`ParallelIteratorExt`](super::ParallelIteratorExt) traits, but
+/// implements the [`ParallelIterator`] and [`ParallelIteratorExt`] traits, but
 /// it is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct BaseParallelIterator<T: GenericThreadPool, S: ParallelSource> {
@@ -1743,8 +1742,7 @@ pub struct BaseParallelIterator<T: GenericThreadPool, S: ParallelSource> {
 /// [`ExactParallelSourceExt`].
 ///
 /// You most likely won't need to interact with this struct directly, as it
-/// implements the [`ParallelIterator`] and
-/// [`ParallelIteratorExt`](super::ParallelIteratorExt) traits, but
+/// implements the [`ParallelIterator`] and [`ParallelIteratorExt`] traits, but
 /// it is nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct BaseExactParallelIterator<T: GenericThreadPool, S: ExactParallelSource> {
@@ -1753,6 +1751,83 @@ pub struct BaseExactParallelIterator<T: GenericThreadPool, S: ExactParallelSourc
 }
 
 impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, S> {
+    /// Returns [`true`] if all items produced by this iterator are equal, and
+    /// [`false`] otherwise.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let all_equal = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .all_equal();
+    /// assert!(!all_equal);
+    ///
+    /// let input = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+    /// let all_equal = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .all_equal();
+    /// assert!(all_equal);
+    /// ```
+    ///
+    /// This returns [`false`] if two consecutive items are not comparable.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [f64::NAN, f64::NAN];
+    /// let all_equal = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .all_equal();
+    /// assert!(!all_equal);
+    /// ```
+    ///
+    /// This returns [`true`] if the iterator is empty or produces only one
+    /// item.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input: [i32; 0] = [];
+    /// let all_equal = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .all_equal();
+    /// assert!(all_equal);
+    ///
+    /// let input = [1];
+    /// let all_equal = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .all_equal();
+    /// assert!(all_equal);
+    /// ```
+    pub fn all_equal(self) -> bool
+    where
+        S: RewindableSource,
+        S::Item: PartialEq,
+    {
+        self.is_sorted_by(|x, y| x == y)
+    }
+
     /// Collects this parallel iterator into the given collection (a type that
     /// implements [`FromExactParallelSink`]).
     ///
@@ -1938,6 +2013,230 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
         // `push_item()` and `skip_item_range()` are in `0..len` and they are each
         // passed exactly once.
         unsafe { C::finalize(sink) }
+    }
+
+    /// Returns [`true`] if the items produced by this iterator are sorted, and
+    /// [`false`] otherwise.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let is_sorted = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .is_sorted();
+    /// assert!(is_sorted);
+    ///
+    /// let input = [8, 9, 10, 1, 2, 3, 4, 5, 6, 7];
+    /// let is_sorted = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .is_sorted();
+    /// assert!(!is_sorted);
+    /// ```
+    ///
+    /// Equal items are considered sorted. See
+    /// [`is_sorted_by`](Self::is_sorted_by) if you want to check for strict
+    /// sorting.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+    /// let is_sorted = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .is_sorted();
+    /// assert!(is_sorted);
+    /// ```
+    ///
+    /// This returns [`false`] if two consecutive items are not comparable.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [f64::NAN, f64::NAN];
+    /// let is_sorted = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .is_sorted();
+    /// assert!(!is_sorted);
+    /// ```
+    ///
+    /// This returns [`true`] if the iterator is empty or produces only one
+    /// item.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input: [i32; 0] = [];
+    /// let is_sorted = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .is_sorted();
+    /// assert!(is_sorted);
+    ///
+    /// let input = [1];
+    /// let is_sorted = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .is_sorted();
+    /// assert!(is_sorted);
+    /// ```
+    pub fn is_sorted(self) -> bool
+    where
+        S: RewindableSource,
+        S::Item: PartialOrd,
+    {
+        self.is_sorted_by(|x, y| x <= y)
+    }
+
+    /// Returns [`true`] if the items produced by this iterator are sorted
+    /// according to the predicate `f`, and [`false`] otherwise.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let strictly_sorted = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .is_sorted_by(|x, y| x < y);
+    /// assert!(strictly_sorted);
+    ///
+    /// let input = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+    /// let strictly_sorted = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .is_sorted_by(|x, y| x < y);
+    /// assert!(!strictly_sorted);
+    ///
+    /// let input = [8, 9, 10, 1, 2, 3, 4, 5, 6, 7];
+    /// let strictly_sorted = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .is_sorted_by(|x, y| x < y);
+    /// assert!(!strictly_sorted);
+    /// ```
+    ///
+    /// This returns [`true`] if the iterator is empty or produces only one item
+    /// (even if the predicate always returns [`false`]).
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input: [i32; 0] = [];
+    /// let is_sorted = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .is_sorted_by(|_, _| false);
+    /// assert!(is_sorted);
+    ///
+    /// let input = [1];
+    /// let is_sorted = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .is_sorted_by(|_, _| false);
+    /// assert!(is_sorted);
+    /// ```
+    pub fn is_sorted_by<F>(self, f: F) -> bool
+    where
+        S: RewindableSource,
+        F: Fn(S::Item, S::Item) -> bool + Sync,
+    {
+        let iter = BaseExactParallelIterator {
+            thread_pool: self.thread_pool,
+            source: self.source.array_windows::<2>(),
+        };
+        iter.all(|[x, y]| f(x, y))
+    }
+
+    /// Returns [`true`] if the keys derived from the mapping function `f` on
+    /// items produced by this iterator are sorted, and [`false`] otherwise.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = ["e", "dd", "ccc", "bbbb", "aaaaa"];
+    /// let sorted_by_len = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .is_sorted_by_key(|x| x.len());
+    /// assert!(sorted_by_len);
+    /// ```
+    ///
+    /// This returns [`true`] if the iterator is empty or produces only one
+    /// item.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input: [&str; 0] = [];
+    /// let sorted_by_len = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .is_sorted_by_key(|x| x.len());
+    /// assert!(sorted_by_len);
+    ///
+    /// let input = ["Hello world"];
+    /// let sorted_by_len = input
+    ///     .par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .is_sorted_by_key(|x| x.len());
+    /// assert!(sorted_by_len);
+    /// ```
+    pub fn is_sorted_by_key<A, F>(self, f: F) -> bool
+    where
+        S: RewindableSource,
+        F: Fn(S::Item) -> A + Sync,
+        A: PartialOrd,
+    {
+        let iter = BaseExactParallelIterator {
+            thread_pool: self.thread_pool,
+            source: self.source.map(f),
+        };
+        iter.is_sorted()
     }
 
     /// Try collecting this parallel iterator into the given collection (a type
