@@ -17,7 +17,7 @@ use detail::{
     MinMaxAccumulator, ProductAccumulator, ShortCircuitingAccumulator, SumAccumulator,
     TryIterCollector, TryIterFolder,
 };
-pub use detail::{Map, MinMaxResult};
+pub use detail::{Map, MinMaxResult, PanicFuse};
 #[cfg(feature = "nightly")]
 pub use sink::array::ArrayParallelSink;
 pub use sink::vec::VecParallelSink;
@@ -2179,6 +2179,71 @@ pub trait ParallelIteratorExt: ParallelIterator {
         A: PartialEq<B>,
     {
         !self.eq_by_keys(f, g)
+    }
+
+    /// Attaches a fuse to this iterator that triggers in case of panics, to
+    /// interrupt the other threads as soon as possible.
+    ///
+    /// Without this adaptor, a panic in a worker thread is eventually
+    /// propagated to the caller, but only after all other threads have
+    /// finished processing their items. Indeed, a panic normally doesn't
+    /// interrupt other threads (unless the program is compiled in
+    /// [`panic="abort"` mode][1]).
+    ///
+    /// With this adaptor, a communication layer indicates if a panic happened:
+    /// worker threads check it before processing each item. This comes at the
+    /// cost of additional synchronization overhead, and may also prevent some
+    /// optimizations.
+    ///
+    /// [1]: https://doc.rust-lang.org/cargo/reference/profiles.html#panic
+    ///
+    /// ```should_panic
+    /// # use paralight::prelude::*;
+    /// use std::thread::sleep;
+    /// use std::time::Duration;
+    ///
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// (0..1_000_000)
+    ///     .into_par_iter()
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .panic_fuse()
+    ///     .for_each(|i| {
+    ///         sleep(Duration::from_secs(1));
+    ///         assert!(i > 0);
+    ///         println!("item: {i}");
+    ///     });
+    /// ```
+    ///
+    /// This fuse applies to panics caused anywhere in the iterator pipeline.
+    ///
+    /// ```should_panic
+    /// # use paralight::prelude::*;
+    /// use std::thread::sleep;
+    /// use std::time::Duration;
+    ///
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// (0..1_000_000)
+    ///     .into_par_iter()
+    ///     .inspect(|&i| {
+    ///         sleep(Duration::from_secs(1));
+    ///         assert!(i > 0);
+    ///     })
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .panic_fuse()
+    ///     .for_each(|i| println!("item: {i}"));
+    /// ```
+    fn panic_fuse(self) -> PanicFuse<Self> {
+        PanicFuse { inner: self }
     }
 
     /// Compare the pairs of items produced by this iterator using

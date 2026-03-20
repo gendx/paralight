@@ -12,6 +12,7 @@ use super::{
     Accumulator, ExactSizeAccumulator, ParallelAdaptor, ParallelAdaptorDescriptor, ParallelIterator,
 };
 use crossbeam_utils::CachePadded;
+use scopeguard::ScopeGuard;
 use std::cmp::Ordering;
 use std::iter::{Product, Sum};
 use std::marker::PhantomData;
@@ -28,6 +29,7 @@ use std::sync::atomic::AtomicBool;
 pub struct Fuse(CachePadded<AtomicBool>);
 
 /// State of a [`Fuse`].
+#[derive(PartialEq, Eq)]
 enum FuseState {
     Unset,
     Set,
@@ -640,8 +642,8 @@ where
 ///
 /// You most likely won't need to interact with this struct directly, as it
 /// implements the [`ParallelIterator`] and
-/// [`ParallelIteratorExt`](super::ParallelIteratorExt) traits, but
-/// it is nonetheless public because of the `must_use` annotation.
+/// [`ParallelIteratorExt`](super::ParallelIteratorExt) traits, but it is
+/// nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
 pub struct Map<Inner: ParallelIterator, F> {
     pub(super) inner: Inner,
@@ -666,6 +668,82 @@ where
             inner: self.inner,
             transform_item: move |item| Some((self.f)(item)),
         }
+    }
+}
+
+// Iterator implementations
+
+/// This struct is created by the
+/// [`panic_fuse()`](super::ParallelIteratorExt::panic_fuse) method on
+/// [`ParallelIteratorExt`](super::ParallelIteratorExt).
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelIterator`] and
+/// [`ParallelIteratorExt`](super::ParallelIteratorExt) traits, but it is
+/// nonetheless public because of the `must_use` annotation.
+#[must_use = "iterator adaptors are lazy"]
+pub struct PanicFuse<Inner: ParallelIterator> {
+    pub(super) inner: Inner,
+}
+
+impl<Inner: ParallelIterator> ParallelIterator for PanicFuse<Inner> {
+    type Item = Inner::Item;
+
+    fn upper_bounded_pipeline<Output: Send, Accum>(
+        self,
+        init: impl Fn() -> Accum + Sync,
+        process_item: impl Fn(Accum, usize, Self::Item) -> ControlFlow<Accum, Accum> + Sync,
+        finalize: impl Fn(Accum) -> Output + Sync,
+        reduce: impl Fn(Output, Output) -> Output,
+    ) -> Output {
+        let fuse = Fuse::new();
+        self.inner.upper_bounded_pipeline(
+            || (init(), scopeguard::guard(&fuse, |fuse| fuse.set())),
+            |(acc, guard), index, item| match guard.load() {
+                FuseState::Unset => match process_item(acc, index, item) {
+                    ControlFlow::Continue(acc) => ControlFlow::Continue((acc, guard)),
+                    ControlFlow::Break(acc) => ControlFlow::Break((acc, guard)),
+                },
+                FuseState::Set => ControlFlow::Break((acc, guard)),
+            },
+            |(acc, guard)| {
+                ScopeGuard::into_inner(guard);
+                finalize(acc)
+            },
+            reduce,
+        )
+    }
+
+    fn iter_pipeline<Output, Accum: Send>(
+        self,
+        accum: impl Accumulator<Self::Item, Accum> + Sync,
+        reduce: impl ExactSizeAccumulator<Accum, Output>,
+    ) -> Output {
+        let accumulator = PanicFuseAccumulator {
+            inner: accum,
+            fuse: Fuse::new(),
+        };
+        self.inner.iter_pipeline(accumulator, reduce)
+    }
+}
+
+struct PanicFuseAccumulator<Inner> {
+    inner: Inner,
+    fuse: Fuse,
+}
+
+impl<Item, Output, Inner> Accumulator<Item, Output> for PanicFuseAccumulator<Inner>
+where
+    Inner: Accumulator<Item, Output>,
+{
+    #[inline(always)]
+    fn accumulate(&self, iter: impl Iterator<Item = Item>) -> Output {
+        let guard = scopeguard::guard(&self.fuse, |fuse| fuse.set());
+        let output = self
+            .inner
+            .accumulate(iter.take_while(|_| self.fuse.load() == FuseState::Unset));
+        ScopeGuard::into_inner(guard);
+        output
     }
 }
 

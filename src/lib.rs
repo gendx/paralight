@@ -312,6 +312,8 @@ mod test {
                 test_adaptor_ne,
                 test_adaptor_ne_by_key,
                 test_adaptor_ne_by_keys,
+                test_adaptor_panic_fuse => fail("worker thread(s) panicked!", "assertion failed: i > 0"),
+                test_adaptor_panic_fuse_map => fail("worker thread(s) panicked!", "assertion failed: i > 0"),
                 test_adaptor_partial_cmp,
                 test_adaptor_partial_cmp_by,
                 test_adaptor_partial_cmp_by_key,
@@ -4081,6 +4083,35 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .ne_by_keys(|x| x.1, |y| y.0);
         assert!(not_equal);
+    }
+
+    fn test_adaptor_panic_fuse<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        (0..=INPUT_LEN as usize)
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .panic_fuse()
+            .for_each(|i| {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+                assert!(i > 0);
+            });
+    }
+
+    fn test_adaptor_panic_fuse_map<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        (0..=INPUT_LEN as usize)
+            .into_par_iter()
+            .map(|i| {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+                assert!(i > 0);
+            })
+            .with_thread_pool(&mut thread_pool)
+            .panic_fuse()
+            .for_each(|()| ());
     }
 
     fn test_adaptor_partial_cmp<T>(mut thread_pool: T)
