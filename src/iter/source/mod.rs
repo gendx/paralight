@@ -47,7 +47,7 @@ use std::ops::{Residual, Try};
 /// A non-trivial cleanup is needed for parallel sources that drain items, such
 /// as calling [`into_par_iter()`](IntoParallelSource::into_par_iter) on a
 /// [`Vec`], and must correspond to [`drop()`]-ing items.
-#[allow(clippy::len_without_is_empty)]
+#[expect(clippy::len_without_is_empty)]
 pub trait SourceCleanup {
     /// Set to [`false`] if the cleanup function is guaranteed to be a noop.
     ///

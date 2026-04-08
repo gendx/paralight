@@ -529,7 +529,7 @@ fn fill_needles(input_size: usize, density: usize) -> Vec<bool> {
 /// Creates a vector of `input_size` [`Box`]ed booleans, `density` of which are
 /// set to [`true`] (the needles). The set of needles follows a uniform
 /// distribution, but is fixed by a constant-time seed for reproducibility.
-#[allow(clippy::vec_box)]
+#[expect(clippy::vec_box)]
 fn fill_boxed_needles(input_size: usize, density: usize) -> Vec<Box<bool>> {
     let mut input = vec![Box::new(false); input_size];
 

@@ -1156,7 +1156,7 @@ mod test {
         assert_eq!(sum, (INPUT_LEN as usize - 1) * INPUT_LEN as usize / 2);
     }
 
-    #[allow(clippy::reversed_empty_ranges)]
+    #[expect(clippy::reversed_empty_ranges)]
     fn test_source_range_backwards<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
@@ -1262,7 +1262,7 @@ mod test {
         assert_eq!(sum, INPUT_LEN as usize * (INPUT_LEN as usize + 1) / 2);
     }
 
-    #[allow(clippy::reversed_empty_ranges)]
+    #[expect(clippy::reversed_empty_ranges)]
     fn test_source_range_inclusive_backwards<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,

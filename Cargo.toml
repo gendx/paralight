@@ -10,7 +10,7 @@ categories = ["concurrency"]
 keywords = ["parallelism", "thread-pool", "iterator"]
 exclude = [".github/*"]
 edition = "2021"
-rust-version = "1.80.0"
+rust-version = "1.81.0"
 
 [package.metadata.docs.rs]
 features = ["log", "log_parallelism", "nightly", "rayon"]

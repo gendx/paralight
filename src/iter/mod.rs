@@ -232,7 +232,7 @@ pub trait ParallelIterator: Sized {
     /// terminate early.
     ///
     /// ```
-    /// # #![allow(clippy::bool_assert_comparison)]
+    /// # #![expect(clippy::bool_assert_comparison)]
     /// # use paralight::prelude::*;
     /// # use std::ops::ControlFlow;
     /// # let mut thread_pool = ThreadPoolBuilder {
@@ -486,7 +486,7 @@ pub trait ParallelAdaptor {
     /// Definition of the parallel adaptor.
     // We can't really avoid the complexity in the result type as the function may come from an
     // anonymous lambda.
-    #[allow(clippy::type_complexity)]
+    #[expect(clippy::type_complexity)]
     fn descriptor(
         self,
     ) -> ParallelAdaptorDescriptor<
@@ -2385,8 +2385,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// }
     ///
     /// /// Returns true if the first argument is a subset of the second. Inputs must be sorted.
-    /// # // TODO(MSRV >= 1.82.0): Remove this allowance
-    /// # #[allow(clippy::incompatible_msrv)]
+    /// # // TODO(MSRV >= 1.82.0): Remove this expectation
+    /// # #[expect(clippy::incompatible_msrv)]
     /// fn is_subset(lhs: &[i32], rhs: &[i32]) -> bool {
     ///     /* Implementation details omitted */
     /// #    assert!(lhs.is_sorted());

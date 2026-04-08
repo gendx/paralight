@@ -895,7 +895,7 @@ mod test {
         assert_eq!(max_of!(3, 2, 1), 3);
     }
 
-    #[allow(clippy::bool_assert_comparison)]
+    #[expect(clippy::bool_assert_comparison)]
     #[test]
     fn or_bools() {
         assert_eq!(or_bools!(true), true);

@@ -506,7 +506,10 @@ impl<F: RangeFactory> ThreadPoolImpl<F> {
 
 impl<F: RangeFactory> Drop for ThreadPoolImpl<F> {
     /// Joins all the threads in the pool.
-    #[allow(clippy::single_match, clippy::unused_enumerate_index)]
+    #[cfg_attr(
+        not(feature = "log"),
+        expect(clippy::single_match, clippy::unused_enumerate_index)
+    )]
     fn drop(&mut self) {
         self.pipeline.finish_workers();
 

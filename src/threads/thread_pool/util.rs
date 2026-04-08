@@ -76,7 +76,7 @@ impl<T: LifetimeParameterized> DynLifetimeView<T> {
     /// [`get()`](Self::get) must ensure that the obtained reference doesn't
     /// outlive the reference that was set here.
     // The cast is necessary because the lifetime is coerced to 'static.
-    #[allow(clippy::unnecessary_cast)]
+    #[expect(clippy::unnecessary_cast)]
     pub fn set(&mut self, value: &T::T<'_>) {
         self.ptr = NonNull::new(NonNull::from(value).as_ptr() as *mut T::T<'static>);
     }
@@ -96,7 +96,7 @@ impl<T: LifetimeParameterized> DynLifetimeView<T> {
     /// The underlying object must be valid and not mutated during the whole
     /// output lifetime.
     // The cast is necessary because the lifetime is coerced to 'a.
-    #[allow(clippy::unnecessary_cast)]
+    #[expect(clippy::unnecessary_cast)]
     pub unsafe fn get<'a>(&self) -> Option<&'a T::T<'a>> {
         self.ptr.map(|static_ptr| {
             let ptr = static_ptr.as_ptr() as *mut T::T<'a>;
@@ -233,7 +233,7 @@ mod test {
     #[ignore]
     #[cfg_attr(coverage_nightly, coverage(off))]
     #[test]
-    #[allow(unused_assignments)]
+    #[expect(unused_assignments)]
     fn view_bad_mut() {
         let mut view = DynLifetimeView::<i32>::empty();
         let mut foo = 42;
@@ -373,7 +373,7 @@ mod test {
     #[ignore]
     #[cfg_attr(coverage_nightly, coverage(off))]
     #[test]
-    #[allow(unused_assignments)]
+    #[expect(unused_assignments)]
     fn dyn_lifetime_view_bad_mut() {
         let mut view = DynLifetimeView::<&i32>::empty();
         let x = 42;
