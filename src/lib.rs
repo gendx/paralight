@@ -663,6 +663,11 @@ mod test {
         );
     }
 
+    // Simple pass-through macro to wrap nightly syntax. See the rationale in
+    // https://github.com/rust-lang/rust/issues/154045.
+    #[cfg(feature = "nightly_tests")]
+    macro_rules! generate { ($( $tt:tt )*) => { $( $tt )* } }
+
     #[cfg(feature = "nightly_tests")]
     struct NotSend(u64);
     #[cfg(feature = "nightly_tests")]
@@ -672,7 +677,7 @@ mod test {
         }
     }
     #[cfg(feature = "nightly_tests")]
-    impl !Send for NotSend {}
+    generate! { impl !Send for NotSend {} }
 
     #[cfg(feature = "nightly_tests")]
     fn test_pipeline_non_send_functions<T>(mut thread_pool: T)
