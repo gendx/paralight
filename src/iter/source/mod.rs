@@ -24,8 +24,8 @@ use super::{
     ParallelIterator, ParallelIteratorExt,
 };
 pub use detail::{
-    ArrayWindows, Chain, Cloned, Copied, Enumerate, Filter, FilterExact, FilterMap, FilterMapExact,
-    Inspect, Map, MapInit, Rev, Skip, SkipExact, StepBy, Take, TakeExact, Update,
+    ArrayWindows, Chain, Cloned, Copied, Downgrade, Enumerate, Filter, FilterExact, FilterMap,
+    FilterMapExact, Inspect, Map, MapInit, Rev, Skip, SkipExact, StepBy, Take, TakeExact, Update,
 };
 use detail::{
     CollectAccumulator, CollectCleaner, ErrorAccumulator, NoopAccumulator, TryCollectAccumulator,
@@ -526,8 +526,8 @@ pub trait ParallelSourceExt: ParallelSource {
     /// let second = [8, 9, 10];
     /// let sum = first
     ///     .par_iter()
-    ///     .filter(|_| true) // ExactParallelSource -> ParallelSource
-    ///     .chain(second.par_iter().filter(|_| true))
+    ///     .downgrade() // ExactParallelSource -> ParallelSource
+    ///     .chain(second.par_iter().downgrade())
     ///     .with_thread_pool(&mut thread_pool)
     ///     .sum::<i32>();
     /// assert_eq!(sum, 5 * 11);
@@ -558,7 +558,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(Box::new);
     /// let sum = input
     ///     .par_iter()
-    ///     .filter(|_| true) // ExactParallelSource -> ParallelSource
+    ///     .downgrade() // ExactParallelSource -> ParallelSource
     ///     .cloned()
     ///     .with_thread_pool(&mut thread_pool)
     ///     .reduce(
@@ -597,7 +597,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let sum = input
     ///     .par_iter()
-    ///     .filter(|_| true) // ExactParallelSource -> ParallelSource
+    ///     .downgrade() // ExactParallelSource -> ParallelSource
     ///     .copied()
     ///     .with_thread_pool(&mut thread_pool)
     ///     .reduce(|| 0, |x, y| x + y);
@@ -625,7 +625,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let sum_even = input
     ///     .par_iter()
-    ///     .filter(|_| true) // ExactParallelSource -> ParallelSource
+    ///     .downgrade() // ExactParallelSource -> ParallelSource
     ///     .filter(|&&x| x % 2 == 0)
     ///     .with_thread_pool(&mut thread_pool)
     ///     .sum::<i32>();
@@ -654,7 +654,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let sum = input
     ///     .par_iter()
-    ///     .filter(|_| true) // ExactParallelSource -> ParallelSource
+    ///     .downgrade() // ExactParallelSource -> ParallelSource
     ///     .filter_map(|&x| if x != 2 { Some(x * 3) } else { None })
     ///     .with_thread_pool(&mut thread_pool)
     ///     .sum::<i32>();
@@ -676,7 +676,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let sum_even = input
     ///     .par_iter()
-    ///     .filter(|_| true) // ExactParallelSource -> ParallelSource
+    ///     .downgrade() // ExactParallelSource -> ParallelSource
     ///     .filter_map(|&x| if x % 2 == 0 { Some(Rc::new(x)) } else { None })
     ///     .with_thread_pool(&mut thread_pool)
     ///     .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
@@ -709,7 +709,7 @@ pub trait ParallelSourceExt: ParallelSource {
     ///
     /// let min = input
     ///     .par_iter()
-    ///     .filter(|_| true) // ExactParallelSource -> ParallelSource
+    ///     .downgrade() // ExactParallelSource -> ParallelSource
     ///     .inspect(|x| {
     ///         println!("[{:?}] x = {x}", std::thread::current().id());
     ///         inspections.fetch_add(1, Ordering::Relaxed);
@@ -744,7 +744,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let double_sum = input
     ///     .par_iter()
-    ///     .filter(|_| true) // ExactParallelSource -> ParallelSource
+    ///     .downgrade() // ExactParallelSource -> ParallelSource
     ///     .map(|&x| x * 2)
     ///     .with_thread_pool(&mut thread_pool)
     ///     .sum::<i32>();
@@ -766,7 +766,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let sum = input
     ///     .par_iter()
-    ///     .filter(|_| true) // ExactParallelSource -> ParallelSource
+    ///     .downgrade() // ExactParallelSource -> ParallelSource
     ///     .map(|&x| Rc::new(x))
     ///     .with_thread_pool(&mut thread_pool)
     ///     .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
@@ -800,7 +800,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let randomized_sum = input
     ///     .par_iter()
-    ///     .filter(|_| true) // ExactParallelSource -> ParallelSource
+    ///     .downgrade() // ExactParallelSource -> ParallelSource
     ///     .map_init(
     ///         rand::rng, // A thread-local RNG that is neither Send nor Sync.
     ///         |rng, &x| if rng.random() { x * 2 } else { x * 3 },
@@ -843,7 +843,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let first_odd = input
     ///     .par_iter()
-    ///     .filter(|_| true) // ExactParallelSource -> ParallelSource
+    ///     .downgrade() // ExactParallelSource -> ParallelSource
     ///     .rev()
     ///     .with_thread_pool(&mut thread_pool)
     ///     .find_first(|&&x| x % 2 != 0);
@@ -867,7 +867,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// let mut values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let double_sum = values
     ///     .par_iter_mut()
-    ///     .filter(|_| true) // ExactParallelSource -> ParallelSource
+    ///     .downgrade() // ExactParallelSource -> ParallelSource
     ///     .update(|x| **x *= 2)
     ///     .map(|x| *x)
     ///     .with_thread_pool(&mut thread_pool)
@@ -897,7 +897,7 @@ pub trait ParallelSourceExt: ParallelSource {
     /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
     /// let sum = input
     ///     .par_iter()
-    ///     .filter(|_| true) // ExactParallelSource -> ParallelSource
+    ///     .downgrade() // ExactParallelSource -> ParallelSource
     ///     .with_thread_pool(&mut thread_pool)
     ///     .sum::<i32>();
     /// assert_eq!(sum, 5 * 11);
@@ -1150,6 +1150,56 @@ pub trait ExactParallelSourceExt: ExactParallelSource {
         T: Copy + 'a,
     {
         Copied { inner: self }
+    }
+
+    /// Transforms this [`ExactParallelSource`] into an equivalent
+    /// [`ParallelSource`].
+    ///
+    /// This is useful to combine multiple [`ExactParallelSource`]s and
+    /// [`ParallelSource`]s together, for example with the
+    /// [`chain()`](ParallelSourceExt::chain) adaptor.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let first = [1, 2, 3];
+    /// let second = [4, 5, 6, 7, 8, 9, 10];
+    /// let sum = first
+    ///     .par_iter()
+    ///     .downgrade() // Needed to chain with the filtered source below.
+    ///     .chain(second.par_iter().filter(|&x| x % 2 == 0))
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// assert_eq!(sum, 1 + 2 + 3 + 4 + 6 + 8 + 10);
+    /// ```
+    ///
+    /// Without downgrading, an [`ExactParallelSource`] cannot be chained with a
+    /// [`ParallelSource`].
+    ///
+    /// ```compile_fail
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let first = [1, 2, 3];
+    /// let second = [4, 5, 6, 7, 8, 9, 10];
+    /// let sum = first
+    ///     .par_iter()
+    ///     .chain(second.par_iter().filter(|&x| x % 2 == 0))
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// assert_eq!(sum, 1 + 2 + 3 + 4 + 6 + 8 + 10);
+    /// ```
+    fn downgrade(self) -> Downgrade<Self> {
+        Downgrade { inner: self }
     }
 
     /// Returns a parallel source that produces pairs of (index, item) for the

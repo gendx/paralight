@@ -470,6 +470,75 @@ where
 }
 
 /// This struct is created by the
+/// [`downgrade()`](super::ExactParallelSourceExt::downgrade) method on
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt).
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ParallelSource`] and
+/// [`ParallelSourceExt`](super::ParallelSourceExt) traits, but it is
+/// nonetheless public because of the `must_use` annotation.
+#[must_use = "iterator adaptors are lazy"]
+pub struct Downgrade<Inner> {
+    pub(super) inner: Inner,
+}
+
+// SAFETY: If the inner source is rewindable, then by induction:
+// - it is also safe to fetch each downgraded item an unlimited number of times,
+// - the resulting source doesn't need cleanup.
+unsafe impl<Inner> RewindableSource for Downgrade<Inner> where Inner: RewindableSource {}
+
+impl<Inner: ExactParallelSource> ParallelSource for Downgrade<Inner> {
+    type Item = Inner::Item;
+
+    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
+        DowngradeSourceDescriptor {
+            inner: self.inner.exact_descriptor(),
+        }
+    }
+}
+
+struct DowngradeSourceDescriptor<Inner> {
+    inner: Inner,
+}
+
+impl<Inner: SourceCleanup> SourceCleanup for DowngradeSourceDescriptor<Inner> {
+    const NEEDS_CLEANUP: bool = Inner::NEEDS_CLEANUP;
+
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
+        if Self::NEEDS_CLEANUP {
+            // SAFETY: This descriptor implements a pass-through of indices to the inner
+            // descriptor, therefore safety is preserved by induction.
+            unsafe {
+                self.inner.cleanup_item_range(range);
+            }
+        }
+    }
+}
+
+impl<Inner: ExactSourceDescriptor> SourceDescriptor for DowngradeSourceDescriptor<Inner> {
+    type Item = Inner::Item;
+    type ThreadContext = Inner::ThreadContext;
+
+    fn init(&self) -> Self::ThreadContext {
+        self.inner.init()
+    }
+
+    unsafe fn fetch_item(
+        &self,
+        context: &mut Self::ThreadContext,
+        index: usize,
+    ) -> Option<Self::Item> {
+        // SAFETY: This descriptor implements a pass-through of indices to the inner
+        // descriptor, therefore safety is preserved by induction.
+        unsafe { Some(self.inner.exact_fetch_item(context, index)) }
+    }
+}
+
+/// This struct is created by the
 /// [`enumerate()`](super::ExactParallelSourceExt::enumerate) method on
 /// [`ExactParallelSourceExt`](super::ExactParallelSourceExt).
 ///

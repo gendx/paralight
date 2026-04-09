@@ -224,6 +224,9 @@ mod test {
                 test_source_exact_adaptor_chains_cleanup,
                 test_source_exact_adaptor_cloned,
                 test_source_exact_adaptor_copied,
+                test_source_exact_adaptor_downgrade,
+                test_source_exact_adaptor_downgrade_cleanup,
+                test_source_exact_adaptor_downgrade_chain,
                 test_source_exact_adaptor_enumerate,
                 test_source_exact_adaptor_enumerate_cleanup,
                 test_source_exact_adaptor_filter,
@@ -1504,8 +1507,8 @@ mod test {
     {
         (0..usize::MAX)
             .into_par_iter()
-            .filter(|_| true)
-            .chain((0..1).into_par_iter().filter(|_| true))
+            .downgrade()
+            .chain((0..1).into_par_iter().downgrade())
             .with_thread_pool(&mut thread_pool)
             .sum::<usize>();
     }
@@ -1577,7 +1580,7 @@ mod test {
         let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
         let needle = input
             .into_par_iter()
-            .filter(|_| true)
+            .downgrade()
             .filter_map(|x| if *x % 2 == 0 { Some(*x * 3) } else { None })
             .with_thread_pool(&mut thread_pool)
             .find_first(|x| *x % 10 == 8);
@@ -1871,6 +1874,65 @@ mod test {
             .copied()
             .with_thread_pool(&mut thread_pool)
             .reduce(|| 0, |x, y| x + y);
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_source_exact_adaptor_downgrade<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let sum = input
+            .par_iter()
+            .downgrade()
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_source_exact_adaptor_downgrade_cleanup<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
+        let sum = input
+            .clone()
+            .into_par_iter()
+            .downgrade()
+            .with_thread_pool(&mut thread_pool)
+            .map(|x| *x)
+            .sum::<u64>();
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+
+        let needle = input
+            .clone()
+            .into_par_iter()
+            .downgrade()
+            .with_thread_pool(&mut thread_pool)
+            .find_any(|x| **x % 10 == 9);
+        let needle = needle.unwrap();
+        assert_eq!(*needle % 10, 9);
+
+        let needle = input
+            .clone()
+            .into_par_iter()
+            .downgrade()
+            .with_thread_pool(&mut thread_pool)
+            .find_first(|x| **x % 10 == 9);
+        assert_eq!(needle, Some(Box::new(9)));
+    }
+
+    fn test_source_exact_adaptor_downgrade_chain<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input1 = (0..INPUT_LEN / 2).collect::<MyHashSet<u64>>();
+        let input2 = (INPUT_LEN / 2..=INPUT_LEN).collect::<Vec<u64>>();
+        let sum = input1
+            .par_iter()
+            .chain(input2.par_iter().downgrade())
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
