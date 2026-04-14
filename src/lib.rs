@@ -317,6 +317,8 @@ mod test {
                 test_adaptor_ne_by_keys,
                 test_adaptor_panic_fuse => fail("worker thread(s) panicked!", "assertion failed: i > 0"),
                 test_adaptor_panic_fuse_map => fail("worker thread(s) panicked!", "assertion failed: i > 0"),
+                test_adaptor_panic_fuse_find_first,
+                test_adaptor_panic_fuse_find_first_panic => fail("worker thread(s) panicked!", "assertion failed: i > 0"),
                 test_adaptor_partial_cmp,
                 test_adaptor_partial_cmp_by,
                 test_adaptor_partial_cmp_by_key,
@@ -4179,6 +4181,33 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .panic_fuse()
             .for_each(|()| ());
+    }
+
+    fn test_adaptor_panic_fuse_find_first<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let needle = (0..=INPUT_LEN as usize)
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .panic_fuse()
+            .find_first(|i| i % 7 == 6);
+        assert_eq!(needle, Some(6))
+    }
+
+    fn test_adaptor_panic_fuse_find_first_panic<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        (0..=INPUT_LEN as usize)
+            .into_par_iter()
+            .inspect(|&i| {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+                assert!(i > 0);
+            })
+            .with_thread_pool(&mut thread_pool)
+            .panic_fuse()
+            .find_first(|&i| i % 7 == 6);
     }
 
     fn test_adaptor_partial_cmp<T>(mut thread_pool: T)
