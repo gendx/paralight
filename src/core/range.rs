@@ -432,7 +432,7 @@ impl AtomicRange {
     fn compare_exchange(&self, before: PackedRange, after: PackedRange) -> Result<(), PackedRange> {
         match self
             .0
-            .compare_exchange(before.0, after.0, Ordering::SeqCst, Ordering::SeqCst)
+            .compare_exchange_weak(before.0, after.0, Ordering::SeqCst, Ordering::SeqCst)
         {
             Ok(_) => Ok(()),
             Err(e) => Err(PackedRange(e)),
