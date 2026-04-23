@@ -441,6 +441,8 @@ ThreadSanitizer.
 As mentioned, Paralight uses as little `unsafe` code as possible. Here is the
 list of places where `unsafe` is needed.
 
+#### Core parallel engine
+
 - Lifetime-erasure in
   [threads/thread_pool/util.rs](https://github.com/gendx/paralight/blob/main/src/threads/thread_pool/util.rs).
   The goal is essentially to share an `Arc<Mutex<&'a T>>` between the main
@@ -456,6 +458,44 @@ list of places where `unsafe` is needed.
   the `'static` lifetime to a local `'a` as needed. [`Send`](Send) and
   [`Sync`](Sync) implementations are also provided (when sound) on this wrapper
   type.
+- [`GenericThreadPool`](iter::GenericThreadPool) is an `unsafe` trait,
+  implemented for `&mut ThreadPool` in
+  [threads/thread_pool/mod.rs](https://github.com/gendx/paralight/blob/main/src/threads/thread_pool/mod.rs)
+  and for `&RayonThreadPool` in
+  [threads/rayon.rs](https://github.com/gendx/paralight/blob/main/src/threads/rayon.rs).
+  This in turn relies on _correctness_ of the (safe) work-stealing
+  implementation in
+  [core/range.rs](https://github.com/gendx/paralight/blob/main/src/core/range.rs),
+  that is still missing a formal proof.
+- Windows API calls are used to set thread affinity in
+  [threads/thread_pool/mod.rs](https://github.com/gendx/paralight/blob/main/src/threads/thread_pool/mod.rs)
+  when requested.
+
+#### Iterator traits
+
+- The definition of the [`SourceDescriptor`](iter::SourceDescriptor) trait in
+  [iter/source/mod.rs](https://github.com/gendx/paralight/blob/main/src/iter/source/mod.rs)
+  has `unsafe` methods because it requires the caller to pass each index once
+  and only once. Indeed, the safety of the iterator sources (mutable slice,
+  vector, array) assumes a correct calling pattern. The `SourceDescriptor` trait
+  is public (so that dependents of Paralight can define their own sources of
+  items), so these `unsafe` functions leak in the public API. Internally, this
+  causes `unsafe` blocks each time the trait is implemented, and the associated
+  safety comments are a good opportunity to check correctness.
+- Likewise, the definitions of the
+  [`ExactParallelSink`](iter::ExactParallelSink) and
+  [`FromExactParallelSink`](iter::FromExactParallelSink) traits in
+  [iter/sink/mod.rs](https://github.com/gendx/paralight/blob/main/src/iter/sink/mod.rs)
+  have `unsafe` methods to allow sink implementations to assume a correct
+  calling pattern.
+- [`RewindableSource`](iter::RewindableSource) is an `unsafe` trait to mark
+  parallel sources for which it's safe to fetch each item multiple times and
+  concurrently, and where the cleanup routine is a no-op. This trait is for
+  example used as a pre-requisite for the
+  [`array_windows()`](iter::ExactParallelSourceExt::array_windows) adaptor.
+
+#### Iterator implementations
+
 - The [`SliceParallelSource`](iter::SliceParallelSource) API in
   [iter/source/slice.rs](https://github.com/gendx/paralight/blob/main/src/iter/source/slice.rs)
   uses [`slice::get_unchecked()`](slice::get_unchecked) as it guides the
@@ -471,7 +511,7 @@ list of places where `unsafe` is needed.
   will consume which item (due to work stealing). An approach that decomposes
   the slice into a pointer-length pair is used instead, making it possible to
   share the raw pointer with all the worker threads.
-- Similarly, the [`VecParallelSource`](iter::VecParallelSource) API in
+- The [`VecParallelSource`](iter::VecParallelSource) API in
   [iter/source/vec.rs](https://github.com/gendx/paralight/blob/main/src/iter/source/vec.rs)
   provides parallel iterators that consume a `Vec<T>`. This is achieved by
   decomposing the vector into a pointer-length-capacity triple, and sharing the
@@ -480,7 +520,7 @@ list of places where `unsafe` is needed.
   original `Vec<T>` allocation is released when the iterator is dropped (to
   avoid memory leaks), which involves reconstructing it from the
   pointer-allocation pair (via [`Vec::from_raw_parts()`](Vec::from_raw_parts)).
-- Likewise, the [`ArrayParallelSource`](iter::ArrayParallelSource) API in
+- The [`ArrayParallelSource`](iter::ArrayParallelSource) API in
   [iter/source/array.rs](https://github.com/gendx/paralight/blob/main/src/iter/source/array.rs)
   provides parallel iterators that consume a `[T; N]`. The situation is similar
   to `Vec<T>`, except that the items aren't allocated on the heap behind a
@@ -491,29 +531,18 @@ list of places where `unsafe` is needed.
   [reverted](https://github.com/gendx/paralight/commit/59c995672634aead96a4d977fe1fcab1e0faa9a5)
   due to being unsound, highlighting once again the importance of code coverage
   and the effectiveness of [Miri](https://github.com/rust-lang/miri).
-- Windows API calls are used to set thread affinity in
-  [threads/thread_pool/mod.rs](https://github.com/gendx/paralight/blob/main/src/threads/thread_pool/mod.rs)
-  when requested.
-- Lastly, the definition of the [`SourceDescriptor`](iter::SourceDescriptor)
-  trait in
-  [iter/source/mod.rs](https://github.com/gendx/paralight/blob/main/src/iter/source/mod.rs)
-  has `unsafe` methods because it requires the caller to pass each index once
-  and only once. Indeed, the safety of the previously mentioned iterator sources
-  (mutable slice, vector, array) assumes a correct calling pattern. The
-  `SourceDescriptor` trait is public (so that dependents of Paralight can define
-  their own sources of items), so these `unsafe` functions leak in the public
-  API. Internally, this causes `unsafe` blocks each time the trait is
-  implemented, and the associated safety comments are a good opportunity to
-  check correctness.
-- Symmetrically, [`GenericThreadPool`](iter::GenericThreadPool) is an `unsafe`
-  trait, implemented for `&mut ThreadPool` in
-  [threads/thread_pool/mod.rs](https://github.com/gendx/paralight/blob/main/src/threads/thread_pool/mod.rs)
-  and for `&RayonThreadPool` in
-  [threads/rayon.rs](https://github.com/gendx/paralight/blob/main/src/threads/rayon.rs).
-  This in turn relies on _correctness_ of the (safe) work-stealing
-  implementation in
-  [core/range.rs](https://github.com/gendx/paralight/blob/main/src/core/range.rs),
-  that is still missing a formal proof.
+- The [`VecParallelSink`](iter::VecParallelSink) API in
+  [iter/sink/vec.rs](https://github.com/gendx/paralight/blob/main/src/iter/sink/vec.rs)
+  provides parallel sinks that collect into a `Vec<T>`. Like for
+  `VecParallelSource`, this is achieved by decomposing the vector into its
+  pointer-length-capacity triple and using
+  [`std::ptr::write()`](std::ptr::write) to collect each item of type `T`.
+- The [`ArrayParallelSink`](iter::ArrayParallelSink) API in
+  [iter/sink/array.rs](https://github.com/gendx/paralight/blob/main/src/iter/sink/array.rs)
+  provides parallel sinks that collect into a `[T; N]`. Like for
+  `ArrayParallelSource`, this is achieved by wrapper types and special care is
+  also taken to cleanup the partially collected array if the pipeline is
+  interrupted (e.g. due to a panic).
 
 And that's all the `unsafe` code there is!
 
