@@ -6,6 +6,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.0.12 - 2026-04-24
+
+### Added
+
+- 2 adaptors on `ExactParallelSourceExt`: `array_windows()` and `downgrade()`.
+- `update()` adaptor to `(Exact)ParallelSourceExt`.
+- 4 additional adaptors on `BaseExactParallelIterator`: `all_equal()`,
+  `is_sorted()`, `is_sorted_by()` and `is_sorted_by_key()`.
+- `panic_fuse()` adaptor to `ParallelIterator`.
+- The `RewindableSource` trait, to support `array_windows()` and future adaptors
+  that may fetch each item multiple times.
+- `forbid(non_ascii_idents)` lint.
+- More test coverage.
+- Improved documentation.
+
+### Changed
+
+- The minimum supported Rust version (MSRV) is now
+  [1.81.0](https://releases.rs/docs/1.81.0/).
+- Removed the overly restrictive `T: Send` bound on the `chain()` adaptor.
+- `compare_exchange_weak` is used instead of `compare_exchange` for atomic
+  operations in the core parallel engine. This should be more efficient on ARM
+  processors.
+- Use `expect(lint)` rather than `allow(lint)`.
+- Moved copyright notices to an AUTHORS file.
+
+### Removed
+
+- Redundant debug assertions.
+
+### Fixes
+
+- Nightly syntax is now wrapped inside a macro to avoid potential future parsing
+  errors.
+
 ## 0.0.11 - 2026-02-10
 
 ### Added
