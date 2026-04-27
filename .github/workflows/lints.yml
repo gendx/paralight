@@ -14,7 +14,7 @@ jobs:
       RUSTFLAGS: "-D warnings"
       RUSTDOCFLAGS: "-Z unstable-options --no-run --no-capture --test-builder clippy-driver"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: clippy

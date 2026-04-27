@@ -7,7 +7,7 @@ jobs:
       RUSTFLAGS: "-C debug_assertions"
       RUST_LOG: "debug"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@nightly
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
@@ -17,7 +17,7 @@ jobs:
       - name: Generate code coverage with nightly APIs
         run: cargo llvm-cov --verbose --release --all-features --workspace --lcov --output-path lcov-nightly.info
       - name: Upload to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: lcov.info,lcov-nightly.info
