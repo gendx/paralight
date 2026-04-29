@@ -42,28 +42,66 @@ fn main() {
 }
 
 fn dispatch_serial(cli: Cli) {
-    match (cli.scenario, cli.owned_input, cli.boxed_items) {
-        (Scenario::Sum, false, false) => {
+    match (cli.scenario, cli.owned_input, cli.boxed_items, cli.repeat) {
+        (Scenario::Sum, false, false, None) => {
             let input = (0..cli.input_size).collect::<Vec<u64>>();
             let sum = black_box(input).iter().sum::<u64>();
             println!("sum = {sum}");
         }
-        (Scenario::Sum, true, false) => {
+        (Scenario::Sum, false, false, Some(repetitions)) => {
+            let input = (0..cli.input_size).collect::<Vec<u64>>();
+            let sum = black_box(input)
+                .iter()
+                .cycle()
+                .take(cli.input_size as usize * repetitions)
+                .sum::<u64>();
+            println!("sum = {sum}");
+        }
+        (Scenario::Sum, true, false, None) => {
             let input = (0..cli.input_size).collect::<Vec<u64>>();
             let sum = black_box(input).into_iter().sum::<u64>();
             println!("sum = {sum}");
         }
-        (Scenario::Sum, false, true) => {
+        (Scenario::Sum, true, false, Some(repetitions)) => {
+            let input = (0..cli.input_size).collect::<Vec<u64>>();
+            let sum = black_box(input)
+                .into_iter()
+                .cycle()
+                .take(cli.input_size as usize * repetitions)
+                .sum::<u64>();
+            println!("sum = {sum}");
+        }
+        (Scenario::Sum, false, true, None) => {
             let input = (0..cli.input_size).map(Box::new).collect::<Vec<Box<u64>>>();
             let sum = black_box(input).iter().map(|x| **x).sum::<u64>();
             println!("sum = {sum}");
         }
-        (Scenario::Sum, true, true) => {
+        (Scenario::Sum, false, true, Some(repetitions)) => {
+            let input = (0..cli.input_size).map(Box::new).collect::<Vec<Box<u64>>>();
+            let sum = black_box(input)
+                .iter()
+                .map(|x| **x)
+                .cycle()
+                .take(cli.input_size as usize * repetitions)
+                .sum::<u64>();
+            println!("sum = {sum}");
+        }
+        (Scenario::Sum, true, true, None) => {
             let input = (0..cli.input_size).map(Box::new).collect::<Vec<Box<u64>>>();
             let sum = black_box(input).into_iter().map(|x| *x).sum::<u64>();
             println!("sum = {sum}");
         }
-        (Scenario::Add, false, false) => {
+        (Scenario::Sum, true, true, Some(repetitions)) => {
+            let input = (0..cli.input_size).map(Box::new).collect::<Vec<Box<u64>>>();
+            let sum = black_box(input)
+                .into_iter()
+                .map(|x| *x)
+                .cycle()
+                .take(cli.input_size as usize * repetitions)
+                .sum::<u64>();
+            println!("sum = {sum}");
+        }
+        (Scenario::Add, false, false, None) => {
             let mut output = vec![0; cli.input_size as usize];
             let left = (0..cli.input_size).collect::<Vec<u64>>();
             let right = (0..cli.input_size).collect::<Vec<u64>>();
@@ -79,7 +117,7 @@ fn dispatch_serial(cli: Cli) {
                 .for_each(|((a, b), out)| *out = *a + *b);
             println!("added {} elements", black_box(output).len());
         }
-        (Scenario::Add, true, false) => {
+        (Scenario::Add, true, false, None) => {
             let mut output = vec![0; cli.input_size as usize];
             let left = (0..cli.input_size).collect::<Vec<u64>>();
             let right = (0..cli.input_size).collect::<Vec<u64>>();
@@ -93,7 +131,7 @@ fn dispatch_serial(cli: Cli) {
                 .for_each(|((a, b), out)| *out = a + b);
             println!("added {} elements", black_box(output).len());
         }
-        (Scenario::Add, false, true) => {
+        (Scenario::Add, false, true, None) => {
             let mut output = vec![0; cli.input_size as usize];
             let left = (0..cli.input_size).map(Box::new).collect::<Vec<Box<u64>>>();
             let right = (0..cli.input_size).map(Box::new).collect::<Vec<Box<u64>>>();
@@ -109,7 +147,7 @@ fn dispatch_serial(cli: Cli) {
                 .for_each(|((a, b), out)| *out = **a + **b);
             println!("added {} elements", black_box(output).len());
         }
-        (Scenario::Add, true, true) => {
+        (Scenario::Add, true, true, None) => {
             let mut output = vec![0; cli.input_size as usize];
             let left = (0..cli.input_size).map(Box::new).collect::<Vec<Box<u64>>>();
             let right = (0..cli.input_size).map(Box::new).collect::<Vec<Box<u64>>>();
@@ -123,26 +161,67 @@ fn dispatch_serial(cli: Cli) {
                 .for_each(|((a, b), out)| *out = *a + *b);
             println!("added {} elements", black_box(output).len());
         }
-        (Scenario::FindAny | Scenario::FindFirst, false, false) => {
+        (Scenario::Add, _, _, Some(_)) => {
+            panic!("Add scenario doesn't support repetitions");
+        }
+        (Scenario::FindAny | Scenario::FindFirst, false, false, None) => {
             let input = fill_needles(cli.input_size as usize, cli.density);
             let input_slice = input.as_slice();
             let found = black_box(input_slice).iter().find(|x| **x);
             println!("found = {found:?}");
         }
-        (Scenario::FindAny | Scenario::FindFirst, true, false) => {
+        (Scenario::FindAny | Scenario::FindFirst, false, false, Some(repetitions)) => {
+            let input = fill_needles(cli.input_size as usize, cli.density);
+            let input_slice = input.as_slice();
+            let found = black_box(input_slice)
+                .iter()
+                .cycle()
+                .take(cli.input_size as usize * repetitions)
+                .find(|x| **x);
+            println!("found = {found:?}");
+        }
+        (Scenario::FindAny | Scenario::FindFirst, true, false, None) => {
             let input = fill_needles(cli.input_size as usize, cli.density);
             let found = black_box(input).into_iter().find(|x| *x);
             println!("found = {found:?}");
         }
-        (Scenario::FindAny | Scenario::FindFirst, false, true) => {
+        (Scenario::FindAny | Scenario::FindFirst, true, false, Some(repetitions)) => {
+            let input = fill_needles(cli.input_size as usize, cli.density);
+            let found = black_box(input)
+                .into_iter()
+                .cycle()
+                .take(cli.input_size as usize * repetitions)
+                .find(|x| *x);
+            println!("found = {found:?}");
+        }
+        (Scenario::FindAny | Scenario::FindFirst, false, true, None) => {
             let input = fill_boxed_needles(cli.input_size as usize, cli.density);
             let input_slice = input.as_slice();
             let found = black_box(input_slice).iter().find(|x| ***x);
             println!("found = {found:?}");
         }
-        (Scenario::FindAny | Scenario::FindFirst, true, true) => {
+        (Scenario::FindAny | Scenario::FindFirst, false, true, Some(repetitions)) => {
+            let input = fill_boxed_needles(cli.input_size as usize, cli.density);
+            let input_slice = input.as_slice();
+            let found = black_box(input_slice)
+                .iter()
+                .cycle()
+                .take(cli.input_size as usize * repetitions)
+                .find(|x| ***x);
+            println!("found = {found:?}");
+        }
+        (Scenario::FindAny | Scenario::FindFirst, true, true, None) => {
             let input = fill_boxed_needles(cli.input_size as usize, cli.density);
             let found = black_box(input).into_iter().find(|x| **x);
+            println!("found = {found:?}");
+        }
+        (Scenario::FindAny | Scenario::FindFirst, true, true, Some(repetitions)) => {
+            let input = fill_boxed_needles(cli.input_size as usize, cli.density);
+            let found = black_box(input)
+                .into_iter()
+                .cycle()
+                .take(cli.input_size as usize * repetitions)
+                .find(|x| **x);
             println!("found = {found:?}");
         }
     }
@@ -190,8 +269,8 @@ fn dispatch_paralight_on_rayon(cli: Cli) {
 fn dispatch_thread_pool(cli: Cli, thread_pool: impl paralight::iter::GenericThreadPool) {
     use paralight::prelude::*;
 
-    match (cli.scenario, cli.owned_input, cli.boxed_items) {
-        (Scenario::Sum, false, false) => {
+    match (cli.scenario, cli.owned_input, cli.boxed_items, cli.repeat) {
+        (Scenario::Sum, false, false, None) => {
             let input = (0..cli.input_size).collect::<Vec<u64>>();
             let sum = black_box(input)
                 .par_iter()
@@ -199,7 +278,16 @@ fn dispatch_thread_pool(cli: Cli, thread_pool: impl paralight::iter::GenericThre
                 .sum::<u64>();
             println!("sum = {sum}");
         }
-        (Scenario::Sum, true, false) => {
+        (Scenario::Sum, false, false, Some(repetitions)) => {
+            let input = (0..cli.input_size).collect::<Vec<u64>>();
+            let sum = black_box(input)
+                .par_iter()
+                .repeat(repetitions)
+                .with_thread_pool(thread_pool)
+                .sum::<u64>();
+            println!("sum = {sum}");
+        }
+        (Scenario::Sum, true, false, None) => {
             let input = (0..cli.input_size).collect::<Vec<u64>>();
             let sum = black_box(input)
                 .into_par_iter()
@@ -207,7 +295,7 @@ fn dispatch_thread_pool(cli: Cli, thread_pool: impl paralight::iter::GenericThre
                 .sum::<u64>();
             println!("sum = {sum}");
         }
-        (Scenario::Sum, false, true) => {
+        (Scenario::Sum, false, true, None) => {
             let input = (0..cli.input_size).map(Box::new).collect::<Vec<Box<u64>>>();
             let sum = black_box(input)
                 .par_iter()
@@ -216,7 +304,17 @@ fn dispatch_thread_pool(cli: Cli, thread_pool: impl paralight::iter::GenericThre
                 .sum::<u64>();
             println!("sum = {sum}");
         }
-        (Scenario::Sum, true, true) => {
+        (Scenario::Sum, false, true, Some(repetitions)) => {
+            let input = (0..cli.input_size).map(Box::new).collect::<Vec<Box<u64>>>();
+            let sum = black_box(input)
+                .par_iter()
+                .repeat(repetitions)
+                .with_thread_pool(thread_pool)
+                .map(|x| **x)
+                .sum::<u64>();
+            println!("sum = {sum}");
+        }
+        (Scenario::Sum, true, true, None) => {
             let input = (0..cli.input_size).map(Box::new).collect::<Vec<Box<u64>>>();
             let sum = black_box(input)
                 .into_par_iter()
@@ -225,7 +323,7 @@ fn dispatch_thread_pool(cli: Cli, thread_pool: impl paralight::iter::GenericThre
                 .sum::<u64>();
             println!("sum = {sum}");
         }
-        (Scenario::Add, false, false) => {
+        (Scenario::Add, false, false, None) => {
             let mut output = vec![0; cli.input_size as usize];
             let left = (0..cli.input_size).collect::<Vec<u64>>();
             let right = (0..cli.input_size).collect::<Vec<u64>>();
@@ -244,7 +342,7 @@ fn dispatch_thread_pool(cli: Cli, thread_pool: impl paralight::iter::GenericThre
                 .for_each(|(out, a, b)| *out = *a + *b);
             println!("added {} elements", black_box(output).len());
         }
-        (Scenario::Add, true, false) => {
+        (Scenario::Add, true, false, None) => {
             let mut output = vec![0; cli.input_size as usize];
             let left = (0..cli.input_size).collect::<Vec<u64>>();
             let right = (0..cli.input_size).collect::<Vec<u64>>();
@@ -261,7 +359,7 @@ fn dispatch_thread_pool(cli: Cli, thread_pool: impl paralight::iter::GenericThre
                 .for_each(|(out, a, b)| *out = a + b);
             println!("added {} elements", black_box(output).len());
         }
-        (Scenario::Add, false, true) => {
+        (Scenario::Add, false, true, None) => {
             let mut output = vec![0; cli.input_size as usize];
             let left = (0..cli.input_size).map(Box::new).collect::<Vec<Box<u64>>>();
             let right = (0..cli.input_size).map(Box::new).collect::<Vec<Box<u64>>>();
@@ -280,7 +378,7 @@ fn dispatch_thread_pool(cli: Cli, thread_pool: impl paralight::iter::GenericThre
                 .for_each(|(out, a, b)| *out = **a + **b);
             println!("added {} elements", black_box(output).len());
         }
-        (Scenario::Add, true, true) => {
+        (Scenario::Add, true, true, None) => {
             let mut output = vec![0; cli.input_size as usize];
             let left = (0..cli.input_size).map(Box::new).collect::<Vec<Box<u64>>>();
             let right = (0..cli.input_size).map(Box::new).collect::<Vec<Box<u64>>>();
@@ -297,7 +395,7 @@ fn dispatch_thread_pool(cli: Cli, thread_pool: impl paralight::iter::GenericThre
                 .for_each(|(out, a, b)| *out = *a + *b);
             println!("added {} elements", black_box(output).len());
         }
-        (Scenario::FindAny, false, false) => {
+        (Scenario::FindAny, false, false, None) => {
             let input = fill_needles(cli.input_size as usize, cli.density);
             let input_slice = input.as_slice();
             let found = black_box(input_slice)
@@ -306,7 +404,17 @@ fn dispatch_thread_pool(cli: Cli, thread_pool: impl paralight::iter::GenericThre
                 .find_any(|x| **x);
             println!("found = {found:?}");
         }
-        (Scenario::FindAny, true, false) => {
+        (Scenario::FindAny, false, false, Some(repetitions)) => {
+            let input = fill_needles(cli.input_size as usize, cli.density);
+            let input_slice = input.as_slice();
+            let found = black_box(input_slice)
+                .par_iter()
+                .repeat(repetitions)
+                .with_thread_pool(thread_pool)
+                .find_any(|x| **x);
+            println!("found = {found:?}");
+        }
+        (Scenario::FindAny, true, false, None) => {
             let input = fill_needles(cli.input_size as usize, cli.density);
             let found = black_box(input)
                 .into_par_iter()
@@ -314,7 +422,7 @@ fn dispatch_thread_pool(cli: Cli, thread_pool: impl paralight::iter::GenericThre
                 .find_any(|x| *x);
             println!("found = {found:?}");
         }
-        (Scenario::FindAny, false, true) => {
+        (Scenario::FindAny, false, true, None) => {
             let input = fill_boxed_needles(cli.input_size as usize, cli.density);
             let input_slice = input.as_slice();
             let found = black_box(input_slice)
@@ -323,7 +431,17 @@ fn dispatch_thread_pool(cli: Cli, thread_pool: impl paralight::iter::GenericThre
                 .find_any(|x| ***x);
             println!("found = {found:?}");
         }
-        (Scenario::FindAny, true, true) => {
+        (Scenario::FindAny, false, true, Some(repetitions)) => {
+            let input = fill_boxed_needles(cli.input_size as usize, cli.density);
+            let input_slice = input.as_slice();
+            let found = black_box(input_slice)
+                .par_iter()
+                .repeat(repetitions)
+                .with_thread_pool(thread_pool)
+                .find_any(|x| ***x);
+            println!("found = {found:?}");
+        }
+        (Scenario::FindAny, true, true, None) => {
             let input = fill_boxed_needles(cli.input_size as usize, cli.density);
             let found = black_box(input)
                 .into_par_iter()
@@ -331,7 +449,7 @@ fn dispatch_thread_pool(cli: Cli, thread_pool: impl paralight::iter::GenericThre
                 .find_any(|x| **x);
             println!("found = {found:?}");
         }
-        (Scenario::FindFirst, false, false) => {
+        (Scenario::FindFirst, false, false, None) => {
             let input = fill_needles(cli.input_size as usize, cli.density);
             let input_slice = input.as_slice();
             let found = black_box(input_slice)
@@ -340,7 +458,17 @@ fn dispatch_thread_pool(cli: Cli, thread_pool: impl paralight::iter::GenericThre
                 .find_first(|x| **x);
             println!("found = {found:?}");
         }
-        (Scenario::FindFirst, true, false) => {
+        (Scenario::FindFirst, false, false, Some(repetitions)) => {
+            let input = fill_needles(cli.input_size as usize, cli.density);
+            let input_slice = input.as_slice();
+            let found = black_box(input_slice)
+                .par_iter()
+                .repeat(repetitions)
+                .with_thread_pool(thread_pool)
+                .find_first(|x| **x);
+            println!("found = {found:?}");
+        }
+        (Scenario::FindFirst, true, false, None) => {
             let input = fill_needles(cli.input_size as usize, cli.density);
             let found = black_box(input)
                 .into_par_iter()
@@ -348,7 +476,7 @@ fn dispatch_thread_pool(cli: Cli, thread_pool: impl paralight::iter::GenericThre
                 .find_first(|x| *x);
             println!("found = {found:?}");
         }
-        (Scenario::FindFirst, false, true) => {
+        (Scenario::FindFirst, false, true, None) => {
             let input = fill_boxed_needles(cli.input_size as usize, cli.density);
             let input_slice = input.as_slice();
             let found = black_box(input_slice)
@@ -357,13 +485,29 @@ fn dispatch_thread_pool(cli: Cli, thread_pool: impl paralight::iter::GenericThre
                 .find_first(|x| ***x);
             println!("found = {found:?}");
         }
-        (Scenario::FindFirst, true, true) => {
+        (Scenario::FindFirst, false, true, Some(repetitions)) => {
+            let input = fill_boxed_needles(cli.input_size as usize, cli.density);
+            let input_slice = input.as_slice();
+            let found = black_box(input_slice)
+                .par_iter()
+                .repeat(repetitions)
+                .with_thread_pool(thread_pool)
+                .find_first(|x| ***x);
+            println!("found = {found:?}");
+        }
+        (Scenario::FindFirst, true, true, None) => {
             let input = fill_boxed_needles(cli.input_size as usize, cli.density);
             let found = black_box(input)
                 .into_par_iter()
                 .with_thread_pool(thread_pool)
                 .find_first(|x| **x);
             println!("found = {found:?}");
+        }
+        (_, true, _, Some(_)) => {
+            panic!("Scenario with owned items doesn't support repetitions");
+        }
+        (Scenario::Add, _, _, Some(_)) => {
+            panic!("Add scenario doesn't support repetitions");
         }
     }
 }
@@ -374,6 +518,10 @@ fn dispatch_rayon(cli: Cli) {
         IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator,
         IntoParallelRefMutIterator, ParallelIterator,
     };
+
+    if cli.repeat.is_some() {
+        panic!("Rayon back-end doesn't support repetitions");
+    }
 
     match (cli.scenario, cli.owned_input, cli.boxed_items) {
         (Scenario::Sum, false, false) => {
@@ -578,6 +726,10 @@ struct Cli {
     /// find-first scenarios.
     #[arg(long, default_value_t = 1)]
     density: usize,
+
+    /// Repeat the iterator the given number of times.
+    #[arg(long)]
+    repeat: Option<usize>,
 }
 
 /// Policy to split work among threads.

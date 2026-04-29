@@ -215,6 +215,8 @@ mod test {
                 test_source_adaptor_inspect,
                 test_source_adaptor_map,
                 test_source_adaptor_map_init,
+                test_source_adaptor_repeat,
+                test_source_adaptor_repeat_overflow => fail("called repeat() on a source whose repetition would produce more than usize::MAX items", "called repeat() on a source whose repetition would produce more than usize::MAX items"),
                 test_source_adaptor_rev,
                 test_source_adaptor_update,
                 test_source_exact_adaptor_array_windows,
@@ -238,6 +240,8 @@ mod test {
                 test_source_exact_adaptor_map_init,
                 test_source_exact_adaptor_map_init_find_first,
                 test_source_exact_adaptor_map_init_cleanup,
+                test_source_exact_adaptor_repeat,
+                test_source_exact_adaptor_repeat_overflow => fail("called repeat() on a source whose repetition would produce more than usize::MAX items", "called repeat() on a source whose repetition would produce more than usize::MAX items"),
                 test_source_exact_adaptor_rev,
                 test_source_exact_adaptor_rev_cleanup,
                 test_source_exact_adaptor_skip,
@@ -1664,6 +1668,39 @@ mod test {
         assert!(sum <= 3 * INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
+    fn test_source_adaptor_repeat<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<MyHashSet<u64>>();
+        let sum = input
+            .par_iter()
+            .repeat(7)
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+        assert_eq!(sum, 7 * INPUT_LEN * (INPUT_LEN + 1) / 2);
+
+        let input: MyHashSet<u64> = MyHashSet::new();
+        let sum_empty = input
+            .par_iter()
+            .repeat(7)
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+        assert_eq!(sum_empty, 0);
+    }
+
+    fn test_source_adaptor_repeat_overflow<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        (0..usize::MAX)
+            .into_par_iter()
+            .downgrade()
+            .repeat(2)
+            .with_thread_pool(&mut thread_pool)
+            .sum::<usize>();
+    }
+
     fn test_source_adaptor_rev<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
@@ -2150,6 +2187,38 @@ mod test {
             .find_first(|&x| x >= 10);
         let needle = needle.unwrap();
         assert!(needle == 10 || needle == 11);
+    }
+
+    fn test_source_exact_adaptor_repeat<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        let sum = input
+            .par_iter()
+            .repeat(7)
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+        assert_eq!(sum, 7 * INPUT_LEN * (INPUT_LEN + 1) / 2);
+
+        let input: Vec<u64> = Vec::new();
+        let sum_empty = input
+            .par_iter()
+            .repeat(7)
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+        assert_eq!(sum_empty, 0);
+    }
+
+    fn test_source_exact_adaptor_repeat_overflow<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        (0..usize::MAX)
+            .into_par_iter()
+            .repeat(2)
+            .with_thread_pool(&mut thread_pool)
+            .sum::<usize>();
     }
 
     fn test_source_exact_adaptor_rev<T>(mut thread_pool: T)

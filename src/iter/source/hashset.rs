@@ -10,7 +10,8 @@
 //! [`ParallelSource`] on a simplified hash set type.
 
 use super::{
-    IntoParallelRefSource, ParallelSource, SimpleSourceDescriptor, SourceCleanup, SourceDescriptor,
+    IntoParallelRefSource, ParallelSource, RewindableSource, SimpleSourceDescriptor, SourceCleanup,
+    SourceDescriptor,
 };
 use hashbrown::hash_table::Entry;
 use hashbrown::{DefaultHashBuilder, HashTable};
@@ -22,6 +23,13 @@ pub struct MyHashSet<T> {
 }
 
 impl<T> MyHashSet<T> {
+    pub fn new() -> Self {
+        Self {
+            table: HashTable::new(),
+            hasher: DefaultHashBuilder::default(),
+        }
+    }
+
     pub fn with_capacity(n: usize) -> Self {
         Self {
             table: HashTable::with_capacity(n),
@@ -81,6 +89,12 @@ impl<'data, T: Sync> ParallelSource for HashTableParallelSource<'data, T> {
         HashTableSourceDescriptor { table: self.table }
     }
 }
+
+// SAFETY:
+// - it is safe to fetch a reference to any item an unlimited number of times
+//   and concurrently,
+// - the source doesn't need cleanup.
+unsafe impl<'data, T> RewindableSource for HashTableParallelSource<'data, T> {}
 
 struct HashTableSourceDescriptor<'data, T: Sync> {
     table: &'data HashTable<T>,
