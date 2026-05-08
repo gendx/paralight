@@ -924,7 +924,7 @@ where
 /// [`ExactParallelSourceExt`](super::ExactParallelSourceExt) traits, but it is
 /// nonetheless public because of the `must_use` annotation.
 #[must_use = "iterator adaptors are lazy"]
-pub struct Map<Inner, F> {
+pub struct MapSource<Inner, F> {
     pub(super) inner: Inner,
     pub(super) f: F,
 }
@@ -932,9 +932,9 @@ pub struct Map<Inner, F> {
 // SAFETY: If the inner source is rewindable, then by induction:
 // - it is also safe to fetch each mapped item an unlimited number of times,
 // - the resulting source doesn't need cleanup.
-unsafe impl<Inner, F> RewindableSource for Map<Inner, F> where Inner: RewindableSource {}
+unsafe impl<Inner, F> RewindableSource for MapSource<Inner, F> where Inner: RewindableSource {}
 
-impl<Inner, T, F> ParallelSource for Map<Inner, F>
+impl<Inner, T, F> ParallelSource for MapSource<Inner, F>
 where
     Inner: ParallelSource,
     F: Fn(Inner::Item) -> T + Sync,
@@ -949,7 +949,7 @@ where
     }
 }
 
-impl<Inner, T, F> ExactParallelSource for Map<Inner, F>
+impl<Inner, T, F> ExactParallelSource for MapSource<Inner, F>
 where
     Inner: ExactParallelSource,
     F: Fn(Inner::Item) -> T + Sync,

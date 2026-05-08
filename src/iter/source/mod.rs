@@ -25,8 +25,8 @@ use super::{
 };
 pub use detail::{
     ArrayWindows, Chain, Cloned, Copied, Downgrade, Enumerate, Filter, FilterExact, FilterMap,
-    FilterMapExact, Inspect, Map, MapInit, Repeat, Rev, Skip, SkipExact, StepBy, Take, TakeExact,
-    Update,
+    FilterMapExact, Inspect, MapInit, MapSource, Repeat, Rev, Skip, SkipExact, StepBy, Take,
+    TakeExact, Update,
 };
 use detail::{
     CollectAccumulator, CollectCleaner, ErrorAccumulator, NoopAccumulator, TryCollectAccumulator,
@@ -773,11 +773,11 @@ pub trait ParallelSourceExt: ParallelSource {
     ///     .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
     /// assert_eq!(sum, 5 * 11);
     /// ```
-    fn map<T, F>(self, f: F) -> Map<Self, F>
+    fn map<T, F>(self, f: F) -> MapSource<Self, F>
     where
         F: Fn(Self::Item) -> T + Sync,
     {
-        Map { inner: self, f }
+        MapSource { inner: self, f }
     }
 
     /// Applies the function `f` to each item of this source, together with a
@@ -1415,11 +1415,11 @@ pub trait ExactParallelSourceExt: ExactParallelSource {
     ///     .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
     /// assert_eq!(sum, 5 * 11);
     /// ```
-    fn map<T, F>(self, f: F) -> Map<Self, F>
+    fn map<T, F>(self, f: F) -> MapSource<Self, F>
     where
         F: Fn(Self::Item) -> T + Sync,
     {
-        Map { inner: self, f }
+        MapSource { inner: self, f }
     }
 
     /// Applies the function `f` to each item of this source, together with a

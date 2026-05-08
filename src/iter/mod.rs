@@ -33,12 +33,12 @@ pub use source::vec_deque::{VecDequeRefMutParallelSource, VecDequeRefParallelSou
 pub use source::zip::{ZipEq, ZipMax, ZipMin, ZipableSource};
 pub use source::{
     ArrayWindows, BaseExactParallelIterator, BaseParallelIterator, Chain, Cloned, Copied,
-    Enumerate, ExactParallelSource, ExactParallelSourceExt, ExactSourceDescriptor, Filter,
-    FilterMap, Inspect, IntoExactParallelRefMutSource, IntoExactParallelRefSource,
-    IntoExactParallelSource, IntoParallelRefMutSource, IntoParallelRefSource, IntoParallelSource,
-    MapInit, ParallelSource, ParallelSourceExt, Rev, RewindableSource, SimpleExactSourceDescriptor,
-    SimpleSourceDescriptor, Skip, SkipExact, SourceCleanup, SourceDescriptor, StepBy, Take,
-    TakeExact,
+    Downgrade, Enumerate, ExactParallelSource, ExactParallelSourceExt, ExactSourceDescriptor,
+    Filter, FilterExact, FilterMap, FilterMapExact, Inspect, IntoExactParallelRefMutSource,
+    IntoExactParallelRefSource, IntoExactParallelSource, IntoParallelRefMutSource,
+    IntoParallelRefSource, IntoParallelSource, MapInit, MapSource, ParallelSource,
+    ParallelSourceExt, Rev, RewindableSource, SimpleExactSourceDescriptor, SimpleSourceDescriptor,
+    Skip, SkipExact, SourceCleanup, SourceDescriptor, StepBy, Take, TakeExact,
 };
 use std::cmp::Ordering;
 use std::iter::{Product, Sum};
