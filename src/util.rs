@@ -343,6 +343,7 @@ impl Arithmetic for usize {
     }
 }
 
+#[cfg(not(miri))]
 #[cfg(test)]
 mod test {
     use super::*;
