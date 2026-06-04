@@ -509,9 +509,7 @@ impl PackedRange {
     fn split(self) -> (Self, Self) {
         let start = self.start();
         let end = self.end();
-        // TODO(MSRV >= 1.85.0): Use u32::midpoint().
-        // The result fits in u32 because the inputs fit in u32.
-        let middle = ((start as u64 + end as u64) / 2) as u32;
+        let middle = start.midpoint(end);
         (Self::new(start, middle), Self::new(middle, end))
     }
 }

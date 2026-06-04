@@ -3643,11 +3643,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     {
         self.short_circuiting_pipeline(
             init,
-            // TODO(MSRV >= 1.83.0): Use ControlFlow::map_continue().
-            |mut t, item| match f(&mut t, item).branch() {
-                ControlFlow::Continue(()) => ControlFlow::Continue(t),
-                ControlFlow::Break(e) => ControlFlow::Break(e),
-            },
+            |mut t, item| f(&mut t, item).branch().map_continue(|()| t),
             |result| match result {
                 ControlFlow::Continue(_) => R::from_output(()),
                 ControlFlow::Break(e) => R::from_residual(e),
