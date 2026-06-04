@@ -12,7 +12,7 @@ jobs:
           - stable
           - beta
           - nightly
-          - 1.86.0  # MSRV for examples
+          - 1.91.0  # MSRV for examples
         include:
           - extra_features: ""
           - rust: nightly

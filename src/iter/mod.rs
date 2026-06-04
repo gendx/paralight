@@ -2385,8 +2385,6 @@ pub trait ParallelIteratorExt: ParallelIterator {
     /// }
     ///
     /// /// Returns true if the first argument is a subset of the second. Inputs must be sorted.
-    /// # // TODO(MSRV >= 1.82.0): Remove this expectation
-    /// # #[expect(clippy::incompatible_msrv)]
     /// fn is_subset(lhs: &[i32], rhs: &[i32]) -> bool {
     ///     /* Implementation details omitted */
     /// #    assert!(lhs.is_sorted());

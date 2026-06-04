@@ -40,6 +40,7 @@ pub mod iter;
 mod macros;
 #[cfg(any(feature = "rayon", feature = "default-thread-pool"))]
 pub mod threads;
+mod util;
 
 /// Prelude of commonly used items from this crate.
 pub mod prelude {
@@ -4533,7 +4534,7 @@ mod test {
             .par_iter()
             .with_thread_pool(&mut thread_pool)
             .product::<i32>();
-        assert_eq!(product, if INPUT_LEN % 2 == 0 { 1 } else { -1 });
+        assert_eq!(product, if INPUT_LEN.is_multiple_of(2) { 1 } else { -1 });
     }
 
     fn test_adaptor_reduce<T>(mut thread_pool: T)

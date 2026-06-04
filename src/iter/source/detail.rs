@@ -13,6 +13,7 @@ use super::{
     SourceDescriptor,
 };
 use crate::iter::{Accumulator, ExactParallelSink, ExactSizeAccumulator};
+use crate::util::Divider;
 #[cfg(feature = "nightly")]
 use std::ops::Try;
 
@@ -1202,7 +1203,7 @@ where
         RepeatSourceDescriptor {
             inner,
             len,
-            inner_len,
+            inner_len: Divider::new(inner_len).unwrap_or_default(),
         }
     }
 }
@@ -1225,7 +1226,7 @@ where
         RepeatSourceDescriptor {
             inner,
             len,
-            inner_len,
+            inner_len: Divider::new(inner_len).unwrap_or_default(),
         }
     }
 }
@@ -1233,7 +1234,7 @@ where
 struct RepeatSourceDescriptor<Inner> {
     inner: Inner,
     len: usize,
-    inner_len: usize,
+    inner_len: Divider<usize>,
 }
 
 impl<Inner: SourceCleanup> SourceCleanup for RepeatSourceDescriptor<Inner> {
