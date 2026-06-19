@@ -120,7 +120,7 @@ where
         //    = x*m / 2^(N+1)
         //  y >> shift = x*m / 2^(N+shift+1)
         let (_, hi) = x.widening_mul(self.multiplier);
-        let y = ((x - hi) >> 1) + hi;
+        let y = ((x.wrapping_sub(hi)) >> 1).wrapping_add(hi);
         y >> self.shift
     }
 }
@@ -142,7 +142,7 @@ where
             (x >> self.shift, x & self.mask)
         } else {
             let q = self.div_non_power_of_two(x);
-            let r = x - q * self.divisor;
+            let r = x.wrapping_sub(q.wrapping_mul(self.divisor));
             (q, r)
         }
     }
@@ -174,7 +174,7 @@ impl Rem<Divider<Self>> for usize {
             self & divider.mask
         } else {
             let q = divider.div_non_power_of_two(self);
-            self - q * divider.divisor
+            self.wrapping_sub(q.wrapping_mul(divider.divisor))
         }
     }
 }
@@ -190,6 +190,12 @@ pub trait Arithmetic: Sized {
 
     /// Returns the base-2 logarithm or `None` if `self` is zero.
     fn checked_ilog2(self) -> Option<u32>;
+
+    fn wrapping_add(self, other: Self) -> Self;
+
+    fn wrapping_sub(self, other: Self) -> Self;
+
+    fn wrapping_mul(self, other: Self) -> Self;
 
     /// Returns (low, high) of multiplying `self` by `other`.
     fn widening_mul(self, other: Self) -> (Self, Self);
@@ -219,6 +225,21 @@ impl Arithmetic for u16 {
     }
 
     #[inline(always)]
+    fn wrapping_add(self, other: Self) -> Self {
+        self.wrapping_add(other)
+    }
+
+    #[inline(always)]
+    fn wrapping_sub(self, other: Self) -> Self {
+        self.wrapping_sub(other)
+    }
+
+    #[inline(always)]
+    fn wrapping_mul(self, other: Self) -> Self {
+        self.wrapping_mul(other)
+    }
+
+    #[inline(always)]
     fn widening_mul(self, other: Self) -> (Self, Self) {
         self.carrying_mul(other, 0)
     }
@@ -228,7 +249,7 @@ impl Arithmetic for u16 {
         let a = ((num_hi as u32) << 16) | (num_lo as u32);
         let b = denom as u32;
         let quo = a / b;
-        let rem = a - quo * b;
+        let rem = a.wrapping_sub(quo.wrapping_mul(b));
         (quo as u16, rem as u16)
     }
 }
@@ -252,6 +273,21 @@ impl Arithmetic for u32 {
     }
 
     #[inline(always)]
+    fn wrapping_add(self, other: Self) -> Self {
+        self.wrapping_add(other)
+    }
+
+    #[inline(always)]
+    fn wrapping_sub(self, other: Self) -> Self {
+        self.wrapping_sub(other)
+    }
+
+    #[inline(always)]
+    fn wrapping_mul(self, other: Self) -> Self {
+        self.wrapping_mul(other)
+    }
+
+    #[inline(always)]
     fn widening_mul(self, other: Self) -> (Self, Self) {
         self.carrying_mul(other, 0)
     }
@@ -261,7 +297,7 @@ impl Arithmetic for u32 {
         let a = ((num_hi as u64) << 32) | (num_lo as u64);
         let b = denom as u64;
         let quo = a / b;
-        let rem = a - quo * b;
+        let rem = a.wrapping_sub(quo.wrapping_mul(b));
         (quo as u32, rem as u32)
     }
 }
@@ -285,6 +321,21 @@ impl Arithmetic for u64 {
     }
 
     #[inline(always)]
+    fn wrapping_add(self, other: Self) -> Self {
+        self.wrapping_add(other)
+    }
+
+    #[inline(always)]
+    fn wrapping_sub(self, other: Self) -> Self {
+        self.wrapping_sub(other)
+    }
+
+    #[inline(always)]
+    fn wrapping_mul(self, other: Self) -> Self {
+        self.wrapping_mul(other)
+    }
+
+    #[inline(always)]
     fn widening_mul(self, other: Self) -> (Self, Self) {
         self.carrying_mul(other, 0)
     }
@@ -294,7 +345,7 @@ impl Arithmetic for u64 {
         let a = ((num_hi as u128) << 64) | (num_lo as u128);
         let b = denom as u128;
         let quo = a / b;
-        let rem = a - quo * b;
+        let rem = a.wrapping_sub(quo.wrapping_mul(b));
         (quo as u64, rem as u64)
     }
 }
@@ -315,6 +366,21 @@ impl Arithmetic for usize {
     #[inline(always)]
     fn checked_ilog2(self) -> Option<u32> {
         self.checked_ilog2()
+    }
+
+    #[inline(always)]
+    fn wrapping_add(self, other: Self) -> Self {
+        self.wrapping_add(other)
+    }
+
+    #[inline(always)]
+    fn wrapping_sub(self, other: Self) -> Self {
+        self.wrapping_sub(other)
+    }
+
+    #[inline(always)]
+    fn wrapping_mul(self, other: Self) -> Self {
+        self.wrapping_mul(other)
     }
 
     #[inline(always)]
