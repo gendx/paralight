@@ -206,6 +206,54 @@ pub trait Arithmetic: Sized {
     fn narrowing_div_rem(num: (Self, Self), denom: Self) -> (Self, Self);
 }
 
+impl Arithmetic for u8 {
+    const BITS: u32 = u8::BITS;
+
+    #[inline(always)]
+    fn zero() -> Self {
+        0
+    }
+
+    #[inline(always)]
+    fn one() -> Self {
+        1
+    }
+
+    #[inline(always)]
+    fn checked_ilog2(self) -> Option<u32> {
+        self.checked_ilog2()
+    }
+
+    #[inline(always)]
+    fn wrapping_add(self, other: Self) -> Self {
+        self.wrapping_add(other)
+    }
+
+    #[inline(always)]
+    fn wrapping_sub(self, other: Self) -> Self {
+        self.wrapping_sub(other)
+    }
+
+    #[inline(always)]
+    fn wrapping_mul(self, other: Self) -> Self {
+        self.wrapping_mul(other)
+    }
+
+    #[inline(always)]
+    fn widening_mul(self, other: Self) -> (Self, Self) {
+        self.carrying_mul(other, 0)
+    }
+
+    #[inline(always)]
+    fn narrowing_div_rem((num_lo, num_hi): (Self, Self), denom: Self) -> (Self, Self) {
+        let a = ((num_hi as u16) << 8) | (num_lo as u16);
+        let b = denom as u16;
+        let quo = a / b;
+        let rem = a.wrapping_sub(quo.wrapping_mul(b));
+        (quo as u8, rem as u8)
+    }
+}
+
 impl Arithmetic for u16 {
     const BITS: u32 = u16::BITS;
 
@@ -471,6 +519,20 @@ mod test {
                 .chain((0..usize::BITS).map(|i| 1 << i))
                 .chain((0..usize::BITS).map(|i| (1 << i) - 1))
             {
+                assert_eq!(
+                    divider.div_rem(x),
+                    (x / d, x % d),
+                    "mismatch for {x} div_rem {d} | {x:x?} div_rem {d:x?}, divider = {divider:?} | {divider:x?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_divider_u8_div_rem() {
+        for d in 1..=u8::MAX {
+            let divider = Divider::new(d).unwrap();
+            for x in 0..=u8::MAX {
                 assert_eq!(
                     divider.div_rem(x),
                     (x / d, x % d),
