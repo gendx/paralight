@@ -854,12 +854,14 @@ mod test {
     }
 
     #[test]
+    #[cfg(not(panic = "immediate-abort"))]
     #[should_panic(expected = "called zip_eq() with sources of different lengths")]
     fn assert_all_eq_unequal_2() {
         assert_all_eq!(1, 2);
     }
 
     #[test]
+    #[cfg(not(panic = "immediate-abort"))]
     #[should_panic(expected = "called zip_eq() with sources of different lengths")]
     fn assert_all_eq_unequal_3() {
         assert_all_eq!(1, 1, 2);

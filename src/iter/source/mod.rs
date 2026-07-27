@@ -31,6 +31,7 @@ pub use detail::{
 use detail::{
     CollectAccumulator, CollectCleaner, ErrorAccumulator, NoopAccumulator, TryCollectAccumulator,
 };
+#[cfg(not(panic = "immediate-abort"))]
 use scopeguard::ScopeGuard;
 use std::ops::ControlFlow;
 #[cfg(feature = "nightly")]
@@ -2079,6 +2080,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
 
         // If creating the sink panics, we need to make sure that the source is cleaned
         // up.
+        #[cfg(not(panic = "immediate-abort"))]
         let cleanup_guard = scopeguard::guard(source_descriptor, |descriptor| {
             // SAFETY: This scope guard is only invoked if the next statement (creating the
             // sink via `Sink::new()`) panics. In that case, it is safe (and desired) to
@@ -2089,9 +2091,11 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
             }
         });
         let sink = C::Sink::new(len);
+        #[cfg(not(panic = "immediate-abort"))]
         let source_descriptor = ScopeGuard::into_inner(cleanup_guard);
 
         // If the pipeline panics, we need to cancel this sink.
+        #[cfg(not(panic = "immediate-abort"))]
         let sink = scopeguard::guard(sink, |sink| {
             // SAFETY: This scope guard is only invoked if the pipeline panics. The
             // `CollectAccumulator` and `CollectCleaner` make sure that each index in
@@ -2106,6 +2110,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
             init: || source_descriptor.init(),
             process_item: |context: &mut _, index| {
                 // If fetching this item panics, we need to skip the sink at this index.
+                #[cfg(not(panic = "immediate-abort"))]
                 let item_guard = scopeguard::guard((), |()| {
                     // SAFETY: This scope guard is only invoked if a panic occurs during
                     // `exact_fetch_item`. This ensures that this index is passed once to this
@@ -2122,6 +2127,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
                 let item = unsafe { source_descriptor.exact_fetch_item(context, index) };
 
                 // Defuse the guard.
+                #[cfg(not(panic = "immediate-abort"))]
                 ScopeGuard::into_inner(item_guard);
 
                 // SAFETY: The pre-conditions to the sink's `push_item()` and
@@ -2143,6 +2149,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
         self.thread_pool
             .iter_pipeline(len, accumulator, reduce, &cleanup);
 
+        #[cfg(not(panic = "immediate-abort"))]
         let sink = ScopeGuard::into_inner(sink);
         // SAFETY: The pre-conditions are ensured by the safety guaranties of
         // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed to the sink's
@@ -2527,6 +2534,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
         let source_descriptor = self.source.exact_descriptor();
         let len = source_descriptor.len();
 
+        #[cfg(not(panic = "immediate-abort"))]
         let cleanup_guard = scopeguard::guard(source_descriptor, |descriptor| {
             // SAFETY: This scope guard is only invoked if the next statement (creating the
             // sink via `Sink::new()`) panics. In that case, it is safe (and desired) to
@@ -2537,8 +2545,10 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
             }
         });
         let sink = C::Sink::new(len);
+        #[cfg(not(panic = "immediate-abort"))]
         let source_descriptor = ScopeGuard::into_inner(cleanup_guard);
 
+        #[cfg(not(panic = "immediate-abort"))]
         let sink = scopeguard::guard(sink, |sink| {
             // SAFETY: This scope guard is only invoked if the pipeline panics or is
             // interrupted early by an error. The `CollectAccumulator` and `CollectCleaner`
@@ -2555,6 +2565,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
             process_item: |context: &mut _, index| {
                 // If fetching this item panics or returns an error, we need to skip the sink at
                 // this index.
+                #[cfg(not(panic = "immediate-abort"))]
                 let item_guard = scopeguard::guard((), |()| {
                     // SAFETY: This scope guard is only invoked if `exact_fetch_item` panics or
                     // returns an error. This ensures that this index is passed once to this sink
@@ -2572,6 +2583,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
                 let item = item?;
 
                 // Defuse the guard.
+                #[cfg(not(panic = "immediate-abort"))]
                 ScopeGuard::into_inner(item_guard);
 
                 // SAFETY: The pre-conditions to the sink's `push_item()` and
@@ -2594,6 +2606,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
         self.thread_pool
             .iter_pipeline(len, accumulator, reduce, &cleanup)?;
 
+        #[cfg(not(panic = "immediate-abort"))]
         let sink = ScopeGuard::into_inner(sink);
         // SAFETY: The pre-conditions are ensured by the safety guaranties of
         // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed to the sink's
@@ -2794,6 +2807,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
         let source_descriptor = self.source.exact_descriptor();
         let len = source_descriptor.len();
 
+        #[cfg(not(panic = "immediate-abort"))]
         let cleanup_guard = scopeguard::guard(source_descriptor, |descriptor| {
             // SAFETY: This scope guard is only invoked if the next statement (creating the
             // sink via `Sink::new()`) panics. In that case, it is safe (and desired) to
@@ -2804,8 +2818,10 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
             }
         });
         let sink = C::Sink::new(len);
+        #[cfg(not(panic = "immediate-abort"))]
         let source_descriptor = ScopeGuard::into_inner(cleanup_guard);
 
+        #[cfg(not(panic = "immediate-abort"))]
         let sink = scopeguard::guard(sink, |sink| {
             // SAFETY: This scope guard is only invoked if the pipeline panics or is
             // interrupted early by an error. The `CollectAccumulator` and `CollectCleaner`
@@ -2824,6 +2840,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
              -> <<S::Item as Try>::Residual as Residual<()>>::TryType {
                 // If fetching this item panics or returns an error, we need to skip the sink at
                 // this index.
+                #[cfg(not(panic = "immediate-abort"))]
                 let item_guard = scopeguard::guard((), |()| {
                     // SAFETY: This scope guard is only invoked if `exact_fetch_item` panics or
                     // returns an error. This ensures that this index is passed once to this sink
@@ -2841,6 +2858,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
                 let item = item?;
 
                 // Defuse the guard.
+                #[cfg(not(panic = "immediate-abort"))]
                 ScopeGuard::into_inner(item_guard);
 
                 // SAFETY: The pre-conditions to the sink's `push_item()` and
@@ -2863,6 +2881,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
         self.thread_pool
             .iter_pipeline(len, accumulator, reduce, &cleanup)?;
 
+        #[cfg(not(panic = "immediate-abort"))]
         let sink = ScopeGuard::into_inner(sink);
         // SAFETY: The pre-conditions are ensured by the safety guaranties of
         // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed to the sink's

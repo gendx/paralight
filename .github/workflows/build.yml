@@ -13,39 +13,58 @@ jobs:
           - beta
           - nightly
           - 1.91.0  # MSRV
+        panic:
+          - default
+          - immediate-abort
+        exclude:
+          - rust: stable
+            panic: immediate-abort
+          - rust: beta
+            panic: immediate-abort
+          - rust: 1.91.0
+            panic: immediate-abort
+          - os: macos-latest
+            panic: immediate-abort
+          - os: windows-latest
+            panic: immediate-abort
+        include:
+          - panic: immediate-abort
+            rustflags: "-Z unstable-options -C panic=immediate-abort"
+            cargoflags: "-Z build-std --target=x86_64-unknown-linux-gnu"
       fail-fast: false
     runs-on: ${{ matrix.os }}
     env:
-      RUSTFLAGS: "-D warnings"
+      RUSTFLAGS: "-D warnings ${{ matrix.rustflags }}"
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
+          components: rust-src
 
       - name: Build (default features)
-        run: cargo build --verbose --all
+        run: cargo build ${{ matrix.cargoflags }} --verbose --all
       - name: Build (no default features)
-        run: cargo build --verbose --all --no-default-features
+        run: cargo build ${{ matrix.cargoflags }} --verbose --all --no-default-features
       - name: Build (log feature)
-        run: cargo build --verbose --all --no-default-features --features=log
+        run: cargo build ${{ matrix.cargoflags }} --verbose --all --no-default-features --features=log
       - name: Build (log_parallelism feature)
-        run: cargo build --verbose --all --no-default-features --features=log_parallelism
+        run: cargo build ${{ matrix.cargoflags }} --verbose --all --no-default-features --features=log_parallelism
       - name: Build (rayon feature)
-        run: cargo build --verbose --all --no-default-features --features=rayon
+        run: cargo build ${{ matrix.cargoflags }} --verbose --all --no-default-features --features=rayon
 
       - name: Build (nightly + default features)
         if: ${{ matrix.rust == 'nightly' }}
-        run: cargo build --verbose --all --features=nightly
+        run: cargo build ${{ matrix.cargoflags }} --verbose --all --features=nightly
       - name: Build (nightly feature)
         if: ${{ matrix.rust == 'nightly' }}
-        run: cargo build --verbose --all --no-default-features --features=nightly
+        run: cargo build ${{ matrix.cargoflags }} --verbose --all --no-default-features --features=nightly
       - name: Build (nightly + log features)
         if: ${{ matrix.rust == 'nightly' }}
-        run: cargo build --verbose --all --no-default-features --features=nightly,log
+        run: cargo build ${{ matrix.cargoflags }} --verbose --all --no-default-features --features=nightly,log
       - name: Build (nightly + log_parallelism features)
         if: ${{ matrix.rust == 'nightly' }}
-        run: cargo build --verbose --all --no-default-features --features=nightly,log_parallelism
+        run: cargo build ${{ matrix.cargoflags }} --verbose --all --no-default-features --features=nightly,log_parallelism
       - name: Build (nightly + rayon features)
         if: ${{ matrix.rust == 'nightly' }}
-        run: cargo build --verbose --all --no-default-features --features=nightly,rayon
+        run: cargo build ${{ matrix.cargoflags }} --verbose --all --no-default-features --features=nightly,rayon

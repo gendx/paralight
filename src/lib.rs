@@ -14,6 +14,7 @@
     clippy::missing_safety_doc,
     clippy::multiple_unsafe_ops_per_block
 )]
+#![allow(unexpected_cfgs)]
 #![cfg_attr(not(test), forbid(clippy::undocumented_unsafe_blocks))]
 #![cfg_attr(
     all(test, feature = "nightly_tests"),
@@ -36,7 +37,6 @@
 #[cfg(any(feature = "rayon", feature = "default-thread-pool"))]
 mod core;
 pub mod iter;
-#[cfg(any(feature = "rayon", feature = "default-thread-pool"))]
 mod macros;
 #[cfg(any(feature = "rayon", feature = "default-thread-pool"))]
 pub mod threads;
@@ -59,6 +59,7 @@ pub mod prelude {
 }
 
 #[cfg(all(test, any(feature = "rayon", feature = "default-thread-pool")))]
+#[cfg_attr(panic = "immediate-abort", allow(dead_code))]
 mod test {
     use crate::iter::MyHashSet;
     use crate::prelude::*;
@@ -81,12 +82,16 @@ mod test {
             $( $( #[ $attrs:meta ] )* $case:ident $( => fail($msg:expr) )? ,)*
         ) => {
             mod $mod {
+                #[cfg_attr(panic = "immediate-abort", allow(unused_imports))]
                 use super::*;
 
                 $(
                     $( #[$attrs] )*
                     #[test]
-                    $( #[should_panic(expected = $msg)] )?
+                    $(
+                        #[cfg(not(panic = "immediate-abort"))]
+                        #[should_panic(expected = $msg)]
+                    )?
                     fn $case() {
                         #[cfg(all(not(miri), feature = "log"))]
                         LazyLock::force(&ENV_LOGGER_INIT);
@@ -1221,6 +1226,7 @@ mod test {
     #[cfg(feature = "nightly_tests")]
     #[cfg(not(any(miri, coverage, sanitize = "thread")))]
     #[test]
+    #[cfg(not(panic = "immediate-abort"))]
     #[should_panic(
         expected = "cannot process range of 8589934590 elements: only ranges of up to 4294967295 elements (2^32 - 1) are supported"
     )]

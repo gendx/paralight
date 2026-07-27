@@ -29,6 +29,8 @@ rayon = ["dep:rayon-core"]
 crossbeam-utils = "0.8.22"
 log = { optional = true, version = "0.4.33" }
 rayon-core = { optional = true, version = "1.13.0" }
+
+[target.'cfg(not(panic = "immediate-abort"))'.dependencies]
 scopeguard = "1.2.0"
 
 # Platforms that support `libc::sched_setaffinity()`.

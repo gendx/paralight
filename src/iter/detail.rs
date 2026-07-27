@@ -12,6 +12,7 @@ use super::{
     Accumulator, ExactSizeAccumulator, ParallelAdaptor, ParallelAdaptorDescriptor, ParallelIterator,
 };
 use crossbeam_utils::CachePadded;
+#[cfg(not(panic = "immediate-abort"))]
 use scopeguard::ScopeGuard;
 use std::cmp::Ordering;
 use std::iter::{Product, Sum};
@@ -696,22 +697,30 @@ impl<Inner: ParallelIterator> ParallelIterator for PanicFuse<Inner> {
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
     ) -> Output {
-        let fuse = Fuse::new();
-        self.inner.upper_bounded_pipeline(
-            || (init(), scopeguard::guard(&fuse, |fuse| fuse.set())),
-            |(acc, guard), index, item| match guard.load() {
-                FuseState::Unset => match process_item(acc, index, item) {
-                    ControlFlow::Continue(acc) => ControlFlow::Continue((acc, guard)),
-                    ControlFlow::Break(acc) => ControlFlow::Break((acc, guard)),
+        #[cfg(panic = "immediate-abort")]
+        return self
+            .inner
+            .upper_bounded_pipeline(init, process_item, finalize, reduce);
+
+        #[cfg(not(panic = "immediate-abort"))]
+        {
+            let fuse = Fuse::new();
+            self.inner.upper_bounded_pipeline(
+                || (init(), scopeguard::guard(&fuse, |fuse| fuse.set())),
+                |(acc, guard), index, item| match guard.load() {
+                    FuseState::Unset => match process_item(acc, index, item) {
+                        ControlFlow::Continue(acc) => ControlFlow::Continue((acc, guard)),
+                        ControlFlow::Break(acc) => ControlFlow::Break((acc, guard)),
+                    },
+                    FuseState::Set => ControlFlow::Break((acc, guard)),
                 },
-                FuseState::Set => ControlFlow::Break((acc, guard)),
-            },
-            |(acc, guard)| {
-                ScopeGuard::into_inner(guard);
-                finalize(acc)
-            },
-            reduce,
-        )
+                |(acc, guard)| {
+                    ScopeGuard::into_inner(guard);
+                    finalize(acc)
+                },
+                reduce,
+            )
+        }
     }
 
     fn iter_pipeline<Output, Accum: Send>(
@@ -719,19 +728,27 @@ impl<Inner: ParallelIterator> ParallelIterator for PanicFuse<Inner> {
         accum: impl Accumulator<Self::Item, Accum> + Sync,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
     ) -> Output {
-        let accumulator = PanicFuseAccumulator {
-            inner: accum,
-            fuse: Fuse::new(),
-        };
-        self.inner.iter_pipeline(accumulator, reduce)
+        #[cfg(panic = "immediate-abort")]
+        return self.inner.iter_pipeline(accum, reduce);
+
+        #[cfg(not(panic = "immediate-abort"))]
+        {
+            let accumulator = PanicFuseAccumulator {
+                inner: accum,
+                fuse: Fuse::new(),
+            };
+            self.inner.iter_pipeline(accumulator, reduce)
+        }
     }
 }
 
+#[cfg(not(panic = "immediate-abort"))]
 struct PanicFuseAccumulator<Inner> {
     inner: Inner,
     fuse: Fuse,
 }
 
+#[cfg(not(panic = "immediate-abort"))]
 impl<Item, Output, Inner> Accumulator<Item, Output> for PanicFuseAccumulator<Inner>
 where
     Inner: Accumulator<Item, Output>,

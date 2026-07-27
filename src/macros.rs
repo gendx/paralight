@@ -9,6 +9,8 @@
 //! Internal macros, to swap the logging macros implementation based on whether
 //! the `log` feature is enabled or not.
 
+#![allow(unused_imports, unused_macros)]
+
 #[cfg(feature = "log")]
 macro_rules! log_debug {
     ( $($args:tt)* ) => {
@@ -16,28 +18,28 @@ macro_rules! log_debug {
     }
 }
 
-#[cfg(all(feature = "default-thread-pool", feature = "log"))]
+#[cfg(feature = "log")]
 macro_rules! log_error {
     ( $($args:tt)* ) => {
         log::error!( $($args)* )
     }
 }
 
-#[cfg(all(feature = "log", feature = "log_parallelism"))]
+#[cfg(feature = "log")]
 macro_rules! log_info {
     ( $($args:tt)* ) => {
         log::info!( $($args)* )
     }
 }
 
-#[cfg(all(feature = "log", feature = "log_parallelism"))]
+#[cfg(feature = "log")]
 macro_rules! log_trace {
     ( $($args:tt)* ) => {
         log::trace!( $($args)* )
     }
 }
 
-#[cfg(all(feature = "default-thread-pool", feature = "log"))]
+#[cfg(feature = "log")]
 macro_rules! log_warn {
     ( $($args:tt)* ) => {
         log::warn!( $($args)* )
@@ -51,28 +53,28 @@ macro_rules! log_debug {
     };
 }
 
-#[cfg(all(feature = "default-thread-pool", not(feature = "log")))]
+#[cfg(not(feature = "log"))]
 macro_rules! log_error {
     ( $($args:tt)* ) => {
         ()
     };
 }
 
-#[cfg(all(not(feature = "log"), feature = "log_parallelism"))]
+#[cfg(not(feature = "log"))]
 macro_rules! log_info {
     ( $($args:tt)* ) => {
         ()
     };
 }
 
-#[cfg(all(not(feature = "log"), feature = "log_parallelism"))]
+#[cfg(not(feature = "log"))]
 macro_rules! log_trace {
     ( $($args:tt)* ) => {
         ()
     };
 }
 
-#[cfg(all(feature = "default-thread-pool", not(feature = "log")))]
+#[cfg(not(feature = "log"))]
 macro_rules! log_warn {
     ( $($args:tt)* ) => {
         ()
@@ -80,7 +82,7 @@ macro_rules! log_warn {
 }
 
 pub(crate) use log_debug;
-#[cfg(feature = "default-thread-pool")]
-pub(crate) use {log_error, log_warn};
-#[cfg(feature = "log_parallelism")]
-pub(crate) use {log_info, log_trace};
+pub(crate) use log_error;
+pub(crate) use log_info;
+pub(crate) use log_trace;
+pub(crate) use log_warn;

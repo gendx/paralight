@@ -7,8 +7,11 @@
 // except according to those terms.
 
 use super::{ExactParallelSink, FromExactParallelSink};
+#[cfg(panic = "immediate-abort")]
+use crate::macros::log_error;
 use std::cell::UnsafeCell;
 use std::mem::MaybeUninit;
+#[cfg(not(panic = "immediate-abort"))]
 use std::sync::Mutex;
 
 impl<T: Send, const N: usize> FromExactParallelSink for [T; N] {
@@ -16,6 +19,7 @@ impl<T: Send, const N: usize> FromExactParallelSink for [T; N] {
     type Sink = ArrayParallelSink<T, N>;
 
     unsafe fn finalize(sink: Self::Sink) -> Self {
+        #[cfg(not(panic = "immediate-abort"))]
         debug_assert!(sink.skipped.into_inner().unwrap().is_empty());
 
         // SAFETY:
@@ -82,6 +86,7 @@ impl<T: Send, const N: usize> FromExactParallelSink for [T; N] {
 #[must_use = "iterator adaptors are lazy"]
 pub struct ArrayParallelSink<T: Send, const N: usize> {
     array: ArrayWrapper<T, N>,
+    #[cfg(not(panic = "immediate-abort"))]
     skipped: Mutex<Vec<std::ops::Range<usize>>>,
 }
 
@@ -97,6 +102,7 @@ impl<T: Send, const N: usize> ExactParallelSink for ArrayParallelSink<T, N> {
 
         Self {
             array: ArrayWrapper::new(),
+            #[cfg(not(panic = "immediate-abort"))]
             skipped: Mutex::new(Vec::new()),
         }
     }
@@ -127,35 +133,46 @@ impl<T: Send, const N: usize> ExactParallelSink for ArrayParallelSink<T, N> {
         unsafe { std::ptr::write(item_ptr, item) };
     }
 
-    unsafe fn skip_item_range(&self, range: std::ops::Range<usize>) {
+    unsafe fn skip_item_range(&self, _range: std::ops::Range<usize>) {
+        #[cfg(not(panic = "immediate-abort"))]
         if Self::NEEDS_CLEANUP {
-            debug_assert!(range.start <= range.end);
-            debug_assert!(range.end <= N);
-            self.skipped.lock().unwrap().push(range);
+            debug_assert!(_range.start <= _range.end);
+            debug_assert!(_range.end <= N);
+            self.skipped.lock().unwrap().push(_range);
         }
     }
 
     unsafe fn cancel(self) {
-        let base_ptr: *mut T = self.array.start();
-
-        if Self::NEEDS_CLEANUP {
-            // Drop all items, except those that were skipped.
-            let mut skipped = self.skipped.into_inner().unwrap();
-            skipped.sort_unstable_by_key(|range| range.start);
-
-            let mut prev = 0..0;
-            for range in skipped.into_iter() {
-                Self::cleanup_item_range(base_ptr, prev.end..range.start);
-                prev = range.clone();
-            }
-
-            Self::cleanup_item_range(base_ptr, prev.end..N);
+        #[cfg(panic = "immediate-abort")]
+        {
+            log_error!("Unexpected cancellation in panic=immediate-abort mode");
+            panic!("Unexpected cancellation in panic=immediate-abort mode");
         }
 
-        // We can just forget the ArrayWrapper.
+        #[cfg(not(panic = "immediate-abort"))]
+        {
+            let base_ptr: *mut T = self.array.start();
+
+            if Self::NEEDS_CLEANUP {
+                // Drop all items, except those that were skipped.
+                let mut skipped = self.skipped.into_inner().unwrap();
+                skipped.sort_unstable_by_key(|range| range.start);
+
+                let mut prev = 0..0;
+                for range in skipped.into_iter() {
+                    Self::cleanup_item_range(base_ptr, prev.end..range.start);
+                    prev = range.clone();
+                }
+
+                Self::cleanup_item_range(base_ptr, prev.end..N);
+            }
+
+            // We can just forget the ArrayWrapper.
+        }
     }
 }
 
+#[cfg(not(panic = "immediate-abort"))]
 impl<T: Send, const N: usize> ArrayParallelSink<T, N> {
     fn cleanup_item_range(base_ptr: *mut T, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {

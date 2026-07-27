@@ -7,8 +7,11 @@
 // except according to those terms.
 
 use super::{ExactParallelSink, FromExactParallelSink};
+#[cfg(panic = "immediate-abort")]
+use crate::macros::log_error;
 use std::collections::VecDeque;
 use std::mem::ManuallyDrop;
+#[cfg(not(panic = "immediate-abort"))]
 use std::sync::Mutex;
 
 impl<T: Send> FromExactParallelSink for Vec<T> {
@@ -16,6 +19,7 @@ impl<T: Send> FromExactParallelSink for Vec<T> {
     type Sink = VecParallelSink<T>;
 
     unsafe fn finalize(sink: Self::Sink) -> Self {
+        #[cfg(not(panic = "immediate-abort"))]
         debug_assert!(sink.skipped.into_inner().unwrap().is_empty());
 
         let base_ptr: *mut T = sink.ptr.get();
@@ -149,6 +153,7 @@ pub struct VecParallelSink<T: Send> {
     ptr: MutPtrWrapper<T>,
     len: usize,
     capacity: usize,
+    #[cfg(not(panic = "immediate-abort"))]
     skipped: Mutex<Vec<std::ops::Range<usize>>>,
 }
 
@@ -169,6 +174,7 @@ impl<T: Send> ExactParallelSink for VecParallelSink<T> {
             ptr: MutPtrWrapper(mut_ptr),
             len,
             capacity,
+            #[cfg(not(panic = "immediate-abort"))]
             skipped: Mutex::new(Vec::new()),
         }
     }
@@ -199,50 +205,61 @@ impl<T: Send> ExactParallelSink for VecParallelSink<T> {
         unsafe { std::ptr::write(item_ptr, item) };
     }
 
-    unsafe fn skip_item_range(&self, range: std::ops::Range<usize>) {
+    unsafe fn skip_item_range(&self, _range: std::ops::Range<usize>) {
+        #[cfg(not(panic = "immediate-abort"))]
         if Self::NEEDS_CLEANUP {
-            debug_assert!(range.start <= range.end);
-            debug_assert!(range.end <= self.len);
-            self.skipped.lock().unwrap().push(range);
+            debug_assert!(_range.start <= _range.end);
+            debug_assert!(_range.end <= self.len);
+            self.skipped.lock().unwrap().push(_range);
         }
     }
 
     unsafe fn cancel(self) {
-        let base_ptr: *mut T = self.ptr.get();
-
-        if Self::NEEDS_CLEANUP {
-            // Drop all items, except those that were skipped.
-            let mut skipped = self.skipped.into_inner().unwrap();
-            skipped.sort_unstable_by_key(|range| range.start);
-
-            let mut prev = 0..0;
-            for range in skipped.into_iter() {
-                Self::cleanup_item_range(base_ptr, self.len, prev.end..range.start);
-                prev = range.clone();
-            }
-
-            Self::cleanup_item_range(base_ptr, self.len, prev.end..self.len);
+        #[cfg(panic = "immediate-abort")]
+        {
+            log_error!("Unexpected cancellation in panic=immediate-abort mode");
+            panic!("Unexpected cancellation in panic=immediate-abort mode");
         }
 
-        // Deallocate the vector.
-        //
-        // SAFETY:
-        // - The `base_ptr` has been allocated with the global allocator, as it is
-        //   derived from the vector created in `VecParallelSink::new`.
-        // - `T` has the same alignement as what `base_ptr` was allocated with, because
-        //   `base_ptr` derives from a vector of `T`s.
-        // - `T * capacity` is the size of what `base_ptr` was allocated with, because
-        //   that's the capacity of the vector created in `VecParallelSink::new`.
-        // - `length <= capacity` because the `length` is set to zero here.
-        // - The first `length` values are properly initialized values of type `T`
-        //   because the `length` is set to zero.
-        // - The allocated size in bytes isn't larger than `isize::MAX`, because that's
-        //   derived from the vector created in `VecParallelSink::new`.
-        let vec: Vec<T> = unsafe { Vec::from_raw_parts(base_ptr, 0, self.capacity) };
-        drop(vec);
+        #[cfg(not(panic = "immediate-abort"))]
+        {
+            let base_ptr: *mut T = self.ptr.get();
+
+            if Self::NEEDS_CLEANUP {
+                // Drop all items, except those that were skipped.
+                let mut skipped = self.skipped.into_inner().unwrap();
+                skipped.sort_unstable_by_key(|range| range.start);
+
+                let mut prev = 0..0;
+                for range in skipped.into_iter() {
+                    Self::cleanup_item_range(base_ptr, self.len, prev.end..range.start);
+                    prev = range.clone();
+                }
+
+                Self::cleanup_item_range(base_ptr, self.len, prev.end..self.len);
+            }
+
+            // Deallocate the vector.
+            //
+            // SAFETY:
+            // - The `base_ptr` has been allocated with the global allocator, as it is
+            //   derived from the vector created in `VecParallelSink::new`.
+            // - `T` has the same alignement as what `base_ptr` was allocated with, because
+            //   `base_ptr` derives from a vector of `T`s.
+            // - `T * capacity` is the size of what `base_ptr` was allocated with, because
+            //   that's the capacity of the vector created in `VecParallelSink::new`.
+            // - `length <= capacity` because the `length` is set to zero here.
+            // - The first `length` values are properly initialized values of type `T`
+            //   because the `length` is set to zero.
+            // - The allocated size in bytes isn't larger than `isize::MAX`, because that's
+            //   derived from the vector created in `VecParallelSink::new`.
+            let vec: Vec<T> = unsafe { Vec::from_raw_parts(base_ptr, 0, self.capacity) };
+            drop(vec);
+        }
     }
 }
 
+#[cfg(not(panic = "immediate-abort"))]
 impl<T: Send> VecParallelSink<T> {
     fn cleanup_item_range(base_ptr: *mut T, len: usize, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {

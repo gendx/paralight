@@ -7,16 +7,21 @@ jobs:
         test_features:
           - ""
           - ",nightly,nightly_tests"
+        panic:
+          - default
+          - immediate-abort
         include:
           - test_features: ""
             all_test_features: ""
           - test_features: ",nightly,nightly_tests"
             all_test_features: "--features=nightly,nightly_tests"
+          - panic: immediate-abort
+            rustflags: "-Z unstable-options -C panic=immediate-abort -Z panic-abort-tests"
       fail-fast: false
     runs-on: ubuntu-latest
     env:
-      RUSTFLAGS: "-D warnings -C debug_assertions -Zsanitizer=thread"
-      RUSTDOCFLAGS: "-D warnings -C debug_assertions -Zsanitizer=thread"
+      RUSTFLAGS: "-D warnings -C debug_assertions -Zsanitizer=thread ${{ matrix.rustflags }}"
+      RUSTDOCFLAGS: "-D warnings -C debug_assertions -Zsanitizer=thread ${{ matrix.rustflags }}"
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@nightly

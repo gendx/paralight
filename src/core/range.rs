@@ -1103,6 +1103,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(not(panic = "immediate-abort"))]
     #[should_panic(
         expected = "cannot spawn 10000000000 threads: only up to 4294967295 threads (2^32 - 1) are supported"
     )]
@@ -1111,6 +1112,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(not(panic = "immediate-abort"))]
     #[should_panic(
         expected = "cannot process range of 10000000000 elements: only ranges of up to 4294967295 elements (2^32 - 1) are supported"
     )]
@@ -1197,6 +1199,7 @@ mod test {
 
     #[cfg(debug_assertions)]
     #[test]
+    #[cfg(not(panic = "immediate-abort"))]
     #[should_panic(expected = "assertion failed: self.start() < self.end()")]
     fn test_packed_range_increment_start_overflow() {
         let range = PackedRange::new(u32::MAX, u32::MAX);

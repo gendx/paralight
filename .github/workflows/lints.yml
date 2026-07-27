@@ -8,54 +8,66 @@ jobs:
           - ubuntu-latest
           - macos-latest
           - windows-latest
+        panic:
+          - default
+          - immediate-abort
+        exclude:
+          - os: macos-latest
+            panic: immediate-abort
+          - os: windows-latest
+            panic: immediate-abort
+        include:
+          - panic: immediate-abort
+            rustflags: "-Z unstable-options -C panic=immediate-abort -Z panic-abort-tests"
+            cargoflags: "-Z build-std --target=x86_64-unknown-linux-gnu"
       fail-fast: false
     runs-on: ${{ matrix.os }}
     env:
-      RUSTFLAGS: "-D warnings"
-      RUSTDOCFLAGS: "-Z unstable-options --no-run --no-capture --test-builder clippy-driver"
+      RUSTFLAGS: "-D warnings ${{ matrix.rustflags }}"
+      RUSTDOCFLAGS: "-Z unstable-options --no-run --no-capture --test-builder clippy-driver ${{ matrix.rustflags }}"
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@nightly
         with:
-          components: clippy
+          components: clippy, rust-src
 
       - name: Check Clippy lints (default features)
-        run: cargo clippy --verbose --all
+        run: cargo clippy ${{ matrix.cargoflags }} --verbose --all
       - name: Check Clippy lints (no default features)
-        run: cargo clippy --verbose --all --no-default-features
+        run: cargo clippy ${{ matrix.cargoflags }} --verbose --all --no-default-features
       - name: Check Clippy lints (log feature)
-        run: cargo clippy --verbose --all --no-default-features --features=log
+        run: cargo clippy ${{ matrix.cargoflags }} --verbose --all --no-default-features --features=log
       - name: Check Clippy lints (log_parallelism feature)
-        run: cargo clippy --verbose --all --no-default-features --features=log_parallelism
+        run: cargo clippy ${{ matrix.cargoflags }} --verbose --all --no-default-features --features=log_parallelism
       - name: Check Clippy lints (rayon feature)
-        run: cargo clippy --verbose --all --no-default-features --features=rayon
+        run: cargo clippy ${{ matrix.cargoflags }} --verbose --all --no-default-features --features=rayon
       - name: Check Clippy lints (all features)
-        run: cargo clippy --verbose --all --all-features
+        run: cargo clippy ${{ matrix.cargoflags }} --verbose --all --all-features
 
       - name: Check Clippy lints on tests (default features)
-        run: cargo clippy --verbose --all --tests
+        run: cargo clippy ${{ matrix.cargoflags }} --verbose --all --tests
       - name: Check Clippy lints on tests (no default features)
-        run: cargo clippy --verbose --all --tests --no-default-features
+        run: cargo clippy ${{ matrix.cargoflags }} --verbose --all --tests --no-default-features
       - name: Check Clippy lints on tests (log feature)
-        run: cargo clippy --verbose --all --tests --no-default-features --features=log
+        run: cargo clippy ${{ matrix.cargoflags }} --verbose --all --tests --no-default-features --features=log
       - name: Check Clippy lints on tests (log_parallelism feature)
-        run: cargo clippy --verbose --all --tests --no-default-features --features=log_parallelism
+        run: cargo clippy ${{ matrix.cargoflags }} --verbose --all --tests --no-default-features --features=log_parallelism
       - name: Check Clippy lints on tests (rayon feature)
-        run: cargo clippy --verbose --all --tests --no-default-features --features=rayon
+        run: cargo clippy ${{ matrix.cargoflags }} --verbose --all --tests --no-default-features --features=rayon
       - name: Check Clippy lints on tests (all features)
-        run: cargo clippy --verbose --all --tests --all-features
+        run: cargo clippy ${{ matrix.cargoflags }} --verbose --all --tests --all-features
 
       - name: Check Clippy lints on benchmarks (default features)
-        run: cargo clippy --verbose --all --benches
+        run: cargo clippy ${{ matrix.cargoflags }} --verbose --all --benches
       - name: Check Clippy lints on benchmarks (all features)
-        run: cargo clippy --verbose --all --benches --all-features
+        run: cargo clippy ${{ matrix.cargoflags }} --verbose --all --benches --all-features
 
       - name: Check Clippy lints on examples (default features)
-        run: cargo clippy --verbose --all --examples
+        run: cargo clippy ${{ matrix.cargoflags }} --verbose --all --examples
       - name: Check Clippy lints on examples (all features)
-        run: cargo clippy --verbose --all --examples --all-features
+        run: cargo clippy ${{ matrix.cargoflags }} --verbose --all --examples --all-features
 
       - name: Check Clippy lints on doctests (default features)
-        run: cargo test --verbose --doc
+        run: cargo test ${{ matrix.cargoflags }} --verbose --doc
       - name: Check Clippy lints on doctests (all features)
-        run: cargo test --verbose --doc --all-features
+        run: cargo test ${{ matrix.cargoflags }} --verbose --doc --all-features
