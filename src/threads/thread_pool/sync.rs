@@ -137,7 +137,9 @@ impl<T: LifetimeParameterized> Lender<T> {
             .worker_status
             .notify_all(WorkerStatus::Round(round));
 
-        log_debug!("[main thread, round {round:?}] Waiting for all threads to finish computing this pipeline.");
+        log_debug!(
+            "[main thread, round {round:?}] Waiting for all threads to finish computing this pipeline."
+        );
 
         let mut guard = self
             .shared_context

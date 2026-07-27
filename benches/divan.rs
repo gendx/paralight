@@ -18,7 +18,7 @@ const LENGTHS: &[usize] = &[10_000, 100_000, 1_000_000, 10_000_000];
 mod serial {
     use super::LENGTHS;
     use divan::counter::BytesCount;
-    use divan::{black_box, Bencher};
+    use divan::{Bencher, black_box};
 
     #[divan::bench(args = LENGTHS)]
     fn sum(bencher: Bencher, len: usize) {
@@ -55,7 +55,7 @@ mod serial {
 mod rayon {
     use super::{LENGTHS, NUM_THREADS};
     use divan::counter::BytesCount;
-    use divan::{black_box, Bencher};
+    use divan::{Bencher, black_box};
     use rayon::iter::{
         IndexedParallelIterator, IntoParallelRefIterator, IntoParallelRefMutIterator,
         ParallelIterator,
@@ -112,7 +112,7 @@ mod rayon {
 mod paralight {
     use super::{LENGTHS, NUM_THREADS};
     use divan::counter::BytesCount;
-    use divan::{black_box, Bencher};
+    use divan::{Bencher, black_box};
     use paralight::prelude::*;
 
     #[divan::bench(consts = NUM_THREADS, args = LENGTHS)]

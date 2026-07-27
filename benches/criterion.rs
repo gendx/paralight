@@ -7,7 +7,7 @@
 // except according to those terms.
 
 use ::paralight::threads::RangeStrategy;
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use std::mem::size_of;
 
 const NUM_THREADS: &[usize] = &[1, 2, 4, 8];

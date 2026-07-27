@@ -19,7 +19,7 @@ use crate::core::range::{
 use crate::iter::{Accumulator, ExactSizeAccumulator, GenericThreadPool, SourceCleanup};
 use crate::macros::{log_debug, log_error, log_warn};
 use crossbeam_utils::CachePadded;
-use sync::{make_lending_group, Borrower, Lender, WorkerState};
+use sync::{Borrower, Lender, WorkerState, make_lending_group};
 use util::LifetimeParameterized;
 // Platforms that support `libc::sched_setaffinity()`.
 #[cfg(all(
@@ -32,7 +32,7 @@ use util::LifetimeParameterized;
     )
 ))]
 use nix::{
-    sched::{sched_setaffinity, CpuSet},
+    sched::{CpuSet, sched_setaffinity},
     unistd::Pid,
 };
 use std::marker::PhantomData;

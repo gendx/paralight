@@ -10,8 +10,8 @@
 
 use chacha20::ChaCha12Rng;
 use clap::{Parser, ValueEnum};
-use rand::seq::index;
 use rand::SeedableRng;
+use rand::seq::index;
 use std::hint::black_box;
 use std::num::NonZeroUsize;
 
@@ -22,19 +22,25 @@ fn main() {
         Parallelism::Serial => dispatch_serial(cli),
         Parallelism::Paralight => {
             #[cfg(not(feature = "default-thread-pool"))]
-            panic!("Please compile this example with the `default-thread-pool` feature to use `--parallelism=paralight`.");
+            panic!(
+                "Please compile this example with the `default-thread-pool` feature to use `--parallelism=paralight`."
+            );
             #[cfg(feature = "default-thread-pool")]
             dispatch_paralight(cli);
         }
         Parallelism::Rayon => {
             #[cfg(not(feature = "rayon"))]
-            panic!("Please compile this example with the `rayon` feature to use `--parallelism=rayon`.");
+            panic!(
+                "Please compile this example with the `rayon` feature to use `--parallelism=rayon`."
+            );
             #[cfg(feature = "rayon")]
             dispatch_rayon(cli);
         }
         Parallelism::ParalightOnRayon => {
             #[cfg(not(feature = "rayon"))]
-            panic!("Please compile this example with the `rayon` feature to use `--parallelism=paralight-on-rayon`.");
+            panic!(
+                "Please compile this example with the `rayon` feature to use `--parallelism=paralight-on-rayon`."
+            );
             #[cfg(feature = "rayon")]
             dispatch_paralight_on_rayon(cli);
         }

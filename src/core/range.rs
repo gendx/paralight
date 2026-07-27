@@ -12,10 +12,10 @@ use crate::macros::{log_info, log_trace};
 use crossbeam_utils::CachePadded;
 #[cfg(feature = "log_parallelism")]
 use std::ops::AddAssign;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 #[cfg(feature = "log_parallelism")]
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 
 /// A factory for handing out ranges of items to various threads.
 ///

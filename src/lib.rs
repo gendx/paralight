@@ -66,10 +66,10 @@ mod test {
     use std::cell::Cell;
     use std::collections::{HashSet, VecDeque};
     use std::rc::Rc;
-    use std::sync::atomic::AtomicU64;
     #[cfg(all(not(miri), feature = "log"))]
     use std::sync::LazyLock;
     use std::sync::Mutex;
+    use std::sync::atomic::AtomicU64;
 
     #[cfg(all(not(miri), feature = "log"))]
     static ENV_LOGGER_INIT: LazyLock<()> = LazyLock::new(env_logger::init);
@@ -1855,8 +1855,24 @@ mod test {
                     .collect()
             });
 
-            let [x0, x1, x2, x3, x4, x5, x6, x7, x8, x9, x10, x11, x12, x13, x14, x15] =
-                inputs.map(|chunk| chunk.into_par_iter());
+            let [
+                x0,
+                x1,
+                x2,
+                x3,
+                x4,
+                x5,
+                x6,
+                x7,
+                x8,
+                x9,
+                x10,
+                x11,
+                x12,
+                x13,
+                x14,
+                x15,
+            ] = inputs.map(|chunk| chunk.into_par_iter());
             let (y0, y1, y2, y3, y4, y5, y6, y7) = (
                 x0.chain(x1),
                 x2.chain(x3),

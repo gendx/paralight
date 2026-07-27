@@ -309,11 +309,7 @@ pub trait ParallelIterator: Sized {
     ///     .try_short_circuiting_pipeline(
     ///         || (),
     ///         |(), x| {
-    ///             if x % 2 == 0 {
-    ///                 Err(x)
-    ///             } else {
-    ///                 Ok(())
-    ///             }
+    ///             if x % 2 == 0 { Err(x) } else { Ok(()) }
     ///         },
     ///         |acc| acc,
     ///         |x, y| x.and(y),
