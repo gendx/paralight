@@ -1253,7 +1253,7 @@ pub trait ExactParallelSourceExt: ExactParallelSource {
     ///     .par_iter()
     ///     .enumerate()
     ///     .with_thread_pool(&mut thread_pool)
-    ///     .max_by_key(|(_, &x)| x);
+    ///     .max_by_key(|&(_, &x)| x);
     /// assert_eq!(indexed_max, Some((9, &10)));
     /// ```
     fn enumerate(self) -> Enumerate<Self> {

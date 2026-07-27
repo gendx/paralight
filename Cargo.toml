@@ -9,7 +9,7 @@ readme = "README.md"
 categories = ["concurrency"]
 keywords = ["parallelism", "thread-pool", "iterator"]
 exclude = [".github/*"]
-edition = "2021"
+edition = "2024"
 rust-version = "1.91.0"
 
 [package.metadata.docs.rs]
