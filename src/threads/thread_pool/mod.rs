@@ -260,7 +260,7 @@ impl ThreadPoolEnum {
 /// [`RangeStrategy`].
 struct ThreadPoolImpl<F: RangeFactory> {
     /// Handles to all the worker threads in the pool.
-    threads: Vec<WorkerThreadHandle>,
+    threads: Box<[WorkerThreadHandle]>,
     /// Orchestrator for the work ranges distributed to the threads.
     range_orchestrator: F::Orchestrator,
     /// Pipeline to map and reduce inputs into an output.
@@ -514,7 +514,9 @@ impl<F: RangeFactory> Drop for ThreadPoolImpl<F> {
         self.pipeline.finish_workers();
 
         log_debug!("[main thread] Joining threads in the pool...");
-        for (_i, t) in self.threads.drain(..).enumerate() {
+        let mut threads: Box<[_]> = Box::new([]);
+        std::mem::swap(&mut self.threads, &mut threads);
+        for (_i, t) in threads.into_iter().enumerate() {
             let result = t.handle.join();
             match result {
                 Ok(_) => log_debug!("[main thread] Thread {_i} joined with result: {result:?}"),

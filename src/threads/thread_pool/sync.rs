@@ -63,7 +63,7 @@ impl RoundColor {
 /// Create a [`Lender`] paired with `num_threads` [`Borrower`]s.
 pub fn make_lending_group<T: LifetimeParameterized>(
     num_threads: usize,
-) -> (Lender<T>, Vec<Borrower<T>>) {
+) -> (Lender<T>, Box<[Borrower<T>]>) {
     let round = RoundColor::Blue;
     let shared_context = Arc::new(SharedContext {
         num_active_threads: CachePadded::new(AtomicUsize::new(0)),
