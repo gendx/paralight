@@ -121,7 +121,7 @@ pub unsafe trait GenericThreadPool {
     fn iter_pipeline<Output, Accum: Send>(
         self,
         input_len: usize,
-        accum: impl Accumulator<usize, Accum> + Sync,
+        accum: impl Accumulator<usize, Accum> + Clone + Send,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output;
@@ -155,7 +155,7 @@ where
     fn iter_pipeline<Output, Accum: Send>(
         self,
         input_len: usize,
-        accum: impl Accumulator<usize, Accum> + Sync,
+        accum: impl Accumulator<usize, Accum> + Clone + Send,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
@@ -202,15 +202,15 @@ pub trait ParallelIterator: Sized {
     /// ```
     fn pipeline<Output: Send, Accum>(
         self,
-        init: impl Fn() -> Accum + Sync,
+        init: impl Fn() -> Accum + Clone + Send,
         process_item: impl Fn(Accum, Self::Item) -> Accum + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
     ) -> Output {
         self.iter_pipeline(
             IterAccumulator {
-                init: &init,
-                process_item,
+                init: init.clone(),
+                process_item: &process_item,
                 finalize: &finalize,
             },
             IterReducer { reduce },
@@ -268,9 +268,9 @@ pub trait ParallelIterator: Sized {
     ) -> Output {
         self.iter_pipeline(
             ShortCircuitingAccumulator {
-                fuse: Fuse::new(),
+                fuse: &Fuse::new(),
                 init: &init,
-                process_item,
+                process_item: &process_item,
                 finalize: &finalize,
             },
             IterReducer { reduce },
@@ -327,9 +327,9 @@ pub trait ParallelIterator: Sized {
     ) -> Output {
         self.iter_pipeline(
             ShortCircuitingAccumulator {
-                fuse: Fuse::new(),
+                fuse: &Fuse::new(),
                 init: &init,
-                process_item,
+                process_item: &process_item,
                 finalize: &finalize,
             },
             IterReducer { reduce },
@@ -448,7 +448,7 @@ pub trait ParallelIterator: Sized {
     /// ```
     fn iter_pipeline<Output, Accum: Send>(
         self,
-        accum: impl Accumulator<Self::Item, Accum> + Sync,
+        accum: impl Accumulator<Self::Item, Accum> + Clone + Send,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
     ) -> Output;
 }
@@ -516,13 +516,13 @@ impl<T: ParallelAdaptor> ParallelIterator for T {
 
     fn iter_pipeline<Output, Accum: Send>(
         self,
-        accum: impl Accumulator<Self::Item, Accum> + Sync,
+        accum: impl Accumulator<Self::Item, Accum> + Clone + Send,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
     ) -> Output {
         let descriptor = self.descriptor();
         let accumulator = AdaptorAccumulator {
             inner: accum,
-            transform_item: descriptor.transform_item,
+            transform_item: &descriptor.transform_item,
         };
         descriptor.inner.iter_pipeline(accumulator, reduce)
     }
@@ -1460,9 +1460,9 @@ pub trait ParallelIteratorExt: ParallelIterator {
     {
         self.iter_pipeline(
             IterAccumulator {
-                init: init_per_thread,
-                process_item: fold_per_thread,
-                finalize: |t| t,
+                init: &init_per_thread,
+                process_item: &fold_per_thread,
+                finalize: &|t| t,
             },
             IterFolder {
                 init: init_final,
@@ -1547,7 +1547,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
         F: Fn(&mut T, Self::Item) + Sync,
     {
         self.pipeline(
-            init,
+            &init,
             |mut t, item| {
                 f(&mut t, item);
                 t
@@ -2609,7 +2609,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
         F: Fn(Self::Item, Self::Item) -> Self::Item + Sync,
         Self::Item: Send,
     {
-        self.pipeline(init, &f, |acc| acc, &f)
+        self.pipeline(&init, &f, |acc| acc, &f)
     }
 
     /// Returns the sum of the items produced by this iterator.
@@ -2726,7 +2726,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
     {
         self.iter_pipeline(
             TryIterCollector::<C> {
-                fuse: Fuse::new(),
+                fuse: &Fuse::new(),
                 _phantom: PhantomData,
             },
             TryIterFolder {
@@ -2918,7 +2918,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
 
         self.iter_pipeline(
             TryIterCollector::<C> {
-                fuse: Fuse::new(),
+                fuse: &Fuse::new(),
                 _phantom: PhantomData,
             },
             TryIterFolder {
@@ -3021,13 +3021,13 @@ pub trait ParallelIteratorExt: ParallelIterator {
     {
         self.iter_pipeline(
             ShortCircuitingAccumulator {
-                fuse: Fuse::new(),
-                init: init_per_thread,
-                process_item: |acc, item| match try_fold_per_thread(acc, item) {
+                fuse: &Fuse::new(),
+                init: &init_per_thread,
+                process_item: &|acc, item| match try_fold_per_thread(acc, item) {
                     Ok(x) => ControlFlow::Continue(x),
                     Err(e) => ControlFlow::Break(e),
                 },
-                finalize: |acc| match acc {
+                finalize: &|acc| match acc {
                     ControlFlow::Continue(x) => Ok(x),
                     ControlFlow::Break(e) => Err(e),
                 },
@@ -3194,10 +3194,10 @@ pub trait ParallelIteratorExt: ParallelIterator {
     {
         self.iter_pipeline(
             ShortCircuitingAccumulator {
-                fuse: Fuse::new(),
-                init: init_per_thread,
-                process_item: try_fold_per_thread,
-                finalize: |acc| acc,
+                fuse: &Fuse::new(),
+                init: &init_per_thread,
+                process_item: &try_fold_per_thread,
+                finalize: &|acc| acc,
             },
             TryIterFolder {
                 init: init_final,

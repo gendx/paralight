@@ -271,7 +271,7 @@ unsafe impl GenericThreadPool for &RayonThreadPool<'_> {
     fn iter_pipeline<Output, Accum: Send>(
         self,
         input_len: usize,
-        accum: impl Accumulator<usize, Accum> + Sync,
+        accum: impl Accumulator<usize, Accum> + Clone + Send,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
@@ -373,7 +373,7 @@ impl<'a> RayonThreadPoolEnum<'a> {
     fn iter_pipeline<Output, Accum: Send>(
         &mut self,
         input_len: usize,
-        accum: impl Accumulator<usize, Accum> + Sync,
+        accum: impl Accumulator<usize, Accum> + Clone + Send,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
@@ -508,7 +508,7 @@ where
     fn iter_pipeline<Output, Accum: Send>(
         &mut self,
         input_len: usize,
-        accum: impl Accumulator<usize, Accum> + Sync,
+        accum: impl Accumulator<usize, Accum> + Clone + Send,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
@@ -522,7 +522,7 @@ where
             .map(|_| Mutex::new(None))
             .collect::<Arc<[_]>>();
 
-        let pipeline = &IterPipelineImpl {
+        let pipeline = IterPipelineImpl {
             outputs: outputs.clone(),
             accum,
             cleanup,
@@ -530,10 +530,11 @@ where
 
         let ranges = &self.ranges;
         self.scope({
-            |scope| {
+            move |scope| {
                 for (id, range) in ranges.iter().enumerate() {
+                    let this_pipeline = pipeline.clone();
                     scope.spawn(move |_| {
-                        pipeline.run(id, range);
+                        this_pipeline.run(id, range);
                     });
                 }
             }

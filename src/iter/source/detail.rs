@@ -2036,13 +2036,14 @@ where
 
 // Collect helpers
 
-pub struct CollectAccumulator<Init, ProcessItem> {
-    pub(super) init: Init,
-    pub(super) process_item: ProcessItem,
+#[derive(Clone)]
+pub struct CollectAccumulator<'a, Init, ProcessItem> {
+    pub(super) init: &'a Init,
+    pub(super) process_item: &'a ProcessItem,
 }
 
 impl<ThreadContext, Init, ProcessItem> Accumulator<usize, ()>
-    for CollectAccumulator<Init, ProcessItem>
+    for CollectAccumulator<'_, Init, ProcessItem>
 where
     Init: Fn() -> ThreadContext,
     ProcessItem: Fn(&mut ThreadContext, usize),
@@ -2090,14 +2091,15 @@ where
     }
 }
 
-pub struct TryCollectAccumulator<Init, ProcessItem> {
-    pub(super) init: Init,
-    pub(super) process_item: ProcessItem,
+#[derive(Clone)]
+pub struct TryCollectAccumulator<'a, Init, ProcessItem> {
+    pub(super) init: &'a Init,
+    pub(super) process_item: &'a ProcessItem,
 }
 
 #[cfg(not(feature = "nightly"))]
 impl<E, ThreadContext, Init, ProcessItem> Accumulator<usize, Result<(), E>>
-    for TryCollectAccumulator<Init, ProcessItem>
+    for TryCollectAccumulator<'_, Init, ProcessItem>
 where
     Init: Fn() -> ThreadContext,
     ProcessItem: Fn(&mut ThreadContext, usize) -> Result<(), E>,
@@ -2111,7 +2113,7 @@ where
 
 #[cfg(feature = "nightly")]
 impl<R, ThreadContext, Init, ProcessItem> Accumulator<usize, R>
-    for TryCollectAccumulator<Init, ProcessItem>
+    for TryCollectAccumulator<'_, Init, ProcessItem>
 where
     R: Try<Output = ()>,
     Init: Fn() -> ThreadContext,

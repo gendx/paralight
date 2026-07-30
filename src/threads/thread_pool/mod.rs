@@ -139,7 +139,7 @@ unsafe impl GenericThreadPool for &mut ThreadPool {
     fn iter_pipeline<Output, Accum: Send>(
         self,
         input_len: usize,
-        accum: impl Accumulator<usize, Accum> + Sync,
+        accum: impl Accumulator<usize, Accum> + Clone + Send,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
@@ -242,7 +242,7 @@ impl ThreadPoolEnum {
     fn iter_pipeline<Output, Accum: Send>(
         &mut self,
         input_len: usize,
-        accum: impl Accumulator<usize, Accum> + Sync,
+        accum: impl Accumulator<usize, Accum> + Clone + Send,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
@@ -476,7 +476,7 @@ impl<F: RangeFactory> ThreadPoolImpl<F> {
     fn iter_pipeline<Output, Accum: Send>(
         &mut self,
         input_len: usize,
-        accum: impl Accumulator<usize, Accum> + Sync,
+        accum: impl Accumulator<usize, Accum> + Clone + Send,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
@@ -490,6 +490,8 @@ impl<F: RangeFactory> ThreadPoolImpl<F> {
             .map(|_| Mutex::new(None))
             .collect::<Arc<[_]>>();
 
+        // error[E0277]: `impl Accumulator<usize, Accum> + Clone + Send` cannot be
+        // shared between threads safely
         self.pipeline.lend(&IterPipelineImpl {
             outputs: outputs.clone(),
             accum,

@@ -2103,8 +2103,8 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
         });
 
         let accumulator = CollectAccumulator {
-            init: || source_descriptor.init(),
-            process_item: |context: &mut _, index| {
+            init: &|| source_descriptor.init(),
+            process_item: &|context: &mut _, index| {
                 // If fetching this item panics, we need to skip the sink at this index.
                 let item_guard = scopeguard::guard((), |()| {
                     // SAFETY: This scope guard is only invoked if a panic occurs during
@@ -2551,8 +2551,8 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
         });
 
         let accumulator = TryCollectAccumulator {
-            init: || source_descriptor.init(),
-            process_item: |context: &mut _, index| {
+            init: &|| source_descriptor.init(),
+            process_item: &|context: &mut _, index| {
                 // If fetching this item panics or returns an error, we need to skip the sink at
                 // this index.
                 let item_guard = scopeguard::guard((), |()| {
@@ -2818,9 +2818,9 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
         });
 
         let accumulator = TryCollectAccumulator {
-            init: || source_descriptor.init(),
-            process_item: |context: &mut _,
-                           index|
+            init: &|| source_descriptor.init(),
+            process_item: &|context: &mut _,
+                            index|
              -> <<S::Item as Try>::Residual as Residual<()>>::TryType {
                 // If fetching this item panics or returns an error, we need to skip the sink at
                 // this index.
@@ -2909,16 +2909,16 @@ impl<T: GenericThreadPool, S: ParallelSource> ParallelIterator for BaseParallelI
 
     fn iter_pipeline<Output, Accum: Send>(
         self,
-        accum: impl Accumulator<Self::Item, Accum> + Sync,
+        accum: impl Accumulator<Self::Item, Accum> + Clone + Send,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
     ) -> Output {
         let source_descriptor = self.source.descriptor();
         let accumulator = FetchAccumulator {
             inner: accum,
-            init: || source_descriptor.init(),
+            init: &|| source_descriptor.init(),
             // Note: the `&mut _` annotation is needed here to avoid compilation errors, see
             // https://users.rust-lang.org/t/implementation-of-fnonce-is-not-general-enough/78006/4.
-            fetch_item: |context: &mut _, index| {
+            fetch_item: &|context: &mut _, index| {
                 // SAFETY: The pre-conditions to the `source_descriptor`'s `fetch_item()` and
                 // `cleanup_item_range()` methods are ensured by the safety guarantees of
                 // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed are in
@@ -2970,16 +2970,16 @@ impl<T: GenericThreadPool, S: ExactParallelSource> ParallelIterator
 
     fn iter_pipeline<Output, Accum: Send>(
         self,
-        accum: impl Accumulator<Self::Item, Accum> + Sync,
+        accum: impl Accumulator<Self::Item, Accum> + Clone + Send,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
     ) -> Output {
         let source_descriptor = self.source.exact_descriptor();
         let accumulator = ExactFetchAccumulator {
             inner: accum,
-            init: || source_descriptor.init(),
+            init: &|| source_descriptor.init(),
             // Note: the `&mut _` annotation is needed here to avoid compilation errors, see
             // https://users.rust-lang.org/t/implementation-of-fnonce-is-not-general-enough/78006/4.
-            fetch_item: |context: &mut _, index| {
+            fetch_item: &|context: &mut _, index| {
                 // SAFETY: The pre-conditions to the `source_descriptor`'s `exact_fetch_item()`
                 // and `cleanup_item_range()` methods are ensured by the safety guarantees of
                 // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed are in
@@ -2996,14 +2996,15 @@ impl<T: GenericThreadPool, S: ExactParallelSource> ParallelIterator
     }
 }
 
-struct FetchAccumulator<Inner, Init, FetchItem> {
+#[derive(Clone)]
+struct FetchAccumulator<'a, Inner, Init, FetchItem> {
     inner: Inner,
-    init: Init,
-    fetch_item: FetchItem,
+    init: &'a Init,
+    fetch_item: &'a FetchItem,
 }
 
 impl<Item, Output, ThreadContext, Inner, Init, FetchItem> Accumulator<usize, Output>
-    for FetchAccumulator<Inner, Init, FetchItem>
+    for FetchAccumulator<'_, Inner, Init, FetchItem>
 where
     Inner: Accumulator<Item, Output>,
     Init: Fn() -> ThreadContext,
@@ -3017,14 +3018,15 @@ where
     }
 }
 
-struct ExactFetchAccumulator<Inner, Init, FetchItem> {
+#[derive(Clone)]
+struct ExactFetchAccumulator<'a, Inner, Init, FetchItem> {
     inner: Inner,
-    init: Init,
-    fetch_item: FetchItem,
+    init: &'a Init,
+    fetch_item: &'a FetchItem,
 }
 
 impl<Item, Output, ThreadContext, Inner, Init, FetchItem> Accumulator<usize, Output>
-    for ExactFetchAccumulator<Inner, Init, FetchItem>
+    for ExactFetchAccumulator<'_, Inner, Init, FetchItem>
 where
     Inner: Accumulator<Item, Output>,
     Init: Fn() -> ThreadContext,

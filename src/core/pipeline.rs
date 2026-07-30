@@ -92,6 +92,19 @@ pub struct IterPipelineImpl<'a, Output, Accum: Accumulator<usize, Output>, Clean
     pub cleanup: &'a Cleanup,
 }
 
+// TODO: Derive this implementation once perfect derive is available: https://github.com/rust-lang/rust/issues/26925.
+impl<Output, Accum: Accumulator<usize, Output> + Clone, Cleanup: SourceCleanup> Clone
+    for IterPipelineImpl<'_, Output, Accum, Cleanup>
+{
+    fn clone(&self) -> Self {
+        Self {
+            outputs: self.outputs.clone(),
+            accum: self.accum.clone(),
+            cleanup: self.cleanup,
+        }
+    }
+}
+
 impl<R, Output, Accum, Cleanup> Pipeline<R> for IterPipelineImpl<'_, Output, Accum, Cleanup>
 where
     R: Range,

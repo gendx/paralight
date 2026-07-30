@@ -127,14 +127,27 @@ where
 
 // Accumulator implementations.
 
-pub struct IterAccumulator<Init, ProcessItem, Finalize> {
+pub struct IterAccumulator<'a, Init, ProcessItem, Finalize> {
     pub(super) init: Init,
-    pub(super) process_item: ProcessItem,
-    pub(super) finalize: Finalize,
+    pub(super) process_item: &'a ProcessItem,
+    pub(super) finalize: &'a Finalize,
+}
+
+// TODO: Derive this implementation once perfect derive is available: https://github.com/rust-lang/rust/issues/26925.
+impl<Init: Clone, ProcessItem, Finalize> Clone
+    for IterAccumulator<'_, Init, ProcessItem, Finalize>
+{
+    fn clone(&self) -> Self {
+        Self {
+            init: self.init.clone(),
+            process_item: self.process_item,
+            finalize: self.finalize,
+        }
+    }
 }
 
 impl<Item, Accum, Output, Init, ProcessItem, Finalize> Accumulator<Item, Output>
-    for IterAccumulator<Init, ProcessItem, Finalize>
+    for IterAccumulator<'_, Init, ProcessItem, Finalize>
 where
     Init: Fn() -> Accum,
     ProcessItem: Fn(Accum, Item) -> Accum,
@@ -150,16 +163,30 @@ where
     }
 }
 
-pub struct ShortCircuitingAccumulator<Init, ProcessItem, Finalize> {
-    pub(super) fuse: Fuse,
-    pub(super) init: Init,
-    pub(super) process_item: ProcessItem,
-    pub(super) finalize: Finalize,
+pub struct ShortCircuitingAccumulator<'a, Init, ProcessItem, Finalize> {
+    pub(super) fuse: &'a Fuse,
+    pub(super) init: &'a Init,
+    pub(super) process_item: &'a ProcessItem,
+    pub(super) finalize: &'a Finalize,
+}
+
+// TODO: Derive this implementation once perfect derive is available: https://github.com/rust-lang/rust/issues/26925.
+impl<Init, ProcessItem, Finalize> Clone
+    for ShortCircuitingAccumulator<'_, Init, ProcessItem, Finalize>
+{
+    fn clone(&self) -> Self {
+        Self {
+            fuse: self.fuse,
+            init: self.init,
+            process_item: self.process_item,
+            finalize: self.finalize,
+        }
+    }
 }
 
 #[cfg(not(feature = "nightly"))]
 impl<Item, Accum, Break, Output, Init, ProcessItem, Finalize> Accumulator<Item, Output>
-    for ShortCircuitingAccumulator<Init, ProcessItem, Finalize>
+    for ShortCircuitingAccumulator<'_, Init, ProcessItem, Finalize>
 where
     Init: Fn() -> Accum,
     ProcessItem: Fn(Accum, Item) -> ControlFlow<Break, Accum>,
@@ -193,7 +220,7 @@ where
 
 #[cfg(feature = "nightly")]
 impl<Item, Accum, R, Output, Init, ProcessItem, Finalize> Accumulator<Item, Output>
-    for ShortCircuitingAccumulator<Init, ProcessItem, Finalize>
+    for ShortCircuitingAccumulator<'_, Init, ProcessItem, Finalize>
 where
     Init: Fn() -> Accum,
     ProcessItem: Fn(Accum, Item) -> R,
@@ -226,13 +253,23 @@ where
     }
 }
 
-pub struct AdaptorAccumulator<Inner, TransformItem> {
+pub struct AdaptorAccumulator<'a, Inner, TransformItem> {
     pub(super) inner: Inner,
-    pub(super) transform_item: TransformItem,
+    pub(super) transform_item: &'a TransformItem,
+}
+
+// TODO: Derive this implementation once perfect derive is available: https://github.com/rust-lang/rust/issues/26925.
+impl<Inner: Clone, TransformItem> Clone for AdaptorAccumulator<'_, Inner, TransformItem> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            transform_item: self.transform_item,
+        }
+    }
 }
 
 impl<InnerItem, Item, Output, Inner, TransformItem> Accumulator<InnerItem, Output>
-    for AdaptorAccumulator<Inner, TransformItem>
+    for AdaptorAccumulator<'_, Inner, TransformItem>
 where
     Inner: Accumulator<Item, Output>,
     TransformItem: Fn(InnerItem) -> Option<Item>,
@@ -249,6 +286,15 @@ pub struct IterCollector<T> {
     pub(super) _phantom: PhantomData<fn() -> T>,
 }
 
+// TODO: Derive this implementation once perfect derive is available: https://github.com/rust-lang/rust/issues/26925.
+impl<T> Clone for IterCollector<T> {
+    fn clone(&self) -> Self {
+        Self {
+            _phantom: PhantomData,
+        }
+    }
+}
+
 impl<Item, T> Accumulator<Item, T> for IterCollector<T>
 where
     T: FromIterator<Item>,
@@ -259,13 +305,23 @@ where
     }
 }
 
-pub struct TryIterCollector<T> {
-    pub(super) fuse: Fuse,
+pub struct TryIterCollector<'a, T> {
+    pub(super) fuse: &'a Fuse,
     pub(super) _phantom: PhantomData<fn() -> T>,
 }
 
+// TODO: Derive this implementation once perfect derive is available: https://github.com/rust-lang/rust/issues/26925.
+impl<T> Clone for TryIterCollector<'_, T> {
+    fn clone(&self) -> Self {
+        Self {
+            fuse: self.fuse,
+            _phantom: PhantomData,
+        }
+    }
+}
+
 #[cfg(not(feature = "nightly"))]
-impl<Item, C, E> Accumulator<Result<Item, E>, Result<C, E>> for TryIterCollector<C>
+impl<Item, C, E> Accumulator<Result<Item, E>, Result<C, E>> for TryIterCollector<'_, C>
 where
     C: FromIterator<Item>,
 {
@@ -291,7 +347,8 @@ where
 }
 
 #[cfg(feature = "nightly")]
-impl<Item, C> Accumulator<Item, <Item::Residual as Residual<C>>::TryType> for TryIterCollector<C>
+impl<Item, C> Accumulator<Item, <Item::Residual as Residual<C>>::TryType>
+    for TryIterCollector<'_, C>
 where
     Item: Try,
     Item::Residual: Residual<C>,
@@ -324,6 +381,7 @@ where
 // Product/Sum adaptor implementations on top of the (ExactSize)Accumulator
 // traits.
 
+#[derive(Clone)]
 pub struct SumAccumulator;
 
 impl<Item, Output> Accumulator<Item, Output> for SumAccumulator
@@ -346,6 +404,7 @@ where
     }
 }
 
+#[derive(Clone)]
 pub struct ProductAccumulator;
 
 impl<Item, Output> Accumulator<Item, Output> for ProductAccumulator
@@ -716,23 +775,24 @@ impl<Inner: ParallelIterator> ParallelIterator for PanicFuse<Inner> {
 
     fn iter_pipeline<Output, Accum: Send>(
         self,
-        accum: impl Accumulator<Self::Item, Accum> + Sync,
+        accum: impl Accumulator<Self::Item, Accum> + Clone + Send,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
     ) -> Output {
         let accumulator = PanicFuseAccumulator {
             inner: accum,
-            fuse: Fuse::new(),
+            fuse: &Fuse::new(),
         };
         self.inner.iter_pipeline(accumulator, reduce)
     }
 }
 
-struct PanicFuseAccumulator<Inner> {
+#[derive(Clone)]
+struct PanicFuseAccumulator<'a, Inner> {
     inner: Inner,
-    fuse: Fuse,
+    fuse: &'a Fuse,
 }
 
-impl<Item, Output, Inner> Accumulator<Item, Output> for PanicFuseAccumulator<Inner>
+impl<Item, Output, Inner> Accumulator<Item, Output> for PanicFuseAccumulator<'_, Inner>
 where
     Inner: Accumulator<Item, Output>,
 {
