@@ -470,6 +470,170 @@ where
     }
 }
 
+/// This struct is created by the [`cycle()`](super::ParallelSourceExt::cycle)
+/// method on [`ParallelSourceExt`](super::ParallelSourceExt) and
+/// [`cycle()`](super::ExactParallelSourceExt::cycle) on
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt).
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the
+/// [`ParallelSource`]/[`ParallelSourceExt`](super::ParallelSourceExt) or
+/// [`ExactParallelSource`]/
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt) traits, but it is
+/// nonetheless public because of the `must_use` annotation.
+#[must_use = "iterator adaptors are lazy"]
+pub struct Cycle<Inner> {
+    pub(super) inner: Inner,
+    pub(super) count: usize,
+}
+
+// SAFETY: If the inner source is rewindable, then by induction:
+// - it is also safe to fetch each repeated item an unlimited number of times,
+// - the resulting source doesn't need cleanup.
+unsafe impl<Inner> RewindableSource for Cycle<Inner> where Inner: RewindableSource {}
+
+impl<Inner> ParallelSource for Cycle<Inner>
+where
+    Inner: ParallelSource + RewindableSource,
+{
+    type Item = Inner::Item;
+
+    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
+        let inner = self.inner.descriptor();
+        let inner_len = inner.len();
+        let len = inner_len.checked_mul(self.count).unwrap_or_else(|| {
+            panic!(
+                "called cycle() on a source whose repetition would produce more than usize::MAX items ({})",
+                usize::MAX
+            );
+        });
+        CycleSourceDescriptor {
+            inner,
+            len,
+            inner_len: Divider::new(inner_len).unwrap_or_default(),
+        }
+    }
+}
+
+impl<Inner> ExactParallelSource for Cycle<Inner>
+where
+    Inner: ExactParallelSource + RewindableSource,
+{
+    type Item = Inner::Item;
+
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
+        let inner = self.inner.exact_descriptor();
+        let inner_len = inner.len();
+        let len = inner_len.checked_mul(self.count).unwrap_or_else(|| {
+            panic!(
+                "called cycle() on a source whose repetition would produce more than usize::MAX items ({})",
+                usize::MAX
+            );
+        });
+        CycleSourceDescriptor {
+            inner,
+            len,
+            inner_len: Divider::new(inner_len).unwrap_or_default(),
+        }
+    }
+}
+
+struct CycleSourceDescriptor<Inner> {
+    inner: Inner,
+    len: usize,
+    inner_len: Divider<usize>,
+}
+
+impl<Inner: SourceCleanup> SourceCleanup for CycleSourceDescriptor<Inner> {
+    const NEEDS_CLEANUP: bool = {
+        assert!(
+            !Inner::NEEDS_CLEANUP,
+            "called cycle() on a source that needs cleanup"
+        );
+        false
+    };
+
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    unsafe fn cleanup_item_range(&self, _range: std::ops::Range<usize>) {
+        // Nothing to cleanup
+    }
+}
+
+impl<Inner> SourceDescriptor for CycleSourceDescriptor<Inner>
+where
+    Inner: SourceDescriptor,
+{
+    type Item = Inner::Item;
+    type ThreadContext = Inner::ThreadContext;
+
+    fn init(&self) -> Self::ThreadContext {
+        const {
+            assert!(
+                std::mem::size_of::<Self::ThreadContext>() == 0,
+                "called cycle() on a source which has a non-trivial thread context"
+            );
+        }
+        self.inner.init()
+    }
+
+    unsafe fn fetch_item(
+        &self,
+        context: &mut Self::ThreadContext,
+        index: usize,
+    ) -> Option<Self::Item> {
+        debug_assert!(index < self.len);
+        // TODO: Make indexing stateful to avoid computing a modulo every time?
+        // SAFETY:
+        // - Indices passed to the inner descriptor are in the `0..inner_len` range,
+        //   thanks to the modulo operation here. Note that there is no division by zero
+        //   because no item if fetched when the inner (and therefore outer) length is
+        //   zero.
+        // - Indices can repeat, but that's OK because the inner parallel source
+        //   implements `RewindableSource`, as ensured by the implementations of
+        //   `Cycle`.
+        unsafe { self.inner.fetch_item(context, index % self.inner_len) }
+    }
+}
+
+impl<Inner> ExactSourceDescriptor for CycleSourceDescriptor<Inner>
+where
+    Inner: ExactSourceDescriptor,
+{
+    type Item = Inner::Item;
+    type ThreadContext = Inner::ThreadContext;
+
+    fn init(&self) -> Self::ThreadContext {
+        const {
+            assert!(
+                std::mem::size_of::<Self::ThreadContext>() == 0,
+                "called cycle() on a source which has a non-trivial thread context"
+            );
+        }
+        self.inner.init()
+    }
+
+    unsafe fn exact_fetch_item(
+        &self,
+        context: &mut Self::ThreadContext,
+        index: usize,
+    ) -> Self::Item {
+        debug_assert!(index < self.len);
+        // TODO: Make indexing stateful to avoid computing a modulo every time?
+        // SAFETY:
+        // - Indices passed to the inner descriptor are in the `0..inner_len` range,
+        //   thanks to the modulo operation here. Note that there is no division by zero
+        //   because no item if fetched when the inner (and therefore outer) length is
+        //   zero.
+        // - Indices can repeat, but that's OK because the inner parallel source
+        //   implements `RewindableSource`, as ensured by the implementations of
+        //   `Cycle`.
+        unsafe { self.inner.exact_fetch_item(context, index % self.inner_len) }
+    }
+}
+
 /// This struct is created by the
 /// [`downgrade()`](super::ExactParallelSourceExt::downgrade) method on
 /// [`ExactParallelSourceExt`](super::ExactParallelSourceExt).
@@ -1160,170 +1324,6 @@ where
         // descriptor, therefore safety is preserved by induction.
         let item = unsafe { self.inner.exact_fetch_item(&mut context.0, index) };
         (self.f)(&mut context.1, item)
-    }
-}
-
-/// This struct is created by the [`repeat()`](super::ParallelSourceExt::repeat)
-/// method on [`ParallelSourceExt`](super::ParallelSourceExt) and
-/// [`repeat()`](super::ExactParallelSourceExt::repeat) on
-/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt).
-///
-/// You most likely won't need to interact with this struct directly, as it
-/// implements the
-/// [`ParallelSource`]/[`ParallelSourceExt`](super::ParallelSourceExt) or
-/// [`ExactParallelSource`]/
-/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt) traits, but it is
-/// nonetheless public because of the `must_use` annotation.
-#[must_use = "iterator adaptors are lazy"]
-pub struct Repeat<Inner> {
-    pub(super) inner: Inner,
-    pub(super) count: usize,
-}
-
-// SAFETY: If the inner source is rewindable, then by induction:
-// - it is also safe to fetch each repeated item an unlimited number of times,
-// - the resulting source doesn't need cleanup.
-unsafe impl<Inner> RewindableSource for Repeat<Inner> where Inner: RewindableSource {}
-
-impl<Inner> ParallelSource for Repeat<Inner>
-where
-    Inner: ParallelSource + RewindableSource,
-{
-    type Item = Inner::Item;
-
-    fn descriptor(self) -> impl SourceDescriptor<Item = Self::Item> + Sync {
-        let inner = self.inner.descriptor();
-        let inner_len = inner.len();
-        let len = inner_len.checked_mul(self.count).unwrap_or_else(|| {
-            panic!(
-                "called repeat() on a source whose repetition would produce more than usize::MAX items ({})",
-                usize::MAX
-            );
-        });
-        RepeatSourceDescriptor {
-            inner,
-            len,
-            inner_len: Divider::new(inner_len).unwrap_or_default(),
-        }
-    }
-}
-
-impl<Inner> ExactParallelSource for Repeat<Inner>
-where
-    Inner: ExactParallelSource + RewindableSource,
-{
-    type Item = Inner::Item;
-
-    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = Self::Item> + Sync {
-        let inner = self.inner.exact_descriptor();
-        let inner_len = inner.len();
-        let len = inner_len.checked_mul(self.count).unwrap_or_else(|| {
-            panic!(
-                "called repeat() on a source whose repetition would produce more than usize::MAX items ({})",
-                usize::MAX
-            );
-        });
-        RepeatSourceDescriptor {
-            inner,
-            len,
-            inner_len: Divider::new(inner_len).unwrap_or_default(),
-        }
-    }
-}
-
-struct RepeatSourceDescriptor<Inner> {
-    inner: Inner,
-    len: usize,
-    inner_len: Divider<usize>,
-}
-
-impl<Inner: SourceCleanup> SourceCleanup for RepeatSourceDescriptor<Inner> {
-    const NEEDS_CLEANUP: bool = {
-        assert!(
-            !Inner::NEEDS_CLEANUP,
-            "called repeat() on a source that needs cleanup"
-        );
-        false
-    };
-
-    fn len(&self) -> usize {
-        self.len
-    }
-
-    unsafe fn cleanup_item_range(&self, _range: std::ops::Range<usize>) {
-        // Nothing to cleanup
-    }
-}
-
-impl<Inner> SourceDescriptor for RepeatSourceDescriptor<Inner>
-where
-    Inner: SourceDescriptor,
-{
-    type Item = Inner::Item;
-    type ThreadContext = Inner::ThreadContext;
-
-    fn init(&self) -> Self::ThreadContext {
-        const {
-            assert!(
-                std::mem::size_of::<Self::ThreadContext>() == 0,
-                "called repeat() on a source which has a non-trivial thread context"
-            );
-        }
-        self.inner.init()
-    }
-
-    unsafe fn fetch_item(
-        &self,
-        context: &mut Self::ThreadContext,
-        index: usize,
-    ) -> Option<Self::Item> {
-        debug_assert!(index < self.len);
-        // TODO: Make indexing stateful to avoid computing a modulo every time?
-        // SAFETY:
-        // - Indices passed to the inner descriptor are in the `0..inner_len` range,
-        //   thanks to the modulo operation here. Note that there is no division by zero
-        //   because no item if fetched when the inner (and therefore outer) length is
-        //   zero.
-        // - Indices can repeat, but that's OK because the inner parallel source
-        //   implements `RewindableSource`, as ensured by the implementations of
-        //   `Repeat`.
-        unsafe { self.inner.fetch_item(context, index % self.inner_len) }
-    }
-}
-
-impl<Inner> ExactSourceDescriptor for RepeatSourceDescriptor<Inner>
-where
-    Inner: ExactSourceDescriptor,
-{
-    type Item = Inner::Item;
-    type ThreadContext = Inner::ThreadContext;
-
-    fn init(&self) -> Self::ThreadContext {
-        const {
-            assert!(
-                std::mem::size_of::<Self::ThreadContext>() == 0,
-                "called repeat() on a source which has a non-trivial thread context"
-            );
-        }
-        self.inner.init()
-    }
-
-    unsafe fn exact_fetch_item(
-        &self,
-        context: &mut Self::ThreadContext,
-        index: usize,
-    ) -> Self::Item {
-        debug_assert!(index < self.len);
-        // TODO: Make indexing stateful to avoid computing a modulo every time?
-        // SAFETY:
-        // - Indices passed to the inner descriptor are in the `0..inner_len` range,
-        //   thanks to the modulo operation here. Note that there is no division by zero
-        //   because no item if fetched when the inner (and therefore outer) length is
-        //   zero.
-        // - Indices can repeat, but that's OK because the inner parallel source
-        //   implements `RewindableSource`, as ensured by the implementations of
-        //   `Repeat`.
-        unsafe { self.inner.exact_fetch_item(context, index % self.inner_len) }
     }
 }
 

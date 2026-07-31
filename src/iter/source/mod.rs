@@ -24,8 +24,8 @@ use super::{
     ParallelIterator, ParallelIteratorExt,
 };
 pub use detail::{
-    ArrayWindows, Chain, Cloned, Copied, Downgrade, Enumerate, Filter, FilterExact, FilterMap,
-    FilterMapExact, Inspect, MapInit, MapSource, Repeat, Rev, Skip, SkipExact, StepBy, Take,
+    ArrayWindows, Chain, Cloned, Copied, Cycle, Downgrade, Enumerate, Filter, FilterExact,
+    FilterMap, FilterMapExact, Inspect, MapInit, MapSource, Rev, Skip, SkipExact, StepBy, Take,
     TakeExact, Update,
 };
 use detail::{
@@ -612,6 +612,40 @@ pub trait ParallelSourceExt: ParallelSource {
         Copied { inner: self }
     }
 
+    /// Returns a parallel source that produces items from this source the given
+    /// number of times.
+    ///
+    /// In terms of logical order, it produces all the items once, then produces
+    /// them all again from the beginning, and so on the requested number of
+    /// times.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let repeated_sum = input
+    ///     .par_iter()
+    ///     .downgrade() // ExactParallelSource -> ParallelSource
+    ///     .cycle(7)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// assert_eq!(repeated_sum, 7 * 5 * 11);
+    /// ```
+    fn cycle(self, n: usize) -> Cycle<Self>
+    where
+        Self: RewindableSource,
+    {
+        Cycle {
+            inner: self,
+            count: n,
+        }
+    }
+
     /// Returns a parallel source that produces only the items for which the
     /// predicate `f` returns [`true`].
     ///
@@ -821,40 +855,6 @@ pub trait ParallelSourceExt: ParallelSource {
             inner: self,
             init,
             f,
-        }
-    }
-
-    /// Returns a parallel source that produces items from this source the given
-    /// number of times.
-    ///
-    /// In terms of logical order, it produces all the items once, then produces
-    /// them all again from the beginning, and so on the requested number of
-    /// times.
-    ///
-    /// ```
-    /// # use paralight::prelude::*;
-    /// # let mut thread_pool = ThreadPoolBuilder {
-    /// #     num_threads: ThreadCount::AvailableParallelism,
-    /// #     range_strategy: RangeStrategy::WorkStealing,
-    /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # }
-    /// # .build();
-    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    /// let repeated_sum = input
-    ///     .par_iter()
-    ///     .downgrade() // ExactParallelSource -> ParallelSource
-    ///     .repeat(7)
-    ///     .with_thread_pool(&mut thread_pool)
-    ///     .sum::<i32>();
-    /// assert_eq!(repeated_sum, 7 * 5 * 11);
-    /// ```
-    fn repeat(self, n: usize) -> Repeat<Self>
-    where
-        Self: RewindableSource,
-    {
-        Repeat {
-            inner: self,
-            count: n,
         }
     }
 
@@ -1187,6 +1187,57 @@ pub trait ExactParallelSourceExt: ExactParallelSource {
         Copied { inner: self }
     }
 
+    /// Returns a parallel source that produces items from this source the given
+    /// number of times.
+    ///
+    /// In terms of logical order, it produces all the items once, then produces
+    /// them all again from the beginning, and so on the requested number of
+    /// times.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let repeated_sum = input
+    ///     .par_iter()
+    ///     .cycle(7)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// assert_eq!(repeated_sum, 7 * 5 * 11);
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4];
+    /// let collection: Vec<_> = input
+    ///     .par_iter()
+    ///     .copied()
+    ///     .cycle(2)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .collect();
+    /// assert_eq!(collection, [1, 2, 3, 4, 1, 2, 3, 4]);
+    /// ```
+    fn cycle(self, n: usize) -> Cycle<Self>
+    where
+        Self: RewindableSource,
+    {
+        Cycle {
+            inner: self,
+            count: n,
+        }
+    }
+
     /// Transforms this [`ExactParallelSource`] into an equivalent
     /// [`ParallelSource`].
     ///
@@ -1462,57 +1513,6 @@ pub trait ExactParallelSourceExt: ExactParallelSource {
             inner: self,
             init,
             f,
-        }
-    }
-
-    /// Returns a parallel source that produces items from this source the given
-    /// number of times.
-    ///
-    /// In terms of logical order, it produces all the items once, then produces
-    /// them all again from the beginning, and so on the requested number of
-    /// times.
-    ///
-    /// ```
-    /// # use paralight::prelude::*;
-    /// # let mut thread_pool = ThreadPoolBuilder {
-    /// #     num_threads: ThreadCount::AvailableParallelism,
-    /// #     range_strategy: RangeStrategy::WorkStealing,
-    /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # }
-    /// # .build();
-    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    /// let repeated_sum = input
-    ///     .par_iter()
-    ///     .repeat(7)
-    ///     .with_thread_pool(&mut thread_pool)
-    ///     .sum::<i32>();
-    /// assert_eq!(repeated_sum, 7 * 5 * 11);
-    /// ```
-    ///
-    /// ```
-    /// # use paralight::prelude::*;
-    /// # let mut thread_pool = ThreadPoolBuilder {
-    /// #     num_threads: ThreadCount::AvailableParallelism,
-    /// #     range_strategy: RangeStrategy::WorkStealing,
-    /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # }
-    /// # .build();
-    /// let input = [1, 2, 3, 4];
-    /// let collection: Vec<_> = input
-    ///     .par_iter()
-    ///     .copied()
-    ///     .repeat(2)
-    ///     .with_thread_pool(&mut thread_pool)
-    ///     .collect();
-    /// assert_eq!(collection, [1, 2, 3, 4, 1, 2, 3, 4]);
-    /// ```
-    fn repeat(self, n: usize) -> Repeat<Self>
-    where
-        Self: RewindableSource,
-    {
-        Repeat {
-            inner: self,
-            count: n,
         }
     }
 

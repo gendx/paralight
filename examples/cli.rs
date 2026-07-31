@@ -288,7 +288,7 @@ fn dispatch_thread_pool(cli: Cli, thread_pool: impl paralight::iter::GenericThre
             let input = (0..cli.input_size).collect::<Vec<u64>>();
             let sum = black_box(input)
                 .par_iter()
-                .repeat(repetitions)
+                .cycle(repetitions)
                 .with_thread_pool(thread_pool)
                 .sum::<u64>();
             println!("sum = {sum}");
@@ -314,7 +314,7 @@ fn dispatch_thread_pool(cli: Cli, thread_pool: impl paralight::iter::GenericThre
             let input = (0..cli.input_size).map(Box::new).collect::<Vec<Box<u64>>>();
             let sum = black_box(input)
                 .par_iter()
-                .repeat(repetitions)
+                .cycle(repetitions)
                 .with_thread_pool(thread_pool)
                 .map(|x| **x)
                 .sum::<u64>();
@@ -415,7 +415,7 @@ fn dispatch_thread_pool(cli: Cli, thread_pool: impl paralight::iter::GenericThre
             let input_slice = input.as_slice();
             let found = black_box(input_slice)
                 .par_iter()
-                .repeat(repetitions)
+                .cycle(repetitions)
                 .with_thread_pool(thread_pool)
                 .find_any(|x| **x);
             println!("found = {found:?}");
@@ -442,7 +442,7 @@ fn dispatch_thread_pool(cli: Cli, thread_pool: impl paralight::iter::GenericThre
             let input_slice = input.as_slice();
             let found = black_box(input_slice)
                 .par_iter()
-                .repeat(repetitions)
+                .cycle(repetitions)
                 .with_thread_pool(thread_pool)
                 .find_any(|x| ***x);
             println!("found = {found:?}");
@@ -469,7 +469,7 @@ fn dispatch_thread_pool(cli: Cli, thread_pool: impl paralight::iter::GenericThre
             let input_slice = input.as_slice();
             let found = black_box(input_slice)
                 .par_iter()
-                .repeat(repetitions)
+                .cycle(repetitions)
                 .with_thread_pool(thread_pool)
                 .find_first(|x| **x);
             println!("found = {found:?}");
@@ -496,7 +496,7 @@ fn dispatch_thread_pool(cli: Cli, thread_pool: impl paralight::iter::GenericThre
             let input_slice = input.as_slice();
             let found = black_box(input_slice)
                 .par_iter()
-                .repeat(repetitions)
+                .cycle(repetitions)
                 .with_thread_pool(thread_pool)
                 .find_first(|x| ***x);
             println!("found = {found:?}");
@@ -733,7 +733,7 @@ struct Cli {
     #[arg(long, default_value_t = 1)]
     density: usize,
 
-    /// Repeat the iterator the given number of times.
+    /// Cycle through the iterator the given number of times.
     #[arg(long)]
     repeat: Option<usize>,
 }
