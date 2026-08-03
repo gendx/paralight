@@ -10,6 +10,9 @@
 
 #[cfg(feature = "nightly")]
 pub mod array;
+#[cfg(all(test, any(feature = "rayon", feature = "default-thread-pool")))]
+pub(crate) mod titanic;
+pub mod unzip;
 pub mod vec;
 
 /// A sink to collect items in parallel.

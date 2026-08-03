@@ -214,6 +214,8 @@ macro_rules! or_bools {
     }
 }
 
+pub(crate) use or_bools;
+
 struct ZipEqSourceDescriptor<T> {
     descriptors: T,
     len: usize,

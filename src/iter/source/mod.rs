@@ -21,7 +21,7 @@ pub mod zip;
 
 use super::{
     Accumulator, ExactParallelSink, ExactSizeAccumulator, FromExactParallelSink, GenericThreadPool,
-    ParallelIterator, ParallelIteratorExt,
+    ParallelIterator, ParallelIteratorExt, Unzip,
 };
 pub use detail::{
     ArrayWindows, Chain, Cloned, Copied, Cycle, Downgrade, Enumerate, Filter, FilterExact,
@@ -2104,7 +2104,8 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
     /// Collects this parallel iterator into the given collection (a type that
     /// implements [`FromExactParallelSink`]).
     ///
-    /// See also [`try_collect()`](Self::try_collect).
+    /// See also [`try_collect()`](Self::try_collect) and
+    /// [`unzip()`](Self::unzip).
     ///
     /// ```
     /// # use paralight::prelude::*;
@@ -3007,6 +3008,53 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
         // passed exactly once.
         let collection = unsafe { C::finalize(sink) };
         Try::from_output(collection)
+    }
+
+    /// Unzips the items of this parallel iterator to collect them into a tuple
+    /// or array of collections.
+    ///
+    /// See also [`collect()`](Self::collect) for more information about what
+    /// target collections are accepted.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let (doubles, triples): (Vec<_>, Vec<_>) = (1..=10)
+    ///     .into_par_iter()
+    ///     .map(|i| (2 * i, 3 * i))
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .unzip();
+    /// assert_eq!(doubles, vec![2, 4, 6, 8, 10, 12, 14, 16, 18, 20]);
+    /// assert_eq!(triples, vec![3, 6, 9, 12, 15, 18, 21, 24, 27, 30]);
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let [doubles, triples]: [Vec<_>; 2] = (1..=10)
+    ///     .into_par_iter()
+    ///     .map(|i| [2 * i, 3 * i])
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .unzip();
+    /// assert_eq!(doubles, vec![2, 4, 6, 8, 10, 12, 14, 16, 18, 20]);
+    /// assert_eq!(triples, vec![3, 6, 9, 12, 15, 18, 21, 24, 27, 30]);
+    /// ```
+    pub fn unzip<C>(self) -> C
+    where
+        Unzip<C>: FromExactParallelSink<Item = S::Item>,
+    {
+        let Unzip(c) = self.collect();
+        c
     }
 }
 

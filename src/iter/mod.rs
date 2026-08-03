@@ -20,6 +20,9 @@ use detail::{
 pub use detail::{Map, MinMaxResult, PanicFuse};
 #[cfg(feature = "nightly")]
 pub use sink::array::ArrayParallelSink;
+#[cfg(all(test, any(feature = "rayon", feature = "default-thread-pool")))]
+pub(crate) use sink::titanic::Titanic;
+pub use sink::unzip::{Unzip, UnzipSink};
 pub use sink::vec::VecParallelSink;
 pub use sink::{ExactParallelSink, FromExactParallelSink};
 #[cfg(feature = "nightly")]

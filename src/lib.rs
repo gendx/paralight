@@ -60,7 +60,7 @@ pub mod prelude {
 
 #[cfg(all(test, any(feature = "rayon", feature = "default-thread-pool")))]
 mod test {
-    use crate::iter::MyHashSet;
+    use crate::iter::{MyHashSet, Titanic};
     use crate::prelude::*;
     use rand::RngExt;
     use std::cell::Cell;
@@ -291,6 +291,7 @@ mod test {
                 test_sink_array_one_panic => fail("worker thread(s) panicked!", "arithmetic panic"),
                 test_sink_boxed_slice,
                 test_sink_boxed_slice_panic => fail("worker thread(s) panicked!", "arithmetic panic"),
+                test_sink_titanic_boxed => fail("worker thread(s) panicked!", "Titanic::push_item"),
                 test_sink_vec,
                 test_sink_vec_boxed,
                 test_sink_vec_panic => fail("worker thread(s) panicked!", "arithmetic panic"),
@@ -364,6 +365,13 @@ mod test {
                 test_adaptor_try_reduce,
                 #[cfg(feature = "nightly")]
                 test_adaptor_try_reduce_option,
+                test_adaptor_unzip_array,
+                #[cfg(feature = "nightly")]
+                test_adaptor_unzip_tuple_array,
+                test_adaptor_unzip_tuple_vec,
+                #[cfg(feature = "nightly")]
+                test_adaptor_unzip_tuple_array_titanic => fail("worker thread(s) panicked!", "Titanic::push_item"),
+                test_adaptor_unzip_tuple_vec_titanic => fail("worker thread(s) panicked!", "Titanic::push_item"),
             );
         };
     }
@@ -3126,6 +3134,17 @@ mod test {
             .collect::<Box<[Box<u64>]>>();
     }
 
+    fn test_sink_titanic_boxed<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).map(Box::new).collect::<Vec<Box<u64>>>();
+        input
+            .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .collect::<Titanic<Box<u64>>>();
+    }
+
     fn test_sink_vec<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
@@ -5221,6 +5240,103 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .try_reduce(|| 1, |x, y| x.checked_mul(y));
         assert_eq!(product, None);
+    }
+
+    fn test_adaptor_unzip_array<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let [a, b, c]: [Vec<Box<u64>>; 3] = (0..=INPUT_LEN as usize)
+            .into_par_iter()
+            .map(|x| {
+                let x = x as u64;
+                [Box::new(x), Box::new(x * x), Box::new(2 * x)]
+            })
+            .with_thread_pool(&mut thread_pool)
+            .unzip();
+
+        for i in 0..=INPUT_LEN {
+            assert_eq!(*a[i as usize], i);
+            assert_eq!(*b[i as usize], i * i);
+            assert_eq!(*c[i as usize], 2 * i);
+        }
+    }
+
+    #[cfg(feature = "nightly")]
+    fn test_adaptor_unzip_tuple_array<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let (a, b): (
+            [Box<u64>; ARRAY_LEN as usize],
+            [Box<u64>; ARRAY_LEN as usize],
+        ) = (0..ARRAY_LEN as usize)
+            .into_par_iter()
+            .map(|x| {
+                let x = x as u64;
+                (Box::new(x), Box::new(x * x))
+            })
+            .with_thread_pool(&mut thread_pool)
+            .unzip();
+
+        for i in 0..ARRAY_LEN {
+            assert_eq!(*a[i as usize], i);
+            assert_eq!(*b[i as usize], i * i);
+        }
+    }
+
+    fn test_adaptor_unzip_tuple_vec<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let (a, b): (Vec<Box<u64>>, Vec<Box<u64>>) = (0..=INPUT_LEN as usize)
+            .into_par_iter()
+            .map(|x| {
+                let x = x as u64;
+                (Box::new(x), Box::new(x * x))
+            })
+            .with_thread_pool(&mut thread_pool)
+            .unzip();
+
+        for i in 0..=INPUT_LEN {
+            assert_eq!(*a[i as usize], i);
+            assert_eq!(*b[i as usize], i * i);
+        }
+    }
+
+    #[cfg(feature = "nightly")]
+    #[expect(clippy::type_complexity)]
+    fn test_adaptor_unzip_tuple_array_titanic<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let _: (
+            [Box<u64>; ARRAY_LEN as usize],
+            Titanic<Box<u64>>,
+            [Box<u64>; ARRAY_LEN as usize],
+        ) = (0..ARRAY_LEN as usize)
+            .into_par_iter()
+            .map(|x| {
+                let x = x as u64;
+                (Box::new(x), Box::new(x * x), Box::new(2 * x))
+            })
+            .with_thread_pool(&mut thread_pool)
+            .unzip();
+    }
+
+    #[expect(clippy::type_complexity)]
+    fn test_adaptor_unzip_tuple_vec_titanic<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let _: (Vec<Box<u64>>, Titanic<Box<u64>>, Vec<Box<u64>>) = (0..=INPUT_LEN as usize)
+            .into_par_iter()
+            .map(|x| {
+                let x = x as u64;
+                (Box::new(x), Box::new(x * x), Box::new(2 * x))
+            })
+            .with_thread_pool(&mut thread_pool)
+            .unzip();
     }
 
     /* Helper functions */
