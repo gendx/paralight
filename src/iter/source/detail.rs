@@ -9,8 +9,8 @@
 //! Implementation details of source adaptors.
 
 use super::{
-    ExactParallelSource, ExactSourceDescriptor, ParallelSource, RewindableSource, SourceCleanup,
-    SourceDescriptor,
+    ExactParallelSource, ExactSourceDescriptor, ParallelSource, RewindableSource,
+    SimpleExactSourceDescriptor, SourceCleanup, SourceDescriptor,
 };
 use crate::iter::{Accumulator, ExactParallelSink, ExactSizeAccumulator};
 use crate::util::Divider;
@@ -1018,6 +1018,131 @@ where
     }
 }
 
+/// This struct is created by the [`generate()`](super::generate) function.
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ExactParallelSource`] and
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt) traits, but it is
+/// nonetheless public because of the `must_use` annotation.
+#[must_use = "iterator adaptors are lazy"]
+pub struct Generate<F> {
+    pub(super) f: F,
+    pub(super) count: usize,
+}
+
+impl<T, F> ExactParallelSource for Generate<F>
+where
+    F: Fn(usize) -> T + Sync,
+{
+    type Item = T;
+
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = T> + Sync {
+        GenerateSourceDescriptor {
+            f: self.f,
+            count: self.count,
+        }
+    }
+}
+
+struct GenerateSourceDescriptor<F> {
+    f: F,
+    count: usize,
+}
+
+impl<F> SourceCleanup for GenerateSourceDescriptor<F> {
+    const NEEDS_CLEANUP: bool = false;
+
+    fn len(&self) -> usize {
+        self.count
+    }
+
+    unsafe fn cleanup_item_range(&self, _range: std::ops::Range<usize>) {
+        // Nothing to do
+    }
+}
+
+impl<T, F> SimpleExactSourceDescriptor for GenerateSourceDescriptor<F>
+where
+    F: Fn(usize) -> T + Sync,
+{
+    type Item = T;
+
+    unsafe fn simple_exact_fetch_item(&self, index: usize) -> Self::Item {
+        debug_assert!(index < self.count);
+        (self.f)(index)
+    }
+}
+
+/// This struct is created by the [`generate_init()`](super::generate_init)
+/// function.
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ExactParallelSource`] and
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt) traits, but it is
+/// nonetheless public because of the `must_use` annotation.
+#[must_use = "iterator adaptors are lazy"]
+pub struct GenerateInit<Init, F> {
+    pub(super) init: Init,
+    pub(super) f: F,
+    pub(super) count: usize,
+}
+
+impl<I, Init, T, F> ExactParallelSource for GenerateInit<Init, F>
+where
+    Init: Fn() -> I + Sync,
+    F: Fn(&mut I, usize) -> T + Sync,
+{
+    type Item = T;
+
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = T> + Sync {
+        GenerateInitSourceDescriptor {
+            init: self.init,
+            f: self.f,
+            count: self.count,
+        }
+    }
+}
+
+struct GenerateInitSourceDescriptor<Init, F> {
+    init: Init,
+    f: F,
+    count: usize,
+}
+
+impl<Init, F> SourceCleanup for GenerateInitSourceDescriptor<Init, F> {
+    const NEEDS_CLEANUP: bool = false;
+
+    fn len(&self) -> usize {
+        self.count
+    }
+
+    unsafe fn cleanup_item_range(&self, _range: std::ops::Range<usize>) {
+        // Nothing to do
+    }
+}
+
+impl<I, Init, T, F> ExactSourceDescriptor for GenerateInitSourceDescriptor<Init, F>
+where
+    Init: Fn() -> I + Sync,
+    F: Fn(&mut I, usize) -> T + Sync,
+{
+    type Item = T;
+    type ThreadContext = I;
+
+    fn init(&self) -> Self::ThreadContext {
+        (self.init)()
+    }
+
+    unsafe fn exact_fetch_item(
+        &self,
+        context: &mut Self::ThreadContext,
+        index: usize,
+    ) -> Self::Item {
+        debug_assert!(index < self.count);
+        (self.f)(context, index)
+    }
+}
+
 /// This struct is created by the
 /// [`inspect()`](super::ParallelSourceExt::inspect) method on
 /// [`ParallelSourceExt`](super::ParallelSourceExt) and
@@ -1324,6 +1449,61 @@ where
         // descriptor, therefore safety is preserved by induction.
         let item = unsafe { self.inner.exact_fetch_item(&mut context.0, index) };
         (self.f)(&mut context.1, item)
+    }
+}
+
+/// This struct is created by the [`repeat()`](super::repeat) function.
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// implements the [`ExactParallelSource`] and
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt) traits, but it is
+/// nonetheless public because of the `must_use` annotation.
+#[must_use = "iterator adaptors are lazy"]
+pub struct Repeat<T> {
+    pub(super) value: T,
+    pub(super) count: usize,
+}
+
+// SAFETY:
+// - it is safe to fetch a reference to the underlying item an unlimited number
+//   of times and concurrently, and then clone it,
+// - the source doesn't need cleanup.
+unsafe impl<T> RewindableSource for Repeat<T> {}
+
+impl<T: Clone + Sync> ExactParallelSource for Repeat<T> {
+    type Item = T;
+
+    fn exact_descriptor(self) -> impl ExactSourceDescriptor<Item = T> + Sync {
+        RepeatSourceDescriptor {
+            value: self.value,
+            count: self.count,
+        }
+    }
+}
+
+struct RepeatSourceDescriptor<T> {
+    value: T,
+    count: usize,
+}
+
+impl<T> SourceCleanup for RepeatSourceDescriptor<T> {
+    const NEEDS_CLEANUP: bool = false;
+
+    fn len(&self) -> usize {
+        self.count
+    }
+
+    unsafe fn cleanup_item_range(&self, _range: std::ops::Range<usize>) {
+        // Nothing to do
+    }
+}
+
+impl<T: Clone + Sync> SimpleExactSourceDescriptor for RepeatSourceDescriptor<T> {
+    type Item = T;
+
+    unsafe fn simple_exact_fetch_item(&self, index: usize) -> Self::Item {
+        debug_assert!(index < self.count);
+        self.value.clone()
     }
 }
 

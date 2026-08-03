@@ -25,8 +25,8 @@ use super::{
 };
 pub use detail::{
     ArrayWindows, Chain, Cloned, Copied, Cycle, Downgrade, Enumerate, Filter, FilterExact,
-    FilterMap, FilterMapExact, Inspect, MapInit, MapSource, Rev, Skip, SkipExact, StepBy, Take,
-    TakeExact, Update,
+    FilterMap, FilterMapExact, Generate, GenerateInit, Inspect, MapInit, MapSource, Repeat, Rev,
+    Skip, SkipExact, StepBy, Take, TakeExact, Update,
 };
 use detail::{
     CollectAccumulator, CollectCleaner, ErrorAccumulator, NoopAccumulator, TryCollectAccumulator,
@@ -1859,6 +1859,143 @@ pub trait ExactParallelSourceExt: ExactParallelSource {
 }
 
 impl<T: ExactParallelSource> ExactParallelSourceExt for T {}
+
+/// Creates a parallel source that returns `n` items, each created by calling
+/// the given function.
+///
+/// See also [`generate_init()`] and [`repeat()`].
+///
+/// ```
+/// # use paralight::prelude::*;
+/// # use paralight::iter::generate;
+/// # let mut thread_pool = ThreadPoolBuilder {
+/// #     num_threads: ThreadCount::AvailableParallelism,
+/// #     range_strategy: RangeStrategy::WorkStealing,
+/// #     cpu_pinning: CpuPinningPolicy::No,
+/// # }
+/// # .build();
+/// let sum = generate(10, |i| i)
+///     .with_thread_pool(&mut thread_pool)
+///     .sum::<usize>();
+/// assert_eq!(sum, 45);
+/// ```
+///
+/// Generating a non-[`Send`] non-[`Sync`] type such as [`Rc`](std::rc::Rc) is
+/// fine.
+///
+/// ```
+/// # use paralight::prelude::*;
+/// # use paralight::iter::generate;
+/// # use std::rc::Rc;
+/// # let mut thread_pool = ThreadPoolBuilder {
+/// #     num_threads: ThreadCount::AvailableParallelism,
+/// #     range_strategy: RangeStrategy::WorkStealing,
+/// #     cpu_pinning: CpuPinningPolicy::No,
+/// # }
+/// # .build();
+/// let sum = generate(10, Rc::new)
+///     .with_thread_pool(&mut thread_pool)
+///     .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
+/// assert_eq!(sum, 45);
+/// ```
+pub fn generate<T, F>(n: usize, f: F) -> Generate<F>
+where
+    F: Fn(usize) -> T + Sync,
+{
+    Generate { f, count: n }
+}
+
+/// Creates a parallel source that returns `n` items, each created by calling
+/// the given function `f`, using the per-thread mutable value returned by
+/// `init`.
+///
+/// The `init` function will be called only once per worker thread. The
+/// companion value returned by `init` doesn't need to be [`Send`] nor
+/// [`Sync`].
+///
+/// See also [`generate()`] and [`repeat()`].
+///
+/// ```
+/// # use paralight::prelude::*;
+/// # use paralight::iter::generate_init;
+/// use rand::RngExt;
+///
+/// # let mut thread_pool = ThreadPoolBuilder {
+/// #     num_threads: ThreadCount::AvailableParallelism,
+/// #     range_strategy: RangeStrategy::WorkStealing,
+/// #     cpu_pinning: CpuPinningPolicy::No,
+/// # }
+/// # .build();
+/// let bits = generate_init(128, rand::rng, |rng, _| rng.random::<bool>())
+///     .with_thread_pool(&mut thread_pool)
+///     .collect::<Vec<_>>();
+///
+/// // The probability that these checks fail is negligible.
+/// assert!(bits.iter().any(|&x| x));
+/// assert!(bits.iter().any(|&x| !x));
+/// ```
+///
+/// Generating a non-[`Send`] non-[`Sync`] type such as [`Rc`](std::rc::Rc) is
+/// fine.
+///
+/// ```
+/// # use paralight::iter::generate_init;
+/// # use paralight::prelude::*;
+/// use rand::RngExt;
+///
+/// # use std::rc::Rc;
+/// # let mut thread_pool = ThreadPoolBuilder {
+/// #     num_threads: ThreadCount::AvailableParallelism,
+/// #     range_strategy: RangeStrategy::WorkStealing,
+/// #     cpu_pinning: CpuPinningPolicy::No,
+/// # }
+/// # .build();
+/// let sum = generate_init(10, rand::rng, |rng, i| {
+///     if rng.random() {
+///         Rc::new(i)
+///     } else {
+///         Rc::new(i + 1)
+///     }
+/// })
+/// .with_thread_pool(&mut thread_pool)
+/// .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
+///
+/// assert!(sum >= 45);
+/// assert!(sum <= 55);
+/// ```
+pub fn generate_init<I, Init, T, F>(n: usize, init: Init, f: F) -> GenerateInit<Init, F>
+where
+    Init: Fn() -> I + Sync,
+    F: Fn(&mut I, usize) -> T + Sync,
+{
+    GenerateInit { init, f, count: n }
+}
+
+/// Creates a parallel source that returns `n` clones of the given value.
+///
+/// See also [`generate()`] and [`generate_init()`].
+///
+/// ```
+/// # use paralight::prelude::*;
+/// # use paralight::iter::repeat;
+/// # let mut thread_pool = ThreadPoolBuilder {
+/// #     num_threads: ThreadCount::AvailableParallelism,
+/// #     range_strategy: RangeStrategy::WorkStealing,
+/// #     cpu_pinning: CpuPinningPolicy::No,
+/// # }
+/// # .build();
+/// let sum = repeat("Hello world", 10)
+///     .with_thread_pool(&mut thread_pool)
+///     .map(|s| s.len())
+///     .sum::<usize>();
+/// assert_eq!(sum, 11 * 10);
+/// ```
+pub fn repeat<T>(t: T, n: usize) -> Repeat<T>
+where
+    T: Clone + Sync,
+{
+    Repeat { value: t, count: n }
+}
 
 /// This struct is created by the
 /// [`with_thread_pool()`](ParallelSourceExt::with_thread_pool) method on

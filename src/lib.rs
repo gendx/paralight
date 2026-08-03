@@ -174,6 +174,17 @@ mod test {
                 test_source_array_find_first_panic => fail("worker thread(s) panicked!", "arithmetic panic"),
                 test_source_boxed_slice,
                 test_source_hashset,
+                test_source_generate,
+                #[cfg(feature = "nightly_tests")]
+                test_source_generate_not_send,
+                test_source_generate_not_sync,
+                test_source_generate_init,
+                #[cfg(feature = "nightly_tests")]
+                test_source_generate_init_not_send,
+                test_source_generate_init_not_sync,
+                test_source_repeat,
+                #[cfg(feature = "nightly_tests")]
+                test_source_repeat_not_send,
                 test_source_slice,
                 #[cfg(feature = "nightly_tests")]
                 test_source_slice_not_send,
@@ -676,6 +687,7 @@ mod test {
     macro_rules! generate { ($( $tt:tt )*) => { $( $tt )* } }
 
     #[cfg(feature = "nightly_tests")]
+    #[derive(Clone, Copy)]
     struct NotSend(u64);
     #[cfg(feature = "nightly_tests")]
     impl NotSend {
@@ -1104,6 +1116,100 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .pipeline(|| 0, |acc, x| acc + x, |acc| acc, |a, b| a + b);
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+    }
+
+    fn test_source_generate<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let sum = crate::iter::generate(INPUT_LEN as usize, |i| i as u64)
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN - 1) / 2);
+    }
+
+    #[cfg(feature = "nightly_tests")]
+    fn test_source_generate_not_send<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let sum = crate::iter::generate(INPUT_LEN as usize, |i| NotSend(i as u64))
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(|| 0, |acc, x| acc + x.0, |acc| acc, |a, b| a + b);
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN - 1) / 2);
+    }
+
+    fn test_source_generate_not_sync<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let sum = crate::iter::generate(INPUT_LEN as usize, |i| Cell::new(i as u64))
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(|| 0, |acc, x| acc + x.get(), |acc| acc, |a, b| a + b);
+        assert_eq!(sum, INPUT_LEN * (INPUT_LEN - 1) / 2);
+    }
+
+    fn test_source_generate_init<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let sum = crate::iter::generate_init(
+            INPUT_LEN as usize,
+            rand::rng,
+            |rng, i| if rng.random() { i * 2 } else { i * 3 } as u64,
+        )
+        .with_thread_pool(&mut thread_pool)
+        .sum::<u64>();
+        assert!(sum >= INPUT_LEN * (INPUT_LEN - 1));
+        assert!(sum <= 3 * INPUT_LEN * (INPUT_LEN - 1) / 2);
+    }
+
+    #[cfg(feature = "nightly_tests")]
+    fn test_source_generate_init_not_send<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let sum = crate::iter::generate_init(INPUT_LEN as usize, rand::rng, |rng, i| {
+            NotSend(if rng.random() { i * 2 } else { i * 3 } as u64)
+        })
+        .with_thread_pool(&mut thread_pool)
+        .pipeline(|| 0, |acc, x| acc + x.0, |acc| acc, |a, b| a + b);
+        assert!(sum >= INPUT_LEN * (INPUT_LEN - 1));
+        assert!(sum <= 3 * INPUT_LEN * (INPUT_LEN - 1) / 2);
+    }
+
+    fn test_source_generate_init_not_sync<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let sum = crate::iter::generate_init(INPUT_LEN as usize, rand::rng, |rng, i| {
+            Cell::new(if rng.random() { i * 2 } else { i * 3 } as u64)
+        })
+        .with_thread_pool(&mut thread_pool)
+        .pipeline(|| 0, |acc, x| acc + x.get(), |acc| acc, |a, b| a + b);
+        assert!(sum >= INPUT_LEN * (INPUT_LEN - 1));
+        assert!(sum <= 3 * INPUT_LEN * (INPUT_LEN - 1) / 2);
+    }
+
+    fn test_source_repeat<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let sum = crate::iter::repeat(42, INPUT_LEN as usize)
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
+        assert_eq!(sum, 42 * INPUT_LEN);
+    }
+
+    #[cfg(feature = "nightly_tests")]
+    fn test_source_repeat_not_send<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let sum = crate::iter::repeat(NotSend(42), INPUT_LEN as usize)
+            .with_thread_pool(&mut thread_pool)
+            .pipeline(|| 0, |acc, x| acc + x.get(), |acc| acc, |a, b| a + b);
+        assert_eq!(sum, 42 * INPUT_LEN);
     }
 
     fn test_source_slice<T>(mut thread_pool: T)

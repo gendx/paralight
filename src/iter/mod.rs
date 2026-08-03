@@ -38,7 +38,8 @@ pub use source::{
     IntoExactParallelRefSource, IntoExactParallelSource, IntoParallelRefMutSource,
     IntoParallelRefSource, IntoParallelSource, MapInit, MapSource, ParallelSource,
     ParallelSourceExt, Rev, RewindableSource, SimpleExactSourceDescriptor, SimpleSourceDescriptor,
-    Skip, SkipExact, SourceCleanup, SourceDescriptor, StepBy, Take, TakeExact,
+    Skip, SkipExact, SourceCleanup, SourceDescriptor, StepBy, Take, TakeExact, generate,
+    generate_init, repeat,
 };
 use std::cmp::Ordering;
 use std::iter::{Product, Sum};
