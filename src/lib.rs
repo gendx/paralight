@@ -365,6 +365,12 @@ mod test {
                 test_adaptor_try_reduce,
                 #[cfg(feature = "nightly")]
                 test_adaptor_try_reduce_option,
+                test_adaptor_try_unzip_array,
+                #[cfg(feature = "nightly")]
+                test_adaptor_try_unzip_array_option,
+                test_adaptor_try_unzip_tuple,
+                #[cfg(feature = "nightly")]
+                test_adaptor_try_unzip_tuple_option,
                 test_adaptor_unzip_array,
                 #[cfg(feature = "nightly")]
                 test_adaptor_unzip_tuple_array,
@@ -5240,6 +5246,150 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .try_reduce(|| 1, |x, y| x.checked_mul(y));
         assert_eq!(product, None);
+    }
+
+    fn test_adaptor_try_unzip_array<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let res: Result<[Vec<Box<u64>>; 3], ()> = (0..=INPUT_LEN as usize)
+            .into_par_iter()
+            .map(|x| {
+                let x = x as u64;
+                Ok([Box::new(x), Box::new(x * x), Box::new(2 * x)])
+            })
+            .with_thread_pool(&mut thread_pool)
+            .try_unzip();
+
+        let [a, b, c] = res.unwrap();
+        for i in 0..=INPUT_LEN {
+            assert_eq!(*a[i as usize], i);
+            assert_eq!(*b[i as usize], i * i);
+            assert_eq!(*c[i as usize], 2 * i);
+        }
+
+        let res: Result<[Vec<Box<u64>>; 3], _> = (0..=INPUT_LEN as usize)
+            .into_par_iter()
+            .map(|x| {
+                let x = x as u64;
+                if x.is_multiple_of(2) {
+                    Ok([Box::new(x), Box::new(x * x), Box::new(2 * x)])
+                } else {
+                    Err(x)
+                }
+            })
+            .with_thread_pool(&mut thread_pool)
+            .try_unzip();
+        assert!(res.is_err());
+        assert!(res.unwrap_err() % 2 == 1);
+    }
+
+    #[cfg(feature = "nightly")]
+    fn test_adaptor_try_unzip_array_option<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let res: Option<[Vec<Box<u64>>; 3]> = (0..=INPUT_LEN as usize)
+            .into_par_iter()
+            .map(|x| {
+                let x = x as u64;
+                Some([Box::new(x), Box::new(x * x), Box::new(2 * x)])
+            })
+            .with_thread_pool(&mut thread_pool)
+            .try_unzip();
+
+        let [a, b, c] = res.unwrap();
+        for i in 0..=INPUT_LEN {
+            assert_eq!(*a[i as usize], i);
+            assert_eq!(*b[i as usize], i * i);
+            assert_eq!(*c[i as usize], 2 * i);
+        }
+
+        let res: Option<[Vec<Box<u64>>; 3]> = (0..=INPUT_LEN as usize)
+            .into_par_iter()
+            .map(|x| {
+                let x = x as u64;
+                if x.is_multiple_of(2) {
+                    Some([Box::new(x), Box::new(x * x), Box::new(2 * x)])
+                } else {
+                    None
+                }
+            })
+            .with_thread_pool(&mut thread_pool)
+            .try_unzip();
+        assert_eq!(res, None);
+    }
+
+    #[expect(clippy::type_complexity)]
+    fn test_adaptor_try_unzip_tuple<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let res: Result<(Vec<Box<u64>>, Vec<Box<u64>>), ()> = (0..=INPUT_LEN as usize)
+            .into_par_iter()
+            .map(|x| {
+                let x = x as u64;
+                Ok((Box::new(x), Box::new(x * x)))
+            })
+            .with_thread_pool(&mut thread_pool)
+            .try_unzip();
+
+        let (a, b) = res.unwrap();
+        for i in 0..=INPUT_LEN {
+            assert_eq!(*a[i as usize], i);
+            assert_eq!(*b[i as usize], i * i);
+        }
+
+        let res: Result<(Vec<Box<u64>>, Vec<Box<u64>>), _> = (0..=INPUT_LEN as usize)
+            .into_par_iter()
+            .map(|x| {
+                let x = x as u64;
+                if x.is_multiple_of(2) {
+                    Ok((Box::new(x), Box::new(x * x)))
+                } else {
+                    Err(x)
+                }
+            })
+            .with_thread_pool(&mut thread_pool)
+            .try_unzip();
+        assert!(res.is_err());
+        assert!(res.unwrap_err() % 2 == 1);
+    }
+
+    #[cfg(feature = "nightly")]
+    #[expect(clippy::type_complexity)]
+    fn test_adaptor_try_unzip_tuple_option<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let res: Option<(Vec<Box<u64>>, Vec<Box<u64>>)> = (0..=INPUT_LEN as usize)
+            .into_par_iter()
+            .map(|x| {
+                let x = x as u64;
+                Some((Box::new(x), Box::new(x * x)))
+            })
+            .with_thread_pool(&mut thread_pool)
+            .try_unzip();
+
+        let (a, b) = res.unwrap();
+        for i in 0..=INPUT_LEN {
+            assert_eq!(*a[i as usize], i);
+            assert_eq!(*b[i as usize], i * i);
+        }
+
+        let res: Option<(Vec<Box<u64>>, Vec<Box<u64>>)> = (0..=INPUT_LEN as usize)
+            .into_par_iter()
+            .map(|x| {
+                let x = x as u64;
+                if x.is_multiple_of(2) {
+                    Some((Box::new(x), Box::new(x * x)))
+                } else {
+                    None
+                }
+            })
+            .with_thread_pool(&mut thread_pool)
+            .try_unzip();
+        assert_eq!(res, None);
     }
 
     fn test_adaptor_unzip_array<T>(mut thread_pool: T)

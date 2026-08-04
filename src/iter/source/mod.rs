@@ -34,7 +34,7 @@ use detail::{
 use scopeguard::ScopeGuard;
 use std::ops::ControlFlow;
 #[cfg(feature = "nightly")]
-use std::ops::{Residual, Try};
+use std::ops::{FromResidual, Residual, Try};
 
 /// An interface to cleanup a range of items that aren't fetched from a source.
 ///
@@ -2517,7 +2517,8 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
     /// that implements [`FromExactParallelSink`]), breaking early and
     /// returning the failure if any item contains a failure.
     ///
-    /// See also [`collect()`](Self::collect).
+    /// See also [`collect()`](Self::collect) and
+    /// [`try_unzip()`](Self::try_unzip).
     ///
     /// # Stability blockers
     ///
@@ -2745,7 +2746,8 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
     /// that implements [`FromExactParallelSink`]), breaking early and
     /// returning the failure if any item contains a failure.
     ///
-    /// See also [`collect()`](Self::collect).
+    /// See also [`collect()`](Self::collect) and
+    /// [`try_unzip()`](Self::try_unzip).
     ///
     /// # Stability blockers
     ///
@@ -3013,8 +3015,10 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
     /// Unzips the items of this parallel iterator to collect them into a tuple
     /// or array of collections.
     ///
-    /// See also [`collect()`](Self::collect) for more information about what
-    /// target collections are accepted.
+    /// See also:
+    /// - [`try_unzip()`](Self::try_unzip),
+    /// - [`collect()`](Self::collect) for more information about what target
+    ///   collections are accepted.
     ///
     /// ```
     /// # use paralight::prelude::*;
@@ -3055,6 +3059,210 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
     {
         let Unzip(c) = self.collect();
         c
+    }
+
+    /// Try unzipping the items of this parallel iterator to collect them into a
+    /// tuple or array of collections, breaking early and returning the
+    /// failure if any item contains a failure.
+    ///
+    /// See also:
+    /// - [`unzip()`](Self::unzip),
+    /// - [`try_collect()`](Self::try_collect) for more information about what
+    ///   target collections are accepted.
+    ///
+    /// # Stability blockers
+    ///
+    /// On stable Rust, this adaptor is currently only implemented for
+    /// [`Result`] items. Items of arbitrary [`Try`] types are only available on
+    /// Rust nightly with the `nightly` feature of Paralight enabled. This is
+    /// because the implementation depends on the
+    /// [`try_trait_v2`](https://github.com/rust-lang/rust/issues/84277) and
+    /// [`try_trait_v2_residual`](https://github.com/rust-lang/rust/issues/91285)
+    /// nightly Rust features.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let res: Result<(Vec<_>, Vec<_>), ()> = (1..=10)
+    ///     .into_par_iter()
+    ///     .map(|i| Ok((2 * i, 3 * i)))
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_unzip();
+    /// let (doubles, triples) = res.unwrap();
+    /// assert_eq!(doubles, vec![2, 4, 6, 8, 10, 12, 14, 16, 18, 20]);
+    /// assert_eq!(triples, vec![3, 6, 9, 12, 15, 18, 21, 24, 27, 30]);
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let res: Result<(Vec<_>, Vec<_>), _> = (1..=10)
+    ///     .into_par_iter()
+    ///     .map(|i| if i == 7 { Err(i) } else { Ok((2 * i, 3 * i)) })
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_unzip();
+    /// assert_eq!(res, Err(7));
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let res: Result<[Vec<_>; 2], ()> = (1..=10)
+    ///     .into_par_iter()
+    ///     .map(|i| Ok([2 * i, 3 * i]))
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_unzip();
+    /// let [doubles, triples] = res.unwrap();
+    /// assert_eq!(doubles, vec![2, 4, 6, 8, 10, 12, 14, 16, 18, 20]);
+    /// assert_eq!(triples, vec![3, 6, 9, 12, 15, 18, 21, 24, 27, 30]);
+    /// ```
+    #[cfg(not(feature = "nightly"))]
+    pub fn try_unzip<I, E, C>(self) -> Result<C, E>
+    where
+        S: ExactParallelSource<Item = Result<I, E>>,
+        Unzip<C>: FromExactParallelSink<Item = I>,
+        E: Send,
+    {
+        self.try_collect().map(|Unzip(c)| c)
+    }
+
+    /// Try unzipping the items of this parallel iterator to collect them into a
+    /// tuple or array of collections, breaking early and returning the
+    /// failure if any item contains a failure.
+    ///
+    /// See also:
+    /// - [`unzip()`](Self::unzip),
+    /// - [`try_collect()`](Self::try_collect) for more information about what
+    ///   target collections are accepted.
+    ///
+    /// # Stability blockers
+    ///
+    /// On stable Rust, this adaptor is currently only implemented for
+    /// [`Result`] items. Items of arbitrary [`Try`] types are only available on
+    /// Rust nightly with the `nightly` feature of Paralight enabled. This is
+    /// because the implementation depends on the
+    /// [`try_trait_v2`](https://github.com/rust-lang/rust/issues/84277) and
+    /// [`try_trait_v2_residual`](https://github.com/rust-lang/rust/issues/91285)
+    /// nightly Rust features.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let res: Result<(Vec<_>, Vec<_>), ()> = (1..=10)
+    ///     .into_par_iter()
+    ///     .map(|i| Ok((2 * i, 3 * i)))
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_unzip();
+    /// let (doubles, triples) = res.unwrap();
+    /// assert_eq!(doubles, vec![2, 4, 6, 8, 10, 12, 14, 16, 18, 20]);
+    /// assert_eq!(triples, vec![3, 6, 9, 12, 15, 18, 21, 24, 27, 30]);
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let res: Result<(Vec<_>, Vec<_>), _> = (1..=10)
+    ///     .into_par_iter()
+    ///     .map(|i| if i == 7 { Err(i) } else { Ok((2 * i, 3 * i)) })
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_unzip();
+    /// assert_eq!(res, Err(7));
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let res: Result<[Vec<_>; 2], ()> = (1..=10)
+    ///     .into_par_iter()
+    ///     .map(|i| Ok([2 * i, 3 * i]))
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_unzip();
+    /// let [doubles, triples] = res.unwrap();
+    /// assert_eq!(doubles, vec![2, 4, 6, 8, 10, 12, 14, 16, 18, 20]);
+    /// assert_eq!(triples, vec![3, 6, 9, 12, 15, 18, 21, 24, 27, 30]);
+    /// ```
+    ///
+    /// With the `nightly` feature on a nightly compiler:
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let res: Option<(Vec<_>, Vec<_>)> = (1..=10)
+    ///     .into_par_iter()
+    ///     .map(|i| Some((2 * i, 3 * i)))
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_unzip();
+    /// let (doubles, triples) = res.unwrap();
+    /// assert_eq!(doubles, vec![2, 4, 6, 8, 10, 12, 14, 16, 18, 20]);
+    /// assert_eq!(triples, vec![3, 6, 9, 12, 15, 18, 21, 24, 27, 30]);
+    /// ```
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let res: Option<[Vec<_>; 2]> = (1..=10)
+    ///     .into_par_iter()
+    ///     .map(|i| if i == 7 { None } else { Some([2 * i, 3 * i]) })
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .try_unzip();
+    /// assert_eq!(res, None);
+    /// ```
+    #[cfg(feature = "nightly")]
+    pub fn try_unzip<C>(self) -> <<S::Item as Try>::Residual as Residual<C>>::TryType
+    where
+        // ~ Result<I, E>
+        S::Item: Try,
+        // ~ Result<!, E>: Result<(), E> + Result<C, E> + Result<Unzip<C>, E>
+        <S::Item as Try>::Residual: Residual<()> + Residual<C> + Residual<Unzip<C>>,
+        // ~ Unzip<C>: FromExactParallelSink<Item = I>
+        Unzip<C>: FromExactParallelSink<Item = <S::Item as Try>::Output>,
+        // ~ Result<(), E>: Send
+        <<S::Item as Try>::Residual as Residual<()>>::TryType: Send,
+    {
+        match self.try_collect::<Unzip<C>>().branch() {
+            ControlFlow::Continue(Unzip(c)) => Try::from_output(c),
+            ControlFlow::Break(e) => FromResidual::from_residual(e),
+        }
     }
 }
 
