@@ -781,6 +781,8 @@ impl SkipIterator for UpperBoundedWorkStealingRangeIterator<'_, '_> {
 
         // First phase: try to increment this thread's own range. Retries are needed in
         // case another thread stole part of the range.
+        //
+        // Loop invariant: my_loaded_range = my_bounded_range || my_residual_range.
         loop {
             if !my_bounded_range.is_empty() {
                 let (taken, my_new_range) = my_bounded_range.increment_start();
@@ -833,17 +835,17 @@ impl SkipIterator for UpperBoundedWorkStealingRangeIterator<'_, '_> {
                 // happen if they have cached another bound.
                 match my_atomic_range.compare_exchange(my_loaded_range, my_bounded_range) {
                     Ok(()) => {
-                        if !my_residual_range.is_empty() {
-                            let residual = my_residual_range.to_range();
-                            #[cfg(feature = "log_parallelism")]
-                            log_debug!(
-                                "[thread {}] Residual range {:?} is not empty (empty bounded range), scheduling it for cleanup.",
-                                self.id,
-                                residual
-                            );
-                            return (None, Some(residual));
-                        };
-                        break;
+                        // Here `!my_loaded_range.is_empty() && my_bounded_range.is_empty()` so
+                        // `my_residual_range` must not be empty according to the loop invariant.
+                        debug_assert!(!my_residual_range.is_empty());
+                        let residual = my_residual_range.to_range();
+                        #[cfg(feature = "log_parallelism")]
+                        log_debug!(
+                            "[thread {}] Residual range {:?} is not empty (empty bounded range), scheduling it for cleanup.",
+                            self.id,
+                            residual
+                        );
+                        return (None, Some(residual));
                     }
                     Err(range) => {
                         my_loaded_range = range;
