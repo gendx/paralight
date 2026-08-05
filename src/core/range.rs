@@ -10,6 +10,8 @@ use crate::macros::log_debug;
 #[cfg(feature = "log_parallelism")]
 use crate::macros::{log_info, log_trace};
 use crossbeam_utils::CachePadded;
+#[cfg(feature = "nightly")]
+use std::hint::cold_path; // TODO(MSRV >= 1.95.0): always import.
 #[cfg(feature = "log_parallelism")]
 use std::ops::AddAssign;
 use std::sync::Arc;
@@ -566,6 +568,7 @@ impl Drop for WorkStealingRangeIterator<'_> {
 
 impl SkipIterator for WorkStealingRangeIterator<'_> {
     #[inline(always)]
+    #[cfg_attr(feature = "nightly", expect(clippy::incompatible_msrv))]
     fn remaining_range(&self) -> Option<std::ops::Range<usize>> {
         let my_atomic_range: &AtomicRange = &self.ranges[self.id];
         let mut my_range: PackedRange = my_atomic_range.load();
@@ -573,7 +576,11 @@ impl SkipIterator for WorkStealingRangeIterator<'_> {
         while !my_range.is_empty() {
             match my_atomic_range.compare_exchange(my_range, PackedRange::default()) {
                 Ok(()) => return Some(my_range.to_range()),
-                Err(range) => my_range = range,
+                Err(range) => {
+                    #[cfg(feature = "nightly")]
+                    cold_path();
+                    my_range = range;
+                }
             }
         }
 
@@ -581,6 +588,7 @@ impl SkipIterator for WorkStealingRangeIterator<'_> {
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "nightly", expect(clippy::incompatible_msrv))]
     fn next(&mut self) -> (Option<usize>, Option<std::ops::Range<usize>>) {
         let my_atomic_range: &AtomicRange = &self.ranges[self.id];
         let mut my_range: PackedRange = my_atomic_range.load();
@@ -605,6 +613,8 @@ impl SkipIterator for WorkStealingRangeIterator<'_> {
                 }
                 // Increment failed: retry with an updated range.
                 Err(range) => {
+                    #[cfg(feature = "nightly")]
+                    cold_path();
                     my_range = range;
                     #[cfg(feature = "log_parallelism")]
                     {
@@ -631,6 +641,7 @@ impl SkipIterator for WorkStealingRangeIterator<'_> {
 impl WorkStealingRangeIterator<'_> {
     /// Helper function for the iterator implementation, to steal a range from
     /// another thread when this thread's range is empty.
+    #[cfg_attr(feature = "nightly", expect(clippy::incompatible_msrv))]
     #[cold]
     fn steal(
         &mut self,
@@ -702,6 +713,8 @@ impl WorkStealingRangeIterator<'_> {
                 }
                 // Theft failed: update the range and retry.
                 Err(range) => {
+                    #[cfg(feature = "nightly")]
+                    cold_path();
                     other_ranges[max_index] = range;
                     #[cfg(feature = "log_parallelism")]
                     {
@@ -755,6 +768,7 @@ impl Drop for UpperBoundedWorkStealingRangeIterator<'_, '_> {
 
 impl SkipIterator for UpperBoundedWorkStealingRangeIterator<'_, '_> {
     #[inline(always)]
+    #[cfg_attr(feature = "nightly", expect(clippy::incompatible_msrv))]
     fn remaining_range(&self) -> Option<std::ops::Range<usize>> {
         let my_atomic_range: &AtomicRange = &self.ranges[self.id];
         let mut my_range: PackedRange = my_atomic_range.load();
@@ -762,7 +776,11 @@ impl SkipIterator for UpperBoundedWorkStealingRangeIterator<'_, '_> {
         while !my_range.is_empty() {
             match my_atomic_range.compare_exchange(my_range, PackedRange::default()) {
                 Ok(()) => return Some(my_range.to_range()),
-                Err(range) => my_range = range,
+                Err(range) => {
+                    #[cfg(feature = "nightly")]
+                    cold_path();
+                    my_range = range;
+                }
             }
         }
 
@@ -770,6 +788,7 @@ impl SkipIterator for UpperBoundedWorkStealingRangeIterator<'_, '_> {
     }
 
     #[inline(always)]
+    #[cfg_attr(feature = "nightly", expect(clippy::incompatible_msrv))]
     fn next(&mut self) -> (Option<usize>, Option<std::ops::Range<usize>>) {
         let bound = self.bound.load(Ordering::Relaxed);
         #[cfg(feature = "log_parallelism")]
@@ -802,6 +821,8 @@ impl SkipIterator for UpperBoundedWorkStealingRangeIterator<'_, '_> {
                         let residual = if my_residual_range.is_empty() {
                             None
                         } else {
+                            #[cfg(feature = "nightly")]
+                            cold_path();
                             let residual = my_residual_range.to_range();
                             #[cfg(feature = "log_parallelism")]
                             log_debug!(
@@ -816,6 +837,8 @@ impl SkipIterator for UpperBoundedWorkStealingRangeIterator<'_, '_> {
                     }
                     // Increment failed: retry with an updated range.
                     Err(range) => {
+                        #[cfg(feature = "nightly")]
+                        cold_path();
                         my_loaded_range = range;
                         (my_bounded_range, my_residual_range) = my_loaded_range.upper_bound(bound);
                         #[cfg(feature = "log_parallelism")]
@@ -831,6 +854,8 @@ impl SkipIterator for UpperBoundedWorkStealingRangeIterator<'_, '_> {
                     }
                 }
             } else if !my_loaded_range.is_empty() {
+                #[cfg(feature = "nightly")]
+                cold_path();
                 // First, let's make sure other threads don't try to steal this range, which can
                 // happen if they have cached another bound.
                 match my_atomic_range.compare_exchange(my_loaded_range, my_bounded_range) {
@@ -848,12 +873,16 @@ impl SkipIterator for UpperBoundedWorkStealingRangeIterator<'_, '_> {
                         return (None, Some(residual));
                     }
                     Err(range) => {
+                        #[cfg(feature = "nightly")]
+                        cold_path();
                         my_loaded_range = range;
                         (my_bounded_range, my_residual_range) = my_loaded_range.upper_bound(bound);
                         continue;
                     }
                 }
             } else {
+                #[cfg(feature = "nightly")]
+                cold_path();
                 break;
             }
         }
@@ -877,6 +906,7 @@ struct OtherRange {
 impl UpperBoundedWorkStealingRangeIterator<'_, '_> {
     /// Helper function for the iterator implementation, to steal a range from
     /// another thread when this thread's range is empty.
+    #[cfg_attr(feature = "nightly", expect(clippy::incompatible_msrv))]
     #[cold]
     fn steal(
         &mut self,
@@ -940,6 +970,8 @@ impl UpperBoundedWorkStealingRangeIterator<'_, '_> {
                     let residual = if max_range.residual.is_empty() {
                         None
                     } else {
+                        #[cfg(feature = "nightly")]
+                        cold_path();
                         let residual = max_range.residual.to_range();
                         #[cfg(feature = "log_parallelism")]
                         log_debug!(
@@ -969,6 +1001,8 @@ impl UpperBoundedWorkStealingRangeIterator<'_, '_> {
                 }
                 // Theft failed: update the range and retry.
                 Err(loaded) => {
+                    #[cfg(feature = "nightly")]
+                    cold_path();
                     let (bounded, residual) = loaded.upper_bound(bound);
                     let range = OtherRange {
                         loaded,
