@@ -104,7 +104,7 @@ pub trait SkipIterator {
     /// Returns any remaining range of indices that have been skipped.
     ///
     /// This iterator must not be used again once this has been called.
-    fn remaining_range(&self) -> Option<std::ops::Range<usize>>;
+    fn remaining_range(&mut self) -> Option<std::ops::Range<usize>>;
 }
 
 /// A factory that hands out a fixed range to each thread, without any stealing.
@@ -221,8 +221,8 @@ impl SkipIterator for std::ops::Range<usize> {
     }
 
     #[inline(always)]
-    fn remaining_range(&self) -> Option<std::ops::Range<usize>> {
-        if self.is_empty() {
+    fn remaining_range(&mut self) -> Option<std::ops::Range<usize>> {
+        if std::ops::Range::is_empty(self) {
             None
         } else {
             Some(self.clone())
@@ -253,7 +253,7 @@ impl SkipIterator for UpperBoundedRange<'_> {
     }
 
     #[inline(always)]
-    fn remaining_range(&self) -> Option<std::ops::Range<usize>> {
+    fn remaining_range(&mut self) -> Option<std::ops::Range<usize>> {
         if self.range.is_empty() {
             None
         } else {
@@ -376,6 +376,7 @@ impl Range for WorkStealingRange {
         WorkStealingRangeIterator {
             id: self.id,
             ranges: &self.ranges,
+            my_range: self.ranges[self.id].load(),
             #[cfg(feature = "log_parallelism")]
             stats: WorkStealingStats::default(),
             #[cfg(feature = "log_parallelism")]
@@ -390,6 +391,7 @@ impl Range for WorkStealingRange {
         UpperBoundedWorkStealingRangeIterator {
             id: self.id,
             ranges: &self.ranges,
+            my_range: self.ranges[self.id].load(),
             bound,
             #[cfg(feature = "log_parallelism")]
             stats: WorkStealingStats::default(),
@@ -549,6 +551,8 @@ impl AddAssign<&WorkStealingStats> for WorkStealingStats {
 pub struct WorkStealingRangeIterator<'a> {
     /// Index of the thread that owns this range.
     id: usize,
+    /// Last known value of this thread's range.
+    my_range: PackedRange,
     /// Handle to the ranges of all the threads.
     ranges: &'a [AtomicRange],
     /// Local work-stealing statistics.
@@ -569,17 +573,20 @@ impl Drop for WorkStealingRangeIterator<'_> {
 impl SkipIterator for WorkStealingRangeIterator<'_> {
     #[inline(always)]
     #[cfg_attr(feature = "nightly", expect(clippy::incompatible_msrv))]
-    fn remaining_range(&self) -> Option<std::ops::Range<usize>> {
+    fn remaining_range(&mut self) -> Option<std::ops::Range<usize>> {
         let my_atomic_range: &AtomicRange = &self.ranges[self.id];
-        let mut my_range: PackedRange = my_atomic_range.load();
 
-        while !my_range.is_empty() {
-            match my_atomic_range.compare_exchange(my_range, PackedRange::default()) {
-                Ok(()) => return Some(my_range.to_range()),
+        while !self.my_range.is_empty() {
+            match my_atomic_range.compare_exchange(self.my_range, PackedRange::default()) {
+                Ok(()) => {
+                    let range = self.my_range.to_range();
+                    self.my_range = PackedRange::default();
+                    return Some(range);
+                }
                 Err(range) => {
                     #[cfg(feature = "nightly")]
                     cold_path();
-                    my_range = range;
+                    self.my_range = range;
                 }
             }
         }
@@ -591,15 +598,15 @@ impl SkipIterator for WorkStealingRangeIterator<'_> {
     #[cfg_attr(feature = "nightly", expect(clippy::incompatible_msrv))]
     fn next(&mut self) -> (Option<usize>, Option<std::ops::Range<usize>>) {
         let my_atomic_range: &AtomicRange = &self.ranges[self.id];
-        let mut my_range: PackedRange = my_atomic_range.load();
 
         // First phase: try to increment this thread's own range. Retries are needed in
         // case another thread stole part of the range.
-        while !my_range.is_empty() {
-            let (taken, my_new_range) = my_range.increment_start();
-            match my_atomic_range.compare_exchange(my_range, my_new_range) {
+        while !self.my_range.is_empty() {
+            let (taken, my_new_range) = self.my_range.increment_start();
+            match my_atomic_range.compare_exchange(self.my_range, my_new_range) {
                 // Increment succeeded.
                 Ok(()) => {
+                    self.my_range = my_new_range;
                     #[cfg(feature = "log_parallelism")]
                     {
                         self.stats.increments += 1;
@@ -615,7 +622,7 @@ impl SkipIterator for WorkStealingRangeIterator<'_> {
                 Err(range) => {
                     #[cfg(feature = "nightly")]
                     cold_path();
-                    my_range = range;
+                    self.my_range = range;
                     #[cfg(feature = "log_parallelism")]
                     {
                         self.stats.failed_increments += 1;
@@ -631,10 +638,7 @@ impl SkipIterator for WorkStealingRangeIterator<'_> {
         }
 
         // Second phase: the range is empty, try to steal a range from another thread.
-        self.steal(
-            #[cfg(feature = "log_parallelism")]
-            my_range,
-        )
+        self.steal()
     }
 }
 
@@ -643,17 +647,14 @@ impl WorkStealingRangeIterator<'_> {
     /// another thread when this thread's range is empty.
     #[cfg_attr(feature = "nightly", expect(clippy::incompatible_msrv))]
     #[cold]
-    fn steal(
-        &mut self,
-        #[cfg(feature = "log_parallelism")] my_range: PackedRange,
-    ) -> (Option<usize>, Option<std::ops::Range<usize>>) {
+    fn steal(&mut self) -> (Option<usize>, Option<std::ops::Range<usize>>) {
         let my_atomic_range: &AtomicRange = &self.ranges[self.id];
 
         #[cfg(feature = "log_parallelism")]
         log_debug!(
             "[thread {}] Range {:?} is empty, scanning other threads",
             self.id,
-            my_range.to_range()
+            self.my_range.to_range()
         );
         let range_count = self.ranges.len();
 
@@ -698,6 +699,7 @@ impl WorkStealingRangeIterator<'_> {
                     // Take the first item, and place the rest in this thread's own range.
                     let (taken, my_new_range) = stolen.increment_start();
                     my_atomic_range.store(my_new_range);
+                    self.my_range = my_new_range;
                     #[cfg(feature = "log_parallelism")]
                     {
                         self.stats.thefts += 1;
@@ -747,6 +749,8 @@ impl WorkStealingRangeIterator<'_> {
 pub struct UpperBoundedWorkStealingRangeIterator<'a, 'bound> {
     /// Index of the thread that owns this range.
     id: usize,
+    /// Last known value of this thread's range.
+    my_range: PackedRange,
     /// Handle to the ranges of all the threads.
     ranges: &'a [AtomicRange],
     /// Dynamic upper bound.
@@ -769,17 +773,20 @@ impl Drop for UpperBoundedWorkStealingRangeIterator<'_, '_> {
 impl SkipIterator for UpperBoundedWorkStealingRangeIterator<'_, '_> {
     #[inline(always)]
     #[cfg_attr(feature = "nightly", expect(clippy::incompatible_msrv))]
-    fn remaining_range(&self) -> Option<std::ops::Range<usize>> {
+    fn remaining_range(&mut self) -> Option<std::ops::Range<usize>> {
         let my_atomic_range: &AtomicRange = &self.ranges[self.id];
-        let mut my_range: PackedRange = my_atomic_range.load();
 
-        while !my_range.is_empty() {
-            match my_atomic_range.compare_exchange(my_range, PackedRange::default()) {
-                Ok(()) => return Some(my_range.to_range()),
+        while !self.my_range.is_empty() {
+            match my_atomic_range.compare_exchange(self.my_range, PackedRange::default()) {
+                Ok(()) => {
+                    let range = self.my_range.to_range();
+                    self.my_range = PackedRange::default();
+                    return Some(range);
+                }
                 Err(range) => {
                     #[cfg(feature = "nightly")]
                     cold_path();
-                    my_range = range;
+                    self.my_range = range;
                 }
             }
         }
@@ -795,19 +802,20 @@ impl SkipIterator for UpperBoundedWorkStealingRangeIterator<'_, '_> {
         log_trace!("[thread {}] Loaded upper bound = {}", self.id, bound);
 
         let my_atomic_range: &AtomicRange = &self.ranges[self.id];
-        let mut my_loaded_range: PackedRange = my_atomic_range.load();
-        let (mut my_bounded_range, mut my_residual_range) = my_loaded_range.upper_bound(bound);
+        let (mut my_bounded_range, mut my_residual_range) = self.my_range.upper_bound(bound);
 
         // First phase: try to increment this thread's own range. Retries are needed in
         // case another thread stole part of the range.
         //
-        // Loop invariant: my_loaded_range = my_bounded_range || my_residual_range.
+        // Loop invariant: self.my_range = my_bounded_range || my_residual_range.
         loop {
             if !my_bounded_range.is_empty() {
                 let (taken, my_new_range) = my_bounded_range.increment_start();
-                match my_atomic_range.compare_exchange(my_loaded_range, my_new_range) {
+                match my_atomic_range.compare_exchange(self.my_range, my_new_range) {
                     // Increment succeeded.
                     Ok(()) => {
+                        self.my_range = my_new_range;
+
                         #[cfg(feature = "log_parallelism")]
                         {
                             self.stats.increments += 1;
@@ -839,8 +847,8 @@ impl SkipIterator for UpperBoundedWorkStealingRangeIterator<'_, '_> {
                     Err(range) => {
                         #[cfg(feature = "nightly")]
                         cold_path();
-                        my_loaded_range = range;
-                        (my_bounded_range, my_residual_range) = my_loaded_range.upper_bound(bound);
+                        self.my_range = range;
+                        (my_bounded_range, my_residual_range) = self.my_range.upper_bound(bound);
                         #[cfg(feature = "log_parallelism")]
                         {
                             self.stats.failed_increments += 1;
@@ -853,14 +861,15 @@ impl SkipIterator for UpperBoundedWorkStealingRangeIterator<'_, '_> {
                         continue;
                     }
                 }
-            } else if !my_loaded_range.is_empty() {
+            } else if !self.my_range.is_empty() {
                 #[cfg(feature = "nightly")]
                 cold_path();
                 // First, let's make sure other threads don't try to steal this range, which can
                 // happen if they have cached another bound.
-                match my_atomic_range.compare_exchange(my_loaded_range, my_bounded_range) {
+                match my_atomic_range.compare_exchange(self.my_range, my_bounded_range) {
                     Ok(()) => {
-                        // Here `!my_loaded_range.is_empty() && my_bounded_range.is_empty()` so
+                        self.my_range = my_bounded_range;
+                        // In this branch `my_range` was not empty but `my_bounded_range` was so
                         // `my_residual_range` must not be empty according to the loop invariant.
                         debug_assert!(!my_residual_range.is_empty());
                         let residual = my_residual_range.to_range();
@@ -875,8 +884,8 @@ impl SkipIterator for UpperBoundedWorkStealingRangeIterator<'_, '_> {
                     Err(range) => {
                         #[cfg(feature = "nightly")]
                         cold_path();
-                        my_loaded_range = range;
-                        (my_bounded_range, my_residual_range) = my_loaded_range.upper_bound(bound);
+                        self.my_range = range;
+                        (my_bounded_range, my_residual_range) = self.my_range.upper_bound(bound);
                         continue;
                     }
                 }
@@ -985,6 +994,7 @@ impl UpperBoundedWorkStealingRangeIterator<'_, '_> {
                     // Take the first item, and place the rest in this thread's own range.
                     let (taken, my_new_range) = stolen.increment_start();
                     my_atomic_range.store(my_new_range);
+                    self.my_range = my_new_range;
                     #[cfg(feature = "log_parallelism")]
                     {
                         self.stats.thefts += 1;
