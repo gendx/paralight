@@ -23,6 +23,7 @@ use super::{
     Accumulator, ExactParallelSink, ExactSizeAccumulator, FromExactParallelSink, GenericThreadPool,
     ParallelIterator, ParallelIteratorExt, Unzip,
 };
+use crate::iter::Cursor;
 pub use detail::{
     ArrayWindows, Chain, Cloned, Copied, Cycle, Downgrade, Enumerate, Filter, FilterExact,
     FilterMap, FilterMapExact, Generate, GenerateInit, Inspect, MapInit, MapSource, Repeat, Rev,
@@ -132,7 +133,7 @@ pub trait SourceDescriptor: SourceCleanup {
     unsafe fn fetch_item(
         &self,
         context: &mut Self::ThreadContext,
-        index: usize,
+        index: Cursor,
     ) -> Option<Self::Item>;
 }
 
@@ -167,7 +168,7 @@ pub trait SimpleSourceDescriptor: SourceCleanup {
     /// engine. This API is public to allow others to implement parallel
     /// sources: when implementing your own source(s), you can rely on these
     /// `unsafe` pre-conditions.
-    unsafe fn simple_fetch_item(&self, index: usize) -> Option<Self::Item>;
+    unsafe fn simple_fetch_item(&self, index: Cursor) -> Option<Self::Item>;
 }
 
 impl<T: SimpleSourceDescriptor> SourceDescriptor for T {
@@ -176,7 +177,7 @@ impl<T: SimpleSourceDescriptor> SourceDescriptor for T {
 
     fn init(&self) {}
 
-    unsafe fn fetch_item(&self, _context: &mut (), index: usize) -> Option<Self::Item> {
+    unsafe fn fetch_item(&self, _context: &mut (), index: Cursor) -> Option<Self::Item> {
         // SAFETY: This implementation simply extends the inner descriptor with an empty
         // context type, therefore safety is preserved by induction.
         unsafe { self.simple_fetch_item(index) }
@@ -221,7 +222,7 @@ pub trait ExactSourceDescriptor: SourceCleanup {
     unsafe fn exact_fetch_item(
         &self,
         context: &mut Self::ThreadContext,
-        index: usize,
+        index: Cursor,
     ) -> Self::Item;
 }
 
@@ -258,7 +259,7 @@ pub trait SimpleExactSourceDescriptor: SourceCleanup {
     /// engine. This API is public to allow others to implement parallel
     /// sources: when implementing your own source(s), you can rely on these
     /// `unsafe` pre-conditions.
-    unsafe fn simple_exact_fetch_item(&self, index: usize) -> Self::Item;
+    unsafe fn simple_exact_fetch_item(&self, index: Cursor) -> Self::Item;
 }
 
 impl<T: SimpleExactSourceDescriptor> ExactSourceDescriptor for T {
@@ -267,7 +268,7 @@ impl<T: SimpleExactSourceDescriptor> ExactSourceDescriptor for T {
 
     fn init(&self) {}
 
-    unsafe fn exact_fetch_item(&self, _context: &mut (), index: usize) -> Self::Item {
+    unsafe fn exact_fetch_item(&self, _context: &mut (), index: Cursor) -> Self::Item {
         // SAFETY: This implementation simply extends the inner descriptor with an empty
         // context type, therefore safety is preserved by induction.
         unsafe { self.simple_exact_fetch_item(index) }
@@ -2242,14 +2243,14 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
 
         let accumulator = CollectAccumulator {
             init: || source_descriptor.init(),
-            process_item: |context: &mut _, index| {
+            process_item: |context: &mut _, index: Cursor| {
                 // If fetching this item panics, we need to skip the sink at this index.
                 let item_guard = scopeguard::guard((), |()| {
                     // SAFETY: This scope guard is only invoked if a panic occurs during
                     // `exact_fetch_item`. This ensures that this index is passed once to this
                     // sink (as the regular `push_item` call doesn't happen).
                     unsafe {
-                        sink.skip_item_range(index..index + 1);
+                        sink.skip_item_range(index.index()..index.index() + 1);
                     }
                 });
 
@@ -2266,7 +2267,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
                 // `skip_item_range()` methods are ensured by the safety guarantees of
                 // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed are in
                 // `0..len` and they are each passed exactly once.
-                unsafe { sink.push_item(index, item) };
+                unsafe { sink.push_item(index.index(), item) };
             },
         };
 
@@ -2691,7 +2692,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
 
         let accumulator = TryCollectAccumulator {
             init: || source_descriptor.init(),
-            process_item: |context: &mut _, index| {
+            process_item: |context: &mut _, index: Cursor| {
                 // If fetching this item panics or returns an error, we need to skip the sink at
                 // this index.
                 let item_guard = scopeguard::guard((), |()| {
@@ -2699,7 +2700,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
                     // returns an error. This ensures that this index is passed once to this sink
                     // (as the regular `push_item` call doesn't happen).
                     unsafe {
-                        sink.skip_item_range(index..index + 1);
+                        sink.skip_item_range(index.index()..index.index() + 1);
                     }
                 });
 
@@ -2717,7 +2718,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
                 // `skip_item_range()` methods are ensured by the safety guarantees of
                 // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed are in
                 // `0..len` and they are each passed exactly once.
-                unsafe { sink.push_item(index, item) };
+                unsafe { sink.push_item(index.index(), item) };
                 Ok(())
             },
         };
@@ -2960,7 +2961,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
         let accumulator = TryCollectAccumulator {
             init: || source_descriptor.init(),
             process_item: |context: &mut _,
-                           index|
+                           index: Cursor|
              -> <<S::Item as Try>::Residual as Residual<()>>::TryType {
                 // If fetching this item panics or returns an error, we need to skip the sink at
                 // this index.
@@ -2969,7 +2970,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
                     // returns an error. This ensures that this index is passed once to this sink
                     // (as the regular `push_item` call doesn't happen).
                     unsafe {
-                        sink.skip_item_range(index..index + 1);
+                        sink.skip_item_range(index.index()..index.index() + 1);
                     }
                 });
 
@@ -2987,7 +2988,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
                 // `skip_item_range()` methods are ensured by the safety guarantees of
                 // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed are in
                 // `0..len` and they are each passed exactly once.
-                unsafe { sink.push_item(index, item) };
+                unsafe { sink.push_item(index.index(), item) };
                 Try::from_output(())
             },
         };
@@ -3288,7 +3289,7 @@ impl<T: GenericThreadPool, S: ParallelSource> ParallelIterator for BaseParallelI
                 let item = unsafe { source_descriptor.fetch_item(&mut context, index) };
                 match item {
                     None => ControlFlow::Continue((acc, context)),
-                    Some(item) => match process_item(acc, index, item) {
+                    Some(item) => match process_item(acc, index.index(), item) {
                         ControlFlow::Continue(acc) => ControlFlow::Continue((acc, context)),
                         ControlFlow::Break(acc) => ControlFlow::Break((acc, context)),
                     },
@@ -3350,7 +3351,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> ParallelIterator
                 // `ThreadPool::upper_bounded_pipeline()`, i.e. that all the indices passed are
                 // in `0..len` and they are each passed exactly once.
                 let item = unsafe { source_descriptor.exact_fetch_item(&mut context, index) };
-                match process_item(acc, index, item) {
+                match process_item(acc, index.index(), item) {
                     ControlFlow::Continue(acc) => ControlFlow::Continue((acc, context)),
                     ControlFlow::Break(acc) => ControlFlow::Break((acc, context)),
                 }
@@ -3395,15 +3396,15 @@ struct FetchAccumulator<Inner, Init, FetchItem> {
     fetch_item: FetchItem,
 }
 
-impl<Item, Output, ThreadContext, Inner, Init, FetchItem> Accumulator<usize, Output>
+impl<Item, Output, ThreadContext, Inner, Init, FetchItem> Accumulator<Cursor, Output>
     for FetchAccumulator<Inner, Init, FetchItem>
 where
     Inner: Accumulator<Item, Output>,
     Init: Fn() -> ThreadContext,
-    FetchItem: Fn(&mut ThreadContext, usize) -> Option<Item>,
+    FetchItem: Fn(&mut ThreadContext, Cursor) -> Option<Item>,
 {
     #[inline(always)]
-    fn accumulate(&self, iter: impl Iterator<Item = usize>) -> Output {
+    fn accumulate(&self, iter: impl Iterator<Item = Cursor>) -> Output {
         let mut context = (self.init)();
         self.inner
             .accumulate(iter.filter_map(|index| (self.fetch_item)(&mut context, index)))
@@ -3416,15 +3417,15 @@ struct ExactFetchAccumulator<Inner, Init, FetchItem> {
     fetch_item: FetchItem,
 }
 
-impl<Item, Output, ThreadContext, Inner, Init, FetchItem> Accumulator<usize, Output>
+impl<Item, Output, ThreadContext, Inner, Init, FetchItem> Accumulator<Cursor, Output>
     for ExactFetchAccumulator<Inner, Init, FetchItem>
 where
     Inner: Accumulator<Item, Output>,
     Init: Fn() -> ThreadContext,
-    FetchItem: Fn(&mut ThreadContext, usize) -> Item,
+    FetchItem: Fn(&mut ThreadContext, Cursor) -> Item,
 {
     #[inline(always)]
-    fn accumulate(&self, iter: impl Iterator<Item = usize>) -> Output {
+    fn accumulate(&self, iter: impl Iterator<Item = Cursor>) -> Output {
         let mut context = (self.init)();
         self.inner
             .accumulate(iter.map(|index| (self.fetch_item)(&mut context, index)))

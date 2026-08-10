@@ -47,9 +47,70 @@ pub use source::{
 use std::cmp::Ordering;
 use std::iter::{Product, Sum};
 use std::marker::PhantomData;
-use std::ops::ControlFlow;
+use std::ops::{Add, ControlFlow, Sub};
 #[cfg(feature = "nightly")]
 use std::ops::{FromResidual, Residual, Try};
+
+/// An index which records if it progressed sequentially from the previous
+/// index.
+#[derive(Clone, Copy)]
+pub struct Cursor {
+    index: usize,
+    is_next: bool,
+}
+
+impl Cursor {
+    /// Creates a new cursor at the given index, indicating sequential
+    /// progression.
+    pub fn next(index: usize) -> Self {
+        Self {
+            index,
+            is_next: true,
+        }
+    }
+
+    /// Creates a new cursor at the given index, indicating a jump from the
+    /// previous index.
+    pub fn jump(index: usize) -> Self {
+        Self {
+            index,
+            is_next: false,
+        }
+    }
+
+    /// Retrieves the index.
+    pub fn index(&self) -> usize {
+        self.index
+    }
+
+    /// Increments this cursor, marking it as sequential.
+    pub fn incr(&mut self) {
+        self.index += 1;
+        self.is_next = true;
+    }
+}
+
+impl Add<usize> for Cursor {
+    type Output = Self;
+
+    fn add(self, other: usize) -> Self {
+        Self {
+            index: self.index + other,
+            is_next: self.is_next,
+        }
+    }
+}
+
+impl Sub<usize> for Cursor {
+    type Output = Self;
+
+    fn sub(self, other: usize) -> Self {
+        Self {
+            index: self.index - other,
+            is_next: self.is_next,
+        }
+    }
+}
 
 /// Interface for an operation that accumulates items from an iterator into an
 /// output.
@@ -105,7 +166,7 @@ pub unsafe trait GenericThreadPool {
         self,
         input_len: usize,
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize) -> ControlFlow<Accum, Accum> + Sync,
+        process_item: impl Fn(Accum, Cursor) -> ControlFlow<Accum, Accum> + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
         cleanup: &(impl SourceCleanup + Sync),
@@ -125,7 +186,7 @@ pub unsafe trait GenericThreadPool {
     fn iter_pipeline<Output, Accum: Send>(
         self,
         input_len: usize,
-        accum: impl Accumulator<usize, Accum> + Sync,
+        accum: impl Accumulator<Cursor, Accum> + Sync,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output;
@@ -141,7 +202,7 @@ where
         self,
         input_len: usize,
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize) -> ControlFlow<Accum, Accum> + Sync,
+        process_item: impl Fn(Accum, Cursor) -> ControlFlow<Accum, Accum> + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
         cleanup: &(impl SourceCleanup + Sync),
@@ -159,7 +220,7 @@ where
     fn iter_pipeline<Output, Accum: Send>(
         self,
         input_len: usize,
-        accum: impl Accumulator<usize, Accum> + Sync,
+        accum: impl Accumulator<Cursor, Accum> + Sync,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {

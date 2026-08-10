@@ -10,6 +10,7 @@ use super::{
     ExactParallelSource, ExactSourceDescriptor, IntoExactParallelRefMutSource,
     IntoExactParallelRefSource, RewindableSource, SimpleExactSourceDescriptor, SourceCleanup,
 };
+use crate::iter::Cursor;
 use std::marker::PhantomData;
 
 /// A parallel source over a [slice](slice). This struct is created by the
@@ -102,7 +103,8 @@ impl<T: Sync> SourceCleanup for SliceSourceDescriptor<'_, T> {
 impl<'data, T: Sync> SimpleExactSourceDescriptor for SliceSourceDescriptor<'data, T> {
     type Item = &'data T;
 
-    unsafe fn simple_exact_fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn simple_exact_fetch_item(&self, index: Cursor) -> Self::Item {
+        let index = index.index();
         debug_assert!(index < self.slice.len());
         // SAFETY: The index is smaller than the length of the input slice, due to the
         // safety pre-conditions of the `simple_exact_fetch_item()` function.
@@ -203,7 +205,8 @@ impl<'data, T: Send + 'data> SourceCleanup for MutSliceSourceDescriptor<'data, T
 impl<'data, T: Send + 'data> SimpleExactSourceDescriptor for MutSliceSourceDescriptor<'data, T> {
     type Item = &'data mut T;
 
-    unsafe fn simple_exact_fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn simple_exact_fetch_item(&self, index: Cursor) -> Self::Item {
+        let index = index.index();
         debug_assert!(index < self.len);
         let base_ptr: *mut T = self.ptr.get();
         // SAFETY:

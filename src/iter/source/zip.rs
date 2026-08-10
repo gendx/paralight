@@ -7,6 +7,7 @@
 // except according to those terms.
 
 use super::{ExactParallelSource, ExactSourceDescriptor, SourceCleanup};
+use crate::iter::Cursor;
 
 /// A helper trait for zipping together multiple [`ExactParallelSource`]s into a
 /// single [`ExactParallelSource`] that produces items grouped from the original
@@ -319,9 +320,9 @@ macro_rules! zipable_tuple {
             unsafe fn exact_fetch_item(
                 &self,
                 context: &mut Self::ThreadContext,
-                index: usize,
+                index: Cursor,
             ) -> Self::Item {
-                debug_assert!(index < self.len);
+                debug_assert!(index.index() < self.len);
                 ( $(
                     // SAFETY: Given descriptors of equal lengths `len`, the `ZipEqSourceDescriptor`
                     // implements a pass-through of indices in `0..len` to all of them.
@@ -387,10 +388,10 @@ macro_rules! zipable_tuple {
             unsafe fn exact_fetch_item(
                 &self,
                 context: &mut Self::ThreadContext,
-                index: usize,
+                index: Cursor,
             ) -> Self::Item {
-                debug_assert!(index < self.len);
-                ( $( if index < self.descriptors.$i.len() {
+                debug_assert!(index.index() < self.len);
+                ( $( if index.index() < self.descriptors.$i.len() {
                     // SAFETY: Given descriptors of maximal length `len`, the
                     // `ZipMaxSourceDescriptor` implements a pass-through of indices in `0..len` to
                     // all of them, padding with `None` values beyond each descriptor's length.
@@ -473,9 +474,9 @@ macro_rules! zipable_tuple {
                 unsafe fn exact_fetch_item(
                     &self,
                     context: &mut Self::ThreadContext,
-                    index: usize,
+                    index: Cursor,
                 ) -> Self::Item {
-                    debug_assert!(index < self.len);
+                    debug_assert!(index.index() < self.len);
                     ( $(
                         // SAFETY: Given descriptors of minimal length `len`, the
                         // `ZipMinSourceDescriptor` implements a pass-through of indices in `0..len`
@@ -638,9 +639,9 @@ where
     unsafe fn exact_fetch_item(
         &self,
         context: &mut Self::ThreadContext,
-        index: usize,
+        index: Cursor,
     ) -> Self::Item {
-        debug_assert!(index < self.len);
+        debug_assert!(index.index() < self.len);
         let mut i = 0;
         context.each_mut().map(|ctxt| {
             let desc = &self.descriptors[i];
@@ -711,14 +712,14 @@ where
     unsafe fn exact_fetch_item(
         &self,
         context: &mut Self::ThreadContext,
-        index: usize,
+        index: Cursor,
     ) -> Self::Item {
-        debug_assert!(index < self.len);
+        debug_assert!(index.index() < self.len);
         let mut i = 0;
         context.each_mut().map(|ctxt| {
             let desc = &self.descriptors[i];
             i += 1;
-            if index < desc.len() {
+            if index.index() < desc.len() {
                 // SAFETY: Given descriptors of maximal length `len`, the
                 // `ZipMaxSourceDescriptor` implements a pass-through of indices in `0..len` to
                 // all of them, padding with `None` values beyond each descriptor's length.
@@ -797,9 +798,9 @@ where
     unsafe fn exact_fetch_item(
         &self,
         context: &mut Self::ThreadContext,
-        index: usize,
+        index: Cursor,
     ) -> Self::Item {
-        debug_assert!(index < self.len);
+        debug_assert!(index.index() < self.len);
         let mut i = 0;
         context.each_mut().map(|ctxt| {
             let desc = &self.descriptors[i];

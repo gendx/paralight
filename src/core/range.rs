@@ -6,6 +6,7 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+use crate::iter::Cursor;
 use crate::macros::log_debug;
 #[cfg(feature = "log_parallelism")]
 use crate::macros::{log_info, log_trace};
@@ -90,32 +91,6 @@ pub trait Range {
         &'a self,
         bound: &'bound AtomicUsize,
     ) -> Self::UpperBoundedIter<'a, 'bound>;
-}
-
-pub struct Cursor {
-    index: usize,
-    #[expect(dead_code)]
-    is_next: bool,
-}
-
-impl Cursor {
-    fn next(index: usize) -> Self {
-        Self {
-            index,
-            is_next: true,
-        }
-    }
-
-    fn jump(index: usize) -> Self {
-        Self {
-            index,
-            is_next: false,
-        }
-    }
-
-    pub fn index(&self) -> usize {
-        self.index
-    }
 }
 
 /// An iterator trait over `usize` that either returns a next index or a range

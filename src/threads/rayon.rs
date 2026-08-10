@@ -13,7 +13,7 @@ use crate::core::pipeline::{IterPipelineImpl, Pipeline, UpperBoundedPipelineImpl
 use crate::core::range::{
     FixedRangeFactory, RangeFactory, RangeOrchestrator, WorkStealingRangeFactory,
 };
-use crate::iter::{Accumulator, ExactSizeAccumulator, GenericThreadPool, SourceCleanup};
+use crate::iter::{Accumulator, Cursor, ExactSizeAccumulator, GenericThreadPool, SourceCleanup};
 use crossbeam_utils::CachePadded;
 use rayon_core::{Scope, ThreadPool};
 use std::num::NonZeroUsize;
@@ -257,7 +257,7 @@ unsafe impl GenericThreadPool for &RayonThreadPool<'_> {
         self,
         input_len: usize,
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize) -> ControlFlow<Accum, Accum> + Sync,
+        process_item: impl Fn(Accum, Cursor) -> ControlFlow<Accum, Accum> + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
         cleanup: &(impl SourceCleanup + Sync),
@@ -271,7 +271,7 @@ unsafe impl GenericThreadPool for &RayonThreadPool<'_> {
     fn iter_pipeline<Output, Accum: Send>(
         self,
         input_len: usize,
-        accum: impl Accumulator<usize, Accum> + Sync,
+        accum: impl Accumulator<Cursor, Accum> + Sync,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
@@ -333,7 +333,7 @@ impl<'a> RayonThreadPoolEnum<'a> {
         &mut self,
         input_len: usize,
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize) -> ControlFlow<Accum, Accum> + Sync,
+        process_item: impl Fn(Accum, Cursor) -> ControlFlow<Accum, Accum> + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
         cleanup: &(impl SourceCleanup + Sync),
@@ -373,7 +373,7 @@ impl<'a> RayonThreadPoolEnum<'a> {
     fn iter_pipeline<Output, Accum: Send>(
         &mut self,
         input_len: usize,
-        accum: impl Accumulator<usize, Accum> + Sync,
+        accum: impl Accumulator<Cursor, Accum> + Sync,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
@@ -451,7 +451,7 @@ where
         &mut self,
         input_len: usize,
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize) -> ControlFlow<Accum, Accum> + Sync,
+        process_item: impl Fn(Accum, Cursor) -> ControlFlow<Accum, Accum> + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
         cleanup: &(impl SourceCleanup + Sync),
@@ -508,7 +508,7 @@ where
     fn iter_pipeline<Output, Accum: Send>(
         &mut self,
         input_len: usize,
-        accum: impl Accumulator<usize, Accum> + Sync,
+        accum: impl Accumulator<Cursor, Accum> + Sync,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {

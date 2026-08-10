@@ -13,6 +13,7 @@ use super::{
     IntoParallelRefSource, ParallelSource, RewindableSource, SimpleSourceDescriptor, SourceCleanup,
     SourceDescriptor,
 };
+use crate::iter::Cursor;
 use hashbrown::hash_table::Entry;
 use hashbrown::{DefaultHashBuilder, HashTable};
 use std::hash::{BuildHasher, Hash};
@@ -115,8 +116,8 @@ impl<T: Sync> SourceCleanup for HashTableSourceDescriptor<'_, T> {
 impl<'data, T: Sync> SimpleSourceDescriptor for HashTableSourceDescriptor<'data, T> {
     type Item = &'data T;
 
-    unsafe fn simple_fetch_item(&self, index: usize) -> Option<Self::Item> {
-        self.table.get_bucket(index)
+    unsafe fn simple_fetch_item(&self, index: Cursor) -> Option<Self::Item> {
+        self.table.get_bucket(index.index())
     }
 }
 

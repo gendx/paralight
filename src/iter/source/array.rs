@@ -10,6 +10,7 @@ use super::{
     ExactParallelSource, ExactSourceDescriptor, IntoExactParallelSource,
     SimpleExactSourceDescriptor, SourceCleanup,
 };
+use crate::iter::Cursor;
 use std::cell::UnsafeCell;
 use std::mem::MaybeUninit;
 
@@ -141,7 +142,8 @@ impl<T: Send, const N: usize> SourceCleanup for ArraySourceDescriptor<T, N> {
 impl<T: Send, const N: usize> SimpleExactSourceDescriptor for ArraySourceDescriptor<T, N> {
     type Item = T;
 
-    unsafe fn simple_exact_fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn simple_exact_fetch_item(&self, index: Cursor) -> Self::Item {
+        let index = index.index();
         debug_assert!(index < N);
         let base_ptr: *const T = self.array.start();
         // SAFETY:

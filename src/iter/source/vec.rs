@@ -10,6 +10,7 @@ use super::{
     ExactParallelSource, ExactSourceDescriptor, IntoExactParallelSource,
     SimpleExactSourceDescriptor, SourceCleanup,
 };
+use crate::iter::Cursor;
 use std::mem::ManuallyDrop;
 
 /// A parallel source over a [`Vec`]. This struct is created by the
@@ -155,7 +156,8 @@ impl<T: Send> SourceCleanup for VecSourceDescriptor<T> {
 impl<T: Send> SimpleExactSourceDescriptor for VecSourceDescriptor<T> {
     type Item = T;
 
-    unsafe fn simple_exact_fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn simple_exact_fetch_item(&self, index: Cursor) -> Self::Item {
+        let index = index.index();
         debug_assert!(index < self.len);
         let base_ptr: *const T = self.ptr.get();
         // SAFETY:

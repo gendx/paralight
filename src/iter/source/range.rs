@@ -10,6 +10,7 @@ use super::{
     ExactParallelSource, ExactSourceDescriptor, IntoExactParallelSource, RewindableSource,
     SimpleExactSourceDescriptor, SourceCleanup,
 };
+use crate::iter::Cursor;
 #[cfg(feature = "nightly")]
 use std::iter::Step;
 use std::ops::{Range, RangeInclusive};
@@ -35,7 +36,8 @@ impl<T> SourceCleanup for RangeSourceDescriptor<T> {
 impl<T: Step + Copy + Send + Sync> SimpleExactSourceDescriptor for RangeSourceDescriptor<T> {
     type Item = T;
 
-    unsafe fn simple_exact_fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn simple_exact_fetch_item(&self, index: Cursor) -> Self::Item {
+        let index = index.index();
         debug_assert!(index < self.len);
         T::forward(self.start, index)
     }
@@ -45,7 +47,8 @@ impl<T: Step + Copy + Send + Sync> SimpleExactSourceDescriptor for RangeSourceDe
 impl SimpleExactSourceDescriptor for RangeSourceDescriptor<usize> {
     type Item = usize;
 
-    unsafe fn simple_exact_fetch_item(&self, index: usize) -> Self::Item {
+    unsafe fn simple_exact_fetch_item(&self, index: Cursor) -> Self::Item {
+        let index = index.index();
         debug_assert!(index < self.len);
         self.start + index
     }

@@ -9,7 +9,7 @@
 //! Pipelines to execute on worker threads.
 
 use super::range::{Range, SkipIterator};
-use crate::iter::{Accumulator, SourceCleanup};
+use crate::iter::{Accumulator, Cursor, SourceCleanup};
 use crossbeam_utils::CachePadded;
 use std::ops::ControlFlow;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -33,7 +33,7 @@ pub struct UpperBoundedPipelineImpl<
     Output,
     Accum,
     Init: Fn() -> Accum,
-    ProcessItem: Fn(Accum, usize) -> ControlFlow<Accum, Accum>,
+    ProcessItem: Fn(Accum, Cursor) -> ControlFlow<Accum, Accum>,
     Finalize: Fn(Accum) -> Output,
     Cleanup: SourceCleanup,
 > {
@@ -56,7 +56,7 @@ impl<R, Output, Accum, Init, ProcessItem, Finalize, Cleanup> Pipeline<R>
 where
     R: Range,
     Init: Fn() -> Accum,
-    ProcessItem: Fn(Accum, usize) -> ControlFlow<Accum, Accum>,
+    ProcessItem: Fn(Accum, Cursor) -> ControlFlow<Accum, Accum>,
     Finalize: Fn(Accum) -> Output,
     Cleanup: SourceCleanup,
 {
@@ -71,7 +71,7 @@ where
             accumulator = match acc {
                 ControlFlow::Continue(acc) => acc,
                 ControlFlow::Break(acc) => {
-                    self.bound.fetch_min(i, Ordering::Relaxed);
+                    self.bound.fetch_min(i.index(), Ordering::Relaxed);
                     acc
                 }
             };
@@ -82,7 +82,8 @@ where
 }
 
 /// A pipeline implementation that accumulates items from an iterator.
-pub struct IterPipelineImpl<'a, Output, Accum: Accumulator<usize, Output>, Cleanup: SourceCleanup> {
+pub struct IterPipelineImpl<'a, Output, Accum: Accumulator<Cursor, Output>, Cleanup: SourceCleanup>
+{
     /// Handle to the outputs of all the worker threads.
     pub outputs: Arc<[Mutex<Option<Output>>]>,
     /// Accumulator function to run on the indices produced by the range passed
@@ -95,7 +96,7 @@ pub struct IterPipelineImpl<'a, Output, Accum: Accumulator<usize, Output>, Clean
 impl<R, Output, Accum, Cleanup> Pipeline<R> for IterPipelineImpl<'_, Output, Accum, Cleanup>
 where
     R: Range,
-    Accum: Accumulator<usize, Output>,
+    Accum: Accumulator<Cursor, Output>,
     Cleanup: SourceCleanup,
 {
     fn run(&self, worker_id: usize, range: &R) {
@@ -119,13 +120,13 @@ struct SkipIteratorWrapper<'a, I: SkipIterator, Cleanup: SourceCleanup> {
 }
 
 impl<I: SkipIterator, Cleanup: SourceCleanup> Iterator for SkipIteratorWrapper<'_, I, Cleanup> {
-    type Item = usize;
+    type Item = Cursor;
 
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             match self.iter.next() {
-                (cursor, None) => return cursor.map(|cursor| cursor.index()),
+                (cursor, None) => return cursor,
                 (cursor, Some(skipped_range)) => {
                     // SAFETY: Due to the safety guarantees of `RangeFactory`:
                     // - `skipped_range` is included in the range `0..input_len` (where `input_len`
@@ -137,7 +138,7 @@ impl<I: SkipIterator, Cleanup: SourceCleanup> Iterator for SkipIteratorWrapper<'
                         self.cleanup.cleanup_item_range(skipped_range);
                     }
                     if cursor.is_some() {
-                        return cursor.map(|cursor| cursor.index());
+                        return cursor;
                     }
                 }
             }

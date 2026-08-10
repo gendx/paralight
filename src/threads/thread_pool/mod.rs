@@ -16,7 +16,7 @@ use crate::core::pipeline::{IterPipelineImpl, Pipeline, UpperBoundedPipelineImpl
 use crate::core::range::{
     FixedRangeFactory, Range, RangeFactory, RangeOrchestrator, WorkStealingRangeFactory,
 };
-use crate::iter::{Accumulator, ExactSizeAccumulator, GenericThreadPool, SourceCleanup};
+use crate::iter::{Accumulator, Cursor, ExactSizeAccumulator, GenericThreadPool, SourceCleanup};
 use crate::macros::{log_debug, log_error, log_warn};
 use crossbeam_utils::CachePadded;
 use sync::{Borrower, Lender, WorkerState, make_lending_group};
@@ -126,7 +126,7 @@ unsafe impl GenericThreadPool for &mut ThreadPool {
         self,
         input_len: usize,
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize) -> ControlFlow<Accum, Accum> + Sync,
+        process_item: impl Fn(Accum, Cursor) -> ControlFlow<Accum, Accum> + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
         cleanup: &(impl SourceCleanup + Sync),
@@ -139,7 +139,7 @@ unsafe impl GenericThreadPool for &mut ThreadPool {
     fn iter_pipeline<Output, Accum: Send>(
         self,
         input_len: usize,
-        accum: impl Accumulator<usize, Accum> + Sync,
+        accum: impl Accumulator<Cursor, Accum> + Sync,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
@@ -202,7 +202,7 @@ impl ThreadPoolEnum {
         &mut self,
         input_len: usize,
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize) -> ControlFlow<Accum, Accum> + Sync,
+        process_item: impl Fn(Accum, Cursor) -> ControlFlow<Accum, Accum> + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
         cleanup: &(impl SourceCleanup + Sync),
@@ -242,7 +242,7 @@ impl ThreadPoolEnum {
     fn iter_pipeline<Output, Accum: Send>(
         &mut self,
         input_len: usize,
-        accum: impl Accumulator<usize, Accum> + Sync,
+        accum: impl Accumulator<Cursor, Accum> + Sync,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
@@ -430,7 +430,7 @@ impl<F: RangeFactory> ThreadPoolImpl<F> {
         &mut self,
         input_len: usize,
         init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize) -> ControlFlow<Accum, Accum> + Sync,
+        process_item: impl Fn(Accum, Cursor) -> ControlFlow<Accum, Accum> + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
         cleanup: &(impl SourceCleanup + Sync),
@@ -476,7 +476,7 @@ impl<F: RangeFactory> ThreadPoolImpl<F> {
     fn iter_pipeline<Output, Accum: Send>(
         &mut self,
         input_len: usize,
-        accum: impl Accumulator<usize, Accum> + Sync,
+        accum: impl Accumulator<Cursor, Accum> + Sync,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
