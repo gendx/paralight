@@ -1,4 +1,4 @@
-// Copyright 2024-2025 The Paralight Authors
+// Copyright 2024-2026 The Paralight Authors
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -125,8 +125,8 @@ impl<I: SkipIterator, Cleanup: SourceCleanup> Iterator for SkipIteratorWrapper<'
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             match self.iter.next() {
-                (index, None) => return index,
-                (index, Some(skipped_range)) => {
+                (cursor, None) => return cursor.map(|cursor| cursor.index()),
+                (cursor, Some(skipped_range)) => {
                     // SAFETY: Due to the safety guarantees of `RangeFactory`:
                     // - `skipped_range` is included in the range `0..input_len` (where `input_len`
                     //   is the parameter to the `ThreadPool::*_pipeline()` call),
@@ -136,8 +136,8 @@ impl<I: SkipIterator, Cleanup: SourceCleanup> Iterator for SkipIteratorWrapper<'
                     unsafe {
                         self.cleanup.cleanup_item_range(skipped_range);
                     }
-                    if index.is_some() {
-                        return index;
+                    if cursor.is_some() {
+                        return cursor.map(|cursor| cursor.index());
                     }
                 }
             }

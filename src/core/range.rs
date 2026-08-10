@@ -1,4 +1,4 @@
-// Copyright 2024-2025 The Paralight Authors
+// Copyright 2024-2026 The Paralight Authors
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -92,6 +92,32 @@ pub trait Range {
     ) -> Self::UpperBoundedIter<'a, 'bound>;
 }
 
+pub struct Cursor {
+    index: usize,
+    #[expect(dead_code)]
+    is_next: bool,
+}
+
+impl Cursor {
+    fn next(index: usize) -> Self {
+        Self {
+            index,
+            is_next: true,
+        }
+    }
+
+    fn jump(index: usize) -> Self {
+        Self {
+            index,
+            is_next: false,
+        }
+    }
+
+    pub fn index(&self) -> usize {
+        self.index
+    }
+}
+
 /// An iterator trait over `usize` that either returns a next index or a range
 /// of skipped indices.
 pub trait SkipIterator {
@@ -99,7 +125,7 @@ pub trait SkipIterator {
     ///
     /// The iterator is exhausted if and only if this returns a pair of [`None`]
     /// values.
-    fn next(&mut self) -> (Option<usize>, Option<std::ops::Range<usize>>);
+    fn next(&mut self) -> (Option<Cursor>, Option<std::ops::Range<usize>>);
 
     /// Returns any remaining range of indices that have been skipped.
     ///
@@ -216,8 +242,8 @@ impl Range for FixedRange {
 
 impl SkipIterator for std::ops::Range<usize> {
     #[inline(always)]
-    fn next(&mut self) -> (Option<usize>, Option<std::ops::Range<usize>>) {
-        (Iterator::next(self), None)
+    fn next(&mut self) -> (Option<Cursor>, Option<std::ops::Range<usize>>) {
+        (Iterator::next(self).map(Cursor::next), None)
     }
 
     #[inline(always)]
@@ -240,11 +266,11 @@ pub struct UpperBoundedRange<'bound> {
 
 impl SkipIterator for UpperBoundedRange<'_> {
     #[inline(always)]
-    fn next(&mut self) -> (Option<usize>, Option<std::ops::Range<usize>>) {
+    fn next(&mut self) -> (Option<Cursor>, Option<std::ops::Range<usize>>) {
         let start = self.range.start;
         if start != self.range.end && start <= self.bound.load(Ordering::Relaxed) {
             self.range.start += 1;
-            (Some(start), None)
+            (Some(Cursor::next(start)), None)
         } else {
             // The upper bound can only decrease, so once it's reached the iterator is
             // exhausted.
@@ -596,7 +622,7 @@ impl SkipIterator for WorkStealingRangeIterator<'_> {
 
     #[inline(always)]
     #[cfg_attr(feature = "nightly", expect(clippy::incompatible_msrv))]
-    fn next(&mut self) -> (Option<usize>, Option<std::ops::Range<usize>>) {
+    fn next(&mut self) -> (Option<Cursor>, Option<std::ops::Range<usize>>) {
         let my_atomic_range: &AtomicRange = &self.ranges[self.id];
 
         // First phase: try to increment this thread's own range. Retries are needed in
@@ -616,12 +642,13 @@ impl SkipIterator for WorkStealingRangeIterator<'_> {
                             my_new_range.to_range()
                         );
                     }
-                    return (Some(taken as usize), None);
+                    return (Some(Cursor::next(taken as usize)), None);
                 }
                 // Increment failed: retry with an updated range.
                 Err(range) => {
                     #[cfg(feature = "nightly")]
                     cold_path();
+                    debug_assert_eq!(range.start(), self.my_range.start());
                     self.my_range = range;
                     #[cfg(feature = "log_parallelism")]
                     {
@@ -638,7 +665,8 @@ impl SkipIterator for WorkStealingRangeIterator<'_> {
         }
 
         // Second phase: the range is empty, try to steal a range from another thread.
-        self.steal()
+        let (index, skipped) = self.steal();
+        (index.map(Cursor::jump), skipped)
     }
 }
 
@@ -796,7 +824,7 @@ impl SkipIterator for UpperBoundedWorkStealingRangeIterator<'_, '_> {
 
     #[inline(always)]
     #[cfg_attr(feature = "nightly", expect(clippy::incompatible_msrv))]
-    fn next(&mut self) -> (Option<usize>, Option<std::ops::Range<usize>>) {
+    fn next(&mut self) -> (Option<Cursor>, Option<std::ops::Range<usize>>) {
         let bound = self.bound.load(Ordering::Relaxed);
         #[cfg(feature = "log_parallelism")]
         log_trace!("[thread {}] Loaded upper bound = {}", self.id, bound);
@@ -841,12 +869,13 @@ impl SkipIterator for UpperBoundedWorkStealingRangeIterator<'_, '_> {
                             Some(residual)
                         };
 
-                        return (Some(taken as usize), residual);
+                        return (Some(Cursor::next(taken as usize)), residual);
                     }
                     // Increment failed: retry with an updated range.
                     Err(range) => {
                         #[cfg(feature = "nightly")]
                         cold_path();
+                        debug_assert_eq!(range.start(), self.my_range.start());
                         self.my_range = range;
                         (my_bounded_range, my_residual_range) = self.my_range.upper_bound(bound);
                         #[cfg(feature = "log_parallelism")]
@@ -884,6 +913,7 @@ impl SkipIterator for UpperBoundedWorkStealingRangeIterator<'_, '_> {
                     Err(range) => {
                         #[cfg(feature = "nightly")]
                         cold_path();
+                        debug_assert_eq!(range.start(), self.my_range.start());
                         self.my_range = range;
                         (my_bounded_range, my_residual_range) = self.my_range.upper_bound(bound);
                         continue;
@@ -897,11 +927,12 @@ impl SkipIterator for UpperBoundedWorkStealingRangeIterator<'_, '_> {
         }
 
         // Second phase: the range is empty, try to steal a range from another thread.
-        self.steal(
+        let (index, skipped) = self.steal(
             bound,
             #[cfg(feature = "log_parallelism")]
             my_bounded_range,
-        )
+        );
+        (index.map(Cursor::jump), skipped)
     }
 }
 
@@ -1060,7 +1091,7 @@ mod test {
             loop {
                 match self.0.next() {
                     (None, Some(_)) => continue,
-                    (next, _) => return next,
+                    (next, _) => return next.map(|cursor| cursor.index()),
                 }
             }
         }
