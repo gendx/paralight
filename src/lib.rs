@@ -3668,7 +3668,7 @@ mod test {
             .copied()
             .with_thread_pool(&mut thread_pool)
             .find_map_any(|x| if x % 2 == 0 { Some(2 * x) } else { None });
-        assert!(even.unwrap() % 4 == 0);
+        assert_eq!(even.unwrap() % 4, 0);
 
         let empty = []
             .par_iter()
@@ -4738,7 +4738,7 @@ mod test {
             .with_thread_pool(&mut thread_pool)
             .try_collect();
         assert!(collection.is_err());
-        assert!(*collection.unwrap_err() == 7);
+        assert_eq!(*collection.unwrap_err(), 7);
     }
 
     fn test_adaptor_try_collect_panic<T>(mut thread_pool: T)
