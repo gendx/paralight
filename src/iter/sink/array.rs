@@ -7,8 +7,11 @@
 // except according to those terms.
 
 use super::{ExactParallelSink, FromExactParallelSink};
+#[cfg(shuttle)]
+use shuttle::sync::Mutex;
 use std::cell::UnsafeCell;
 use std::mem::MaybeUninit;
+#[cfg(not(shuttle))]
 use std::sync::Mutex;
 
 impl<T: Send, const N: usize> FromExactParallelSink for [T; N] {

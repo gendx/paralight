@@ -16,10 +16,12 @@ use crate::core::range::{
 use crate::iter::{Accumulator, ExactSizeAccumulator, GenericThreadPool, SourceCleanup};
 use crossbeam_utils::CachePadded;
 use rayon_core::{Scope, ThreadPool};
+#[cfg(shuttle)]
+use shuttle::sync::{Arc, Mutex, atomic::AtomicUsize};
 use std::num::NonZeroUsize;
 use std::ops::ControlFlow;
-use std::sync::atomic::AtomicUsize;
-use std::sync::{Arc, Mutex};
+#[cfg(not(shuttle))]
+use std::sync::{Arc, Mutex, atomic::AtomicUsize};
 
 /// Adaptor to execute Paralight iterators over a thread pool provided by the
 /// [Rayon](https://docs.rs/rayon) crate.

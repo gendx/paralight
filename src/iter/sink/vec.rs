@@ -7,8 +7,11 @@
 // except according to those terms.
 
 use super::{ExactParallelSink, FromExactParallelSink};
+#[cfg(shuttle)]
+use shuttle::sync::Mutex;
 use std::collections::VecDeque;
 use std::mem::ManuallyDrop;
+#[cfg(not(shuttle))]
 use std::sync::Mutex;
 
 impl<T: Send> FromExactParallelSink for Vec<T> {

@@ -39,6 +39,9 @@ nix = { optional = true, version = "0.31.3", features = ["sched"] }
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { optional = true, version = "0.61.2", features = ["Win32_System_Threading"] }
 
+[target.'cfg(shuttle)'.dependencies]
+shuttle = "0.9.1"
+
 [dev-dependencies]
 chacha20 = { version = "0.10.1", features = ["rng"] }
 clap = { version = "4.6.4", features = ["derive"] }
@@ -68,4 +71,4 @@ name = "sum_fixed"
 required-features = ["default-thread-pool"]
 
 [lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage,coverage_nightly)'] }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage,coverage_nightly,shuttle)'] }

@@ -1,4 +1,4 @@
-// Copyright 2024-2025 The Paralight Authors
+// Copyright 2024-2026 The Paralight Authors
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -6,7 +6,10 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
+#[cfg(shuttle)]
+use shuttle::sync::{Condvar, Mutex, MutexGuard, PoisonError};
 use std::ptr::NonNull;
+#[cfg(not(shuttle))]
 use std::sync::{Condvar, Mutex, MutexGuard, PoisonError};
 
 /// An ergonomic wrapper around a [`Mutex`]-[`Condvar`] pair.

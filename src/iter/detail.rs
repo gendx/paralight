@@ -13,12 +13,15 @@ use super::{
 };
 use crossbeam_utils::CachePadded;
 use scopeguard::ScopeGuard;
+#[cfg(shuttle)]
+use shuttle::sync::atomic::AtomicBool;
 use std::cmp::Ordering;
 use std::iter::{Product, Sum};
 use std::marker::PhantomData;
 use std::ops::ControlFlow;
 #[cfg(feature = "nightly")]
 use std::ops::{FromResidual, Residual, Try};
+#[cfg(not(shuttle))]
 use std::sync::atomic::AtomicBool;
 
 /// A fuse is an atomic object that starts unset and can transition once to the
@@ -43,6 +46,9 @@ impl Fuse {
 
     /// Reads the current state of this fuse.
     fn load(&self) -> FuseState {
+        #[cfg(shuttle)]
+        use shuttle::sync::atomic::Ordering;
+        #[cfg(not(shuttle))]
         use std::sync::atomic::Ordering;
 
         match self.0.load(Ordering::Relaxed) {
@@ -53,6 +59,9 @@ impl Fuse {
 
     /// Sets this fuse to the [`Set`](FuseState::Set) state.
     fn set(&self) {
+        #[cfg(shuttle)]
+        use shuttle::sync::atomic::Ordering;
+        #[cfg(not(shuttle))]
         use std::sync::atomic::Ordering;
 
         self.0.store(true, Ordering::Relaxed)

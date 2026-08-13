@@ -1,4 +1,4 @@
-// Copyright 2024 The Paralight Authors
+// Copyright 2024-2026 The Paralight Authors
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -11,8 +11,16 @@
 use super::util::{DynLifetimeView, LifetimeParameterized, Status};
 use crate::macros::{log_debug, log_error};
 use crossbeam_utils::CachePadded;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, RwLock};
+#[cfg(shuttle)]
+use shuttle::sync::{
+    Arc, RwLock,
+    atomic::{AtomicUsize, Ordering},
+};
+#[cfg(not(shuttle))]
+use std::sync::{
+    Arc, RwLock,
+    atomic::{AtomicUsize, Ordering},
+};
 
 /// State of a worker thread.
 #[derive(Clone, Copy)]

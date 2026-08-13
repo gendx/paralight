@@ -1,4 +1,4 @@
-// Copyright 2024-2025 The Paralight Authors
+// Copyright 2024-2026 The Paralight Authors
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -11,9 +11,17 @@
 use super::range::{Range, SkipIterator};
 use crate::iter::{Accumulator, SourceCleanup};
 use crossbeam_utils::CachePadded;
+#[cfg(shuttle)]
+use shuttle::sync::{
+    Arc, Mutex,
+    atomic::{AtomicUsize, Ordering},
+};
 use std::ops::ControlFlow;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+#[cfg(not(shuttle))]
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicUsize, Ordering},
+};
 
 /// A pipeline is a task to run on a worker thread, taking as input a range of
 /// items to process.

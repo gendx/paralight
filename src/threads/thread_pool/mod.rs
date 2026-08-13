@@ -35,12 +35,19 @@ use nix::{
     sched::{CpuSet, sched_setaffinity},
     unistd::Pid,
 };
+#[cfg(shuttle)]
+use shuttle::{
+    sync::{Arc, Mutex, atomic::AtomicUsize},
+    thread::{self, JoinHandle},
+};
 use std::marker::PhantomData;
 use std::num::NonZeroUsize;
 use std::ops::ControlFlow;
-use std::sync::atomic::AtomicUsize;
-use std::sync::{Arc, Mutex};
-use std::thread::JoinHandle;
+#[cfg(not(shuttle))]
+use std::{
+    sync::{Arc, Mutex, atomic::AtomicUsize},
+    thread::{self, JoinHandle},
+};
 #[cfg(all(not(miri), target_os = "windows"))]
 use windows_sys::Win32::{
     Foundation::GetLastError,
@@ -311,7 +318,7 @@ impl<F: RangeFactory> ThreadPoolImpl<F> {
                     pipeline: borrower,
                 };
                 WorkerThreadHandle {
-                    handle: std::thread::spawn(move || {
+                    handle: thread::spawn(move || {
                         #[cfg(all(
                             not(miri),
                             any(

@@ -1,4 +1,4 @@
-// Copyright 2024-2025 The Paralight Authors
+// Copyright 2024-2026 The Paralight Authors
 //
 // Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
 // https://www.apache.org/licenses/LICENSE-2.0> or the MIT license
@@ -10,14 +10,24 @@ use crate::macros::log_debug;
 #[cfg(feature = "log_parallelism")]
 use crate::macros::{log_info, log_trace};
 use crossbeam_utils::CachePadded;
+#[cfg(all(shuttle, feature = "log_parallelism"))]
+use shuttle::sync::Mutex;
+#[cfg(shuttle)]
+use shuttle::sync::{
+    Arc,
+    atomic::{AtomicU64, AtomicUsize, Ordering},
+};
 #[cfg(feature = "nightly")]
 use std::hint::cold_path; // TODO(MSRV >= 1.95.0): always import.
 #[cfg(feature = "log_parallelism")]
 use std::ops::AddAssign;
-use std::sync::Arc;
-#[cfg(feature = "log_parallelism")]
+#[cfg(all(not(shuttle), feature = "log_parallelism"))]
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+#[cfg(not(shuttle))]
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, AtomicUsize, Ordering},
+};
 
 /// A factory for handing out ranges of items to various threads.
 ///
@@ -1302,6 +1312,80 @@ mod test {
                     assert!(!right.is_empty());
                 }
             }
+        }
+    }
+
+    #[cfg(shuttle)]
+    mod shuttttle {
+        use super::*;
+
+        const NUM_THREADS: usize = 4;
+        const NUM_ELEMENTS: usize = 100;
+        const SHUTTLE_ITERATIONS: usize = 10_000;
+
+        #[test]
+        fn test_fixed_range() {
+            shuttle::check_random(
+                || {
+                    let factory = FixedRangeFactory::new(NUM_THREADS);
+                    let ranges: [_; NUM_THREADS] = std::array::from_fn(|i| factory.range(i));
+                    let mut orchestrator = factory.orchestrator();
+
+                    orchestrator.reset_ranges(NUM_ELEMENTS);
+                    let handles = ranges.map(|range| {
+                        shuttle::thread::spawn(move || {
+                            SkipIteratorWrapper(range.iter()).collect::<Vec<_>>()
+                        })
+                    });
+                    let values: [Vec<usize>; NUM_THREADS] =
+                        handles.map(|handle| handle.join().unwrap());
+
+                    // The fixed range implementation always yields the same items in order.
+                    for (i, set) in values.iter().enumerate() {
+                        assert_eq!(
+                            *set,
+                            (i * NUM_ELEMENTS / NUM_THREADS..(i + 1) * NUM_ELEMENTS / NUM_THREADS)
+                                .collect::<Vec<_>>()
+                        );
+                    }
+                },
+                SHUTTLE_ITERATIONS,
+            );
+        }
+
+        #[test]
+        fn test_work_stealing_range() {
+            shuttle::check_random(
+                || {
+                    let factory = WorkStealingRangeFactory::new(NUM_THREADS);
+                    let ranges: [_; NUM_THREADS] = std::array::from_fn(|i| factory.range(i));
+                    let mut orchestrator = factory.orchestrator();
+
+                    orchestrator.reset_ranges(NUM_ELEMENTS);
+                    let handles = ranges.map(|range| {
+                        shuttle::thread::spawn(move || {
+                            SkipIteratorWrapper(range.iter()).collect::<Vec<_>>()
+                        })
+                    });
+                    let values: [Vec<usize>; NUM_THREADS] =
+                        handles.map(|handle| handle.join().unwrap());
+
+                    // This checks that:
+                    // - all ranges yield disjoint elements,
+                    // - each range never yields the same element twice.
+                    let mut all_values = vec![false; NUM_ELEMENTS];
+                    for set in values {
+                        println!("Values: {set:?}");
+                        for x in set {
+                            assert!(!all_values[x]);
+                            all_values[x] = true;
+                        }
+                    }
+                    // Check that the whole range is covered.
+                    assert!(all_values.iter().all(|x| *x));
+                },
+                SHUTTLE_ITERATIONS,
+            );
         }
     }
 }
