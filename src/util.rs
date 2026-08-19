@@ -63,11 +63,11 @@ where
         let log2 = divisor.checked_ilog2()?;
 
         // Power of 2.
-        if divisor == T::one() << log2 {
+        if divisor == T::ONE << log2 {
             return Some(Divider {
                 divisor,
-                multiplier: T::zero(),
-                mask: divisor - T::one(),
+                multiplier: T::ZERO,
+                mask: divisor - T::ONE,
                 shift: log2,
             });
         }
@@ -75,21 +75,21 @@ where
         // See https://rubenvannieuwpoort.nl/posts/division-by-constant-unsigned-integers:
         //  multiplier = 2^(N+shift) / d
         //  rem = 2^(N+shift) % d
-        let (multiplier, rem) = T::narrowing_div_rem((T::zero(), T::one() << log2), divisor);
-        debug_assert_ne!(multiplier, T::zero());
-        debug_assert!(rem > T::zero());
+        let (multiplier, rem) = T::narrowing_div_rem((T::ZERO, T::ONE << log2), divisor);
+        debug_assert_ne!(multiplier, T::ZERO);
+        debug_assert!(rem > T::ZERO);
         debug_assert!(rem < divisor);
 
         // At this point the highest bit of multiplier is set (because we divided
         // 2^(N+log2(d)) / d), therefore shifting discards it:
         //  multiplier = 2 * (2^(N+shift) / d) - 2^N
-        debug_assert_eq!(multiplier >> (T::BITS - 1), T::one());
+        debug_assert_eq!(multiplier >> (T::BITS - 1), T::ONE);
         let mut multiplier = multiplier << 1;
         let twice_rem = rem << 1;
         // Use the remainder to adjust the multiplier to:
         //  multiplier = 2^(N+shift+1) / d - 2^N
         if twice_rem >= divisor || twice_rem < rem {
-            multiplier += T::one();
+            multiplier += T::ONE;
         }
 
         // Lastly, we compute the ceiling of that:
@@ -99,8 +99,8 @@ where
         //  multiplier = ceil(2^(N+shift+1) / d) - 2^N
         Some(Divider {
             divisor,
-            multiplier: multiplier + T::one(),
-            mask: T::zero(),
+            multiplier: multiplier + T::ONE,
+            mask: T::ZERO,
             shift: log2,
         })
     }
@@ -138,7 +138,7 @@ where
 {
     #[inline(always)]
     pub fn div_rem(&self, x: T) -> (T, T) {
-        if self.multiplier == T::zero() {
+        if self.multiplier == T::ZERO {
             (x >> self.shift, x & self.mask)
         } else {
             let q = self.div_non_power_of_two(x);
@@ -181,12 +181,8 @@ impl Rem<Divider<Self>> for usize {
 
 pub trait Arithmetic: Sized {
     const BITS: u32;
-
-    /// Returns zero.
-    fn zero() -> Self;
-
-    /// Returns one.
-    fn one() -> Self;
+    const ZERO: Self;
+    const ONE: Self;
 
     /// Returns the base-2 logarithm or `None` if `self` is zero.
     fn checked_ilog2(self) -> Option<u32>;
@@ -208,16 +204,8 @@ pub trait Arithmetic: Sized {
 
 impl Arithmetic for u8 {
     const BITS: u32 = u8::BITS;
-
-    #[inline(always)]
-    fn zero() -> Self {
-        0
-    }
-
-    #[inline(always)]
-    fn one() -> Self {
-        1
-    }
+    const ZERO: Self = 0;
+    const ONE: Self = 1;
 
     #[inline(always)]
     fn checked_ilog2(self) -> Option<u32> {
@@ -256,16 +244,8 @@ impl Arithmetic for u8 {
 
 impl Arithmetic for u16 {
     const BITS: u32 = u16::BITS;
-
-    #[inline(always)]
-    fn zero() -> Self {
-        0
-    }
-
-    #[inline(always)]
-    fn one() -> Self {
-        1
-    }
+    const ZERO: Self = 0;
+    const ONE: Self = 1;
 
     #[inline(always)]
     fn checked_ilog2(self) -> Option<u32> {
@@ -304,16 +284,8 @@ impl Arithmetic for u16 {
 
 impl Arithmetic for u32 {
     const BITS: u32 = u32::BITS;
-
-    #[inline(always)]
-    fn zero() -> Self {
-        0
-    }
-
-    #[inline(always)]
-    fn one() -> Self {
-        1
-    }
+    const ZERO: Self = 0;
+    const ONE: Self = 1;
 
     #[inline(always)]
     fn checked_ilog2(self) -> Option<u32> {
@@ -352,16 +324,8 @@ impl Arithmetic for u32 {
 
 impl Arithmetic for u64 {
     const BITS: u32 = u64::BITS;
-
-    #[inline(always)]
-    fn zero() -> Self {
-        0
-    }
-
-    #[inline(always)]
-    fn one() -> Self {
-        1
-    }
+    const ZERO: Self = 0;
+    const ONE: Self = 1;
 
     #[inline(always)]
     fn checked_ilog2(self) -> Option<u32> {
@@ -400,16 +364,8 @@ impl Arithmetic for u64 {
 
 impl Arithmetic for usize {
     const BITS: u32 = usize::BITS;
-
-    #[inline(always)]
-    fn zero() -> Self {
-        0
-    }
-
-    #[inline(always)]
-    fn one() -> Self {
-        1
-    }
+    const ZERO: Self = 0;
+    const ONE: Self = 1;
 
     #[inline(always)]
     fn checked_ilog2(self) -> Option<u32> {
