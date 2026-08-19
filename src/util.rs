@@ -9,7 +9,7 @@
 //! Generally useful functions.
 
 use std::fmt::Debug;
-use std::ops::{Add, AddAssign, BitAnd, Div, Mul, Rem, Shl, Shr, Sub};
+use std::ops::{Add, BitAnd, Div, Rem, Shl, Shr, Sub};
 
 /// A divider stores pre-computed values to speed up divisions and modulos by a
 /// given constant.
@@ -35,13 +35,13 @@ pub struct Divider<T> {
     /// Magic multiplier to compute divisions by this divisor. Set to zero for
     /// powers of 2 and non-zero otherwise.
     multiplier: T,
+    /// Adjusting term added to the magic multiplication.
+    add: T,
     /// Mask to compute remainders modulo this divisor. Only used for powers of
     /// 2.
     mask: T,
-    /// Shift to compute divisions by this divisor.
-    /// - For powers of 2, this is simply applied to the input.
-    /// - For non-powers of 2, this is applied to the high word of the magic
-    ///   multiplication, after adjusting for carries.
+    /// Shift to compute divisions by this divisor, applied to the high word of
+    /// the magic multiply-and-add operation.
     shift: u32,
 }
 
@@ -53,9 +53,7 @@ where
         + Debug
         + Add<Output = T>
         + Sub<Output = T>
-        + AddAssign
         + Shl<u32, Output = T>
-        + Shr<u32, Output = T>
         + Arithmetic,
 {
     pub fn new(divisor: T) -> Option<Self> {
@@ -67,81 +65,56 @@ where
             return Some(Divider {
                 divisor,
                 multiplier: T::ZERO,
+                add: T::ZERO,
                 mask: divisor - T::ONE,
                 shift: log2,
             });
         }
 
         // See https://rubenvannieuwpoort.nl/posts/division-by-constant-unsigned-integers:
-        //  multiplier = 2^(N+shift) / d
-        //  rem = 2^(N+shift) % d
-        let (multiplier, rem) = T::narrowing_div_rem((T::ZERO, T::ONE << log2), divisor);
-        debug_assert_ne!(multiplier, T::ZERO);
-        debug_assert!(rem > T::ZERO);
-        debug_assert!(rem < divisor);
+        //   mul_down = floor(2^(N+shift) / d)
+        let (mul_down, _) = T::narrowing_div_rem((T::ZERO, T::ONE << log2), divisor);
+        debug_assert_ne!(mul_down, T::ZERO);
 
-        // At this point the highest bit of multiplier is set (because we divided
-        // 2^(N+log2(d)) / d), therefore shifting discards it:
-        //  multiplier = 2 * (2^(N+shift) / d) - 2^N
-        debug_assert_eq!(multiplier >> (T::BITS - 1), T::ONE);
-        let mut multiplier = multiplier << 1;
-        let twice_rem = rem << 1;
-        // Use the remainder to adjust the multiplier to:
-        //  multiplier = 2^(N+shift+1) / d - 2^N
-        if twice_rem >= divisor || twice_rem < rem {
-            multiplier += T::ONE;
+        // Given that d isn't a power of 2, it doesn't divide 2^(N+shift), therefore:
+        //   mul_up = ceil(2^(N+shift) / d)
+        let mul_up = mul_down + T::ONE;
+        debug_assert_ne!(mul_up, T::ZERO);
+
+        // Lemma 11 in https://rubenvannieuwpoort.nl/posts/division-by-constant-unsigned-integers:
+        if mul_up.wrapping_mul(divisor) <= T::ONE << log2 {
+            // Use round-up method.
+            Some(Divider {
+                divisor,
+                multiplier: mul_up,
+                add: T::ZERO,
+                mask: T::ZERO,
+                shift: log2,
+            })
+        } else {
+            // Use round-down method.
+            Some(Divider {
+                divisor,
+                multiplier: mul_down,
+                add: mul_down,
+                mask: T::ZERO,
+                shift: log2,
+            })
         }
-
-        // Lastly, we compute the ceiling of that:
-        //  multiplier = 2^(N+shift+1) / d + 1 - 2^N
-        // Because d isn't a power of 2 (and therefore doesn't divide 2^(N+shift+1)),
-        // this gives:
-        //  multiplier = ceil(2^(N+shift+1) / d) - 2^N
-        Some(Divider {
-            divisor,
-            multiplier: multiplier + T::ONE,
-            mask: T::ZERO,
-            shift: log2,
-        })
     }
 }
 
 impl<T> Divider<T>
 where
-    T: Copy + Add<Output = T> + Sub<Output = T> + Shr<u32, Output = T> + Arithmetic,
-{
-    // Not suitable for powers of 2 (as the shift is adjusted differently).
-    #[inline(always)]
-    fn div_non_power_of_two(&self, x: T) -> T {
-        // See https://rubenvannieuwpoort.nl/posts/division-by-constant-unsigned-integers:
-        //  multiplier = m - 2^N
-        //  hi = (x*m - x*2^N) >> N = x*m / 2^N - x
-        //  y = (2x - x*m / 2^N) / 2 + x*m / 2^N - x
-        //    = x*m / 2^(N+1)
-        //  y >> shift = x*m / 2^(N+shift+1)
-        let (_, hi) = x.widening_mul(self.multiplier);
-        let y = ((x.wrapping_sub(hi)) >> 1).wrapping_add(hi);
-        y >> self.shift
-    }
-}
-
-impl<T> Divider<T>
-where
-    T: Copy
-        + Eq
-        + Add<Output = T>
-        + Sub<Output = T>
-        + Mul<Output = T>
-        + BitAnd<Output = T>
-        + Shr<u32, Output = T>
-        + Arithmetic,
+    T: Copy + Eq + BitAnd<Output = T> + Shr<u32, Output = T> + Arithmetic,
 {
     #[inline(always)]
     pub fn div_rem(&self, x: T) -> (T, T) {
         if self.multiplier == T::ZERO {
             (x >> self.shift, x & self.mask)
         } else {
-            let q = self.div_non_power_of_two(x);
+            let (_, high) = x.mul_add(self.multiplier, self.add);
+            let q = high >> self.shift;
             let r = x.wrapping_sub(q.wrapping_mul(self.divisor));
             (q, r)
         }
@@ -158,7 +131,8 @@ impl Div<Divider<Self>> for usize {
         if divider.multiplier == 0 {
             self >> divider.shift
         } else {
-            divider.div_non_power_of_two(self)
+            let (_, high) = self.mul_add(divider.multiplier, divider.add);
+            high >> divider.shift
         }
     }
 }
@@ -173,7 +147,8 @@ impl Rem<Divider<Self>> for usize {
         if divider.multiplier == 0 {
             self & divider.mask
         } else {
-            let q = divider.div_non_power_of_two(self);
+            let (_, high) = self.mul_add(divider.multiplier, divider.add);
+            let q = high >> divider.shift;
             self.wrapping_sub(q.wrapping_mul(divider.divisor))
         }
     }
@@ -187,14 +162,12 @@ pub trait Arithmetic: Sized {
     /// Returns the base-2 logarithm or `None` if `self` is zero.
     fn checked_ilog2(self) -> Option<u32>;
 
-    fn wrapping_add(self, other: Self) -> Self;
-
     fn wrapping_sub(self, other: Self) -> Self;
 
     fn wrapping_mul(self, other: Self) -> Self;
 
-    /// Returns (low, high) of multiplying `self` by `other`.
-    fn widening_mul(self, other: Self) -> (Self, Self);
+    /// Returns (low, high) of `self * mul + add`.
+    fn mul_add(self, mul: Self, add: Self) -> (Self, Self);
 
     /// Divides (num_lo, num_hi) by denom, returning (quotient, remainder),
     /// assuming that the quotient fits in Self.
@@ -213,11 +186,6 @@ impl Arithmetic for u8 {
     }
 
     #[inline(always)]
-    fn wrapping_add(self, other: Self) -> Self {
-        self.wrapping_add(other)
-    }
-
-    #[inline(always)]
     fn wrapping_sub(self, other: Self) -> Self {
         self.wrapping_sub(other)
     }
@@ -228,8 +196,8 @@ impl Arithmetic for u8 {
     }
 
     #[inline(always)]
-    fn widening_mul(self, other: Self) -> (Self, Self) {
-        self.carrying_mul(other, 0)
+    fn mul_add(self, mul: Self, add: Self) -> (Self, Self) {
+        self.carrying_mul(mul, add)
     }
 
     #[inline(always)]
@@ -253,11 +221,6 @@ impl Arithmetic for u16 {
     }
 
     #[inline(always)]
-    fn wrapping_add(self, other: Self) -> Self {
-        self.wrapping_add(other)
-    }
-
-    #[inline(always)]
     fn wrapping_sub(self, other: Self) -> Self {
         self.wrapping_sub(other)
     }
@@ -268,8 +231,8 @@ impl Arithmetic for u16 {
     }
 
     #[inline(always)]
-    fn widening_mul(self, other: Self) -> (Self, Self) {
-        self.carrying_mul(other, 0)
+    fn mul_add(self, mul: Self, add: Self) -> (Self, Self) {
+        self.carrying_mul(mul, add)
     }
 
     #[inline(always)]
@@ -293,11 +256,6 @@ impl Arithmetic for u32 {
     }
 
     #[inline(always)]
-    fn wrapping_add(self, other: Self) -> Self {
-        self.wrapping_add(other)
-    }
-
-    #[inline(always)]
     fn wrapping_sub(self, other: Self) -> Self {
         self.wrapping_sub(other)
     }
@@ -308,8 +266,8 @@ impl Arithmetic for u32 {
     }
 
     #[inline(always)]
-    fn widening_mul(self, other: Self) -> (Self, Self) {
-        self.carrying_mul(other, 0)
+    fn mul_add(self, mul: Self, add: Self) -> (Self, Self) {
+        self.carrying_mul(mul, add)
     }
 
     #[inline(always)]
@@ -333,11 +291,6 @@ impl Arithmetic for u64 {
     }
 
     #[inline(always)]
-    fn wrapping_add(self, other: Self) -> Self {
-        self.wrapping_add(other)
-    }
-
-    #[inline(always)]
     fn wrapping_sub(self, other: Self) -> Self {
         self.wrapping_sub(other)
     }
@@ -348,8 +301,8 @@ impl Arithmetic for u64 {
     }
 
     #[inline(always)]
-    fn widening_mul(self, other: Self) -> (Self, Self) {
-        self.carrying_mul(other, 0)
+    fn mul_add(self, mul: Self, add: Self) -> (Self, Self) {
+        self.carrying_mul(mul, add)
     }
 
     #[inline(always)]
@@ -373,11 +326,6 @@ impl Arithmetic for usize {
     }
 
     #[inline(always)]
-    fn wrapping_add(self, other: Self) -> Self {
-        self.wrapping_add(other)
-    }
-
-    #[inline(always)]
     fn wrapping_sub(self, other: Self) -> Self {
         self.wrapping_sub(other)
     }
@@ -388,8 +336,8 @@ impl Arithmetic for usize {
     }
 
     #[inline(always)]
-    fn widening_mul(self, other: Self) -> (Self, Self) {
-        self.carrying_mul(other, 0)
+    fn mul_add(self, mul: Self, add: Self) -> (Self, Self) {
+        self.carrying_mul(mul, add)
     }
 
     #[inline(always)]
