@@ -76,7 +76,8 @@ where
         let (mul_down, _) = T::narrowing_div_rem((T::ZERO, T::ONE << log2), divisor);
         debug_assert_ne!(mul_down, T::ZERO);
 
-        // Given that d isn't a power of 2, it doesn't divide 2^(N+shift), therefore:
+        // Given that d isn't a power of 2, it doesn't divide 2^(N+shift),
+        // therefore:
         //   mul_up = ceil(2^(N+shift) / d)
         let mul_up = mul_down + T::ONE;
         debug_assert_ne!(mul_up, T::ZERO);

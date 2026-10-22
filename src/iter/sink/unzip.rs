@@ -50,7 +50,8 @@ impl<'a, S: ExactParallelSink> SkipItemGuard<'a, S> {
 
 impl<S: ExactParallelSink> Drop for SkipItemGuard<'_, S> {
     fn drop(&mut self) {
-        // SAFETY: This does what the safety documentation describes on this struct.
+        // SAFETY: This does what the safety documentation describes on this
+        // struct.
         unsafe {
             self.sink.skip_item_range(self.index..self.index + 1);
         }
@@ -160,8 +161,8 @@ where
     }
 
     unsafe fn push_item(&self, index: usize, item: Self::Item) {
-        // Build a guard around each sink to recover gracefully in case of panic in
-        // `push_item` below.
+        // Build a guard around each sink to recover gracefully in case of panic
+        // in `push_item` below.
         let mut i = 0;
         let guarded = item.map(|item| {
             let sink = &self.0[i];
@@ -172,11 +173,13 @@ where
         let _: [(); N] = guarded.map(|(item, guard)| {
             unsafe {
                 // SAFETY:
-                // - Indices are in the `0..len` range as they are forwarded from the caller.
-                // - The current index is used at most once by the caller in calls to
-                //   `push_item` and `skip_item_range`, so it's also passed at most once to the
-                //   callees, either to `push_item` below or to `skip_item_range` via the
-                //   `SkipItemGuard` in case of panic.
+                // - Indices are in the `0..len` range as they are forwarded
+                //   from the caller.
+                // - The current index is used at most once by the caller in
+                //   calls to `push_item` and `skip_item_range`, so it's also
+                //   passed at most once to the callees, either to `push_item`
+                //   below or to `skip_item_range` via the `SkipItemGuard` in
+                //   case of panic.
                 guard.into_inner().push_item(index, item);
             }
         });
@@ -185,10 +188,11 @@ where
     unsafe fn skip_item_range(&self, range: std::ops::Range<usize>) {
         let _ = self.0.each_ref().map(|sink| {
             // SAFETY:
-            // - Ranges are in the `0..len` range as they are forwarded from the caller.
-            // - The current range is used at most once by the caller in calls to
-            //   `push_item` and `skip_item_range`, so it's also passed at most once to the
-            //   callees, to `skip_item_range` below.
+            // - Ranges are in the `0..len` range as they are forwarded from the
+            //   caller.
+            // - The current range is used at most once by the caller in calls
+            //   to `push_item` and `skip_item_range`, so it's also passed at
+            //   most once to the callees, to `skip_item_range` below.
             scopeguard::guard(sink, |sink| unsafe {
                 sink.skip_item_range(range.clone());
             })
@@ -198,9 +202,9 @@ where
     unsafe fn cancel(self) {
         let _ = self.0.map(|sink| {
             // SAFETY:
-            // - The caller has passed all indices exactly once to `push_item` and
-            //   `skip_item_range` calls, and we forwarded each index exactly once (possibly
-            //   via drop guards).
+            // - The caller has passed all indices exactly once to `push_item`
+            //   and `skip_item_range` calls, and we forwarded each index
+            //   exactly once (possibly via drop guards).
             scopeguard::guard(sink, |sink| unsafe {
                 sink.cancel();
             })
@@ -217,11 +221,12 @@ where
 
     unsafe fn finalize(sink: Self::Sink) -> Self {
         // SAFETY:
-        // - The caller has passed all indices exactly once to `push_item`, which we've
-        //   forwarded.
-        // - We may have forwarded an index to `skip_item_range` in case of panic, but
-        //   in that case the caller would call `cancel` instead of `finalize` (see the
-        //   implementations of `collect()` and `try_collect()`).
+        // - The caller has passed all indices exactly once to `push_item`,
+        //   which we've forwarded.
+        // - We may have forwarded an index to `skip_item_range` in case of
+        //   panic, but in that case the caller would call `cancel` instead of
+        //   `finalize` (see the implementations of `collect()` and
+        //   `try_collect()`).
         Unzip(sink.0.map(|sink| unsafe { T::finalize(sink) }))
     }
 }

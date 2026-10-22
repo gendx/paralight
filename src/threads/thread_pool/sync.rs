@@ -127,9 +127,10 @@ impl<T: LifetimeParameterized> Lender<T> {
         self.round.toggle();
         let round = self.round;
 
-        // Safety note: The reference set here is valid until the call to `clear()` at
-        // the end of this function, which is after all the worker threads are done
-        // reading it (as synchronized with `main_status`).
+        // Safety note: The reference set here is valid until the call to
+        // `clear()` at the end of this function, which is after all the
+        // worker threads are done reading it (as synchronized with
+        // `main_status`).
         self.shared_context.value.write().unwrap().set(value);
         log_debug!("[main thread, round {round:?}] Ready to compute a parallel pipeline.");
 
@@ -164,9 +165,9 @@ impl<T: LifetimeParameterized> Lender<T> {
         log_debug!(
             "[main thread, round {round:?}] All threads have now finished computing this pipeline."
         );
-        // Safety note: the reference (previously set at the beginning of this function)
-        // is cleared here after all the worker threads are done reading it (as
-        // synchronized with `main_status`).
+        // Safety note: the reference (previously set at the beginning of this
+        // function) is cleared here after all the worker threads are done
+        // reading it (as synchronized with `main_status`).
         self.shared_context.value.write().unwrap().clear();
     }
 
@@ -231,10 +232,11 @@ impl<T: LifetimeParameterized> Borrower<T> {
                     self.id
                 );
 
-                // Regardless of the pipeline computation status (success or panic), we want to
-                // notify the main thread that this thread has finished working with the
-                // pipeline object. This happens when the notifier is dropped (whether at the
-                // end of this scope or when a panic is unwound).
+                // Regardless of the pipeline computation status (success or
+                // panic), we want to notify the main thread that this thread
+                // has finished working with the pipeline object. This happens
+                // when the notifier is dropped (whether at the end of this
+                // scope or when a panic is unwound).
                 let notifier = Notifier {
                     #[cfg(feature = "log")]
                     id: self.id,
@@ -246,11 +248,12 @@ impl<T: LifetimeParameterized> Borrower<T> {
                 {
                     let guard = self.shared_context.value.read().unwrap();
                     // SAFETY:
-                    // - The output lifetime doesn't outlive the underlying `T`, as the main thread
-                    //   waits until the [`Notifier`]s from all worker threads are dropped before
-                    //   exiting the [`lend()`] function.
-                    // - The underlying `T` isn't mutated during this scope: all the threads only
-                    //   manipulate immutable references to it.
+                    // - The output lifetime doesn't outlive the underlying `T`,
+                    //   as the main thread waits until the [`Notifier`]s from
+                    //   all worker threads are dropped before exiting the
+                    //   [`lend()`] function.
+                    // - The underlying `T` isn't mutated during this scope: all
+                    //   the threads only manipulate immutable references to it.
                     let value = unsafe { guard.get().unwrap() };
                     f(value);
                 }
@@ -282,8 +285,8 @@ impl<T: LifetimeParameterized> Drop for Notifier<'_, T> {
         #[cfg(feature = "log")]
         let round = self.round;
 
-        // Computing a pipeline may panic, and we want to notify the main thread in that
-        // case to avoid using garbage output.
+        // Computing a pipeline may panic, and we want to notify the main thread
+        // in that case to avoid using garbage output.
         if std::thread::panicking() {
             log_error!(
                 "[thread {}] Detected panic in this thread, notifying the main thread",

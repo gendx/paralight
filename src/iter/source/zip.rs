@@ -608,16 +608,18 @@ where
             debug_assert!(range.start <= range.end);
             debug_assert!(range.end <= self.len);
             for desc in &self.descriptors {
-                // SAFETY: Given descriptors of equal lengths `len`, the `ZipEqSourceDescriptor`
-                // implements a pass-through of indices in `0..len` to all of them.
+                // SAFETY: Given descriptors of equal lengths `len`, the
+                // `ZipEqSourceDescriptor` implements a pass-through of indices
+                // in `0..len` to all of them.
                 //
                 // Therefore:
-                // - if the caller passes ranges included in `0..len`, ranges passed to the
-                //   downstream `cleanup_item_range()` functions are also included in the
-                //   `0..len` range,
-                // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
-                //   and `exact_fetch_item()`, the zip-eq adaptor doesn't repeat indices passed
-                //   to the downstream descriptors.
+                // - if the caller passes ranges included in `0..len`, ranges
+                //   passed to the downstream `cleanup_item_range()` functions
+                //   are also included in the `0..len` range,
+                // - if the caller doesn't repeat indices when calling
+                //   `cleanup_item_range()` and `exact_fetch_item()`, the zip-eq
+                //   adaptor doesn't repeat indices passed to the downstream
+                //   descriptors.
                 unsafe { desc.cleanup_item_range(range.clone()) }
             }
         }
@@ -645,15 +647,18 @@ where
         context.each_mut().map(|ctxt| {
             let desc = &self.descriptors[i];
             i += 1;
-            // SAFETY: Given descriptors of equal lengths `len`, the `ZipEqSourceDescriptor`
-            // implements a pass-through of indices in `0..len` to all of them.
+            // SAFETY: Given descriptors of equal lengths `len`, the
+            // `ZipEqSourceDescriptor` implements a pass-through of indices in
+            // `0..len` to all of them.
             //
             // Therefore:
-            // - if the caller passes indices in `0..len`, indices passed to the downstream
-            //   `exact_fetch_item()` functions are also in the `0..len` range,
-            // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
-            //   and `exact_fetch_item()`, the zip-eq adaptor doesn't repeat indices passed
-            //   to the downstream descriptors.
+            // - if the caller passes indices in `0..len`, indices passed to the
+            //   downstream `exact_fetch_item()` functions are also in the
+            //   `0..len` range,
+            // - if the caller doesn't repeat indices when calling
+            //   `cleanup_item_range()` and `exact_fetch_item()`, the zip-eq
+            //   adaptor doesn't repeat indices passed to the downstream
+            //   descriptors.
             unsafe { desc.exact_fetch_item(ctxt, index) }
         })
     }
@@ -677,18 +682,21 @@ where
                 let this_len = desc.len();
                 let this_range = range.start.min(this_len)..range.end.min(this_len);
                 // SAFETY: Given descriptors of maximal length `len`, the
-                // `ZipMaxSourceDescriptor` implements a pass-through of indices in `0..len` to
-                // all of them, padding with `None` values beyond each descriptor's length.
+                // `ZipMaxSourceDescriptor` implements a pass-through of indices
+                // in `0..len` to all of them, padding with `None` values beyond
+                // each descriptor's length.
                 //
                 // Therefore:
-                // - ranges passed to the downstream `cleanup_item_range()` functions are in
-                //   their respective `0..len_i` ranges after clamping,
-                // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
-                //   and `exact_fetch_item()`, the zip-max adaptor doesn't repeat indices passed
-                //   to the downstream descriptors.
+                // - ranges passed to the downstream `cleanup_item_range()`
+                //   functions are in their respective `0..len_i` ranges after
+                //   clamping,
+                // - if the caller doesn't repeat indices when calling
+                //   `cleanup_item_range()` and `exact_fetch_item()`, the
+                //   zip-max adaptor doesn't repeat indices passed to the
+                //   downstream descriptors.
                 //
-                // This line implements the pass-through function, clamped to the current
-                // descriptor length.
+                // This line implements the pass-through function, clamped to
+                // the current descriptor length.
                 unsafe {
                     desc.cleanup_item_range(this_range);
                 }
@@ -720,18 +728,21 @@ where
             i += 1;
             if index < desc.len() {
                 // SAFETY: Given descriptors of maximal length `len`, the
-                // `ZipMaxSourceDescriptor` implements a pass-through of indices in `0..len` to
-                // all of them, padding with `None` values beyond each descriptor's length.
+                // `ZipMaxSourceDescriptor` implements a pass-through of indices
+                // in `0..len` to all of them, padding with `None` values beyond
+                // each descriptor's length.
                 //
                 // Therefore:
-                // - indices passed to the downstream `exact_fetch_item()` functions are in
-                //   their respective `0..len_i` ranges in this branch,
-                // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
-                //   and `exact_fetch_item()`, the zip-max adaptor doesn't repeat indices passed
-                //   to the downstream descriptors.
+                // - indices passed to the downstream `exact_fetch_item()`
+                //   functions are in their respective `0..len_i` ranges in this
+                //   branch,
+                // - if the caller doesn't repeat indices when calling
+                //   `cleanup_item_range()` and `exact_fetch_item()`, the
+                //   zip-max adaptor doesn't repeat indices passed to the
+                //   downstream descriptors.
                 //
-                // This line implements the pass-through function, when the index is lower than
-                // the current descriptor length.
+                // This line implements the pass-through function, when the
+                // index is lower than the current descriptor length.
                 unsafe { Some(desc.exact_fetch_item(ctxt, index)) }
             } else {
                 None
@@ -764,17 +775,18 @@ where
             debug_assert!(range.end <= self.len);
             for desc in &self.descriptors {
                 // SAFETY: Given descriptors of minimal length `len`, the
-                // `ZipMinSourceDescriptor` implements a pass-through of indices in `0..len`
-                // to all of them.
+                // `ZipMinSourceDescriptor` implements a pass-through of indices
+                // in `0..len` to all of them.
                 //
                 // Therefore:
-                // - if the caller passes ranges included in `0..len`, ranges passed to the
-                //   downstream `cleanup_item_range()` functions are also included in the
-                //   `0..len` range, itself included in the respective `0..len_i` ranges
-                //   (because `len <= len_i`),
-                // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
-                //   and `exact_fetch_item()`, the zip-min adaptor doesn't repeat indices passed
-                //   to the downstream descriptors.
+                // - if the caller passes ranges included in `0..len`, ranges
+                //   passed to the downstream `cleanup_item_range()` functions
+                //   are also included in the `0..len` range, itself included in
+                //   the respective `0..len_i` ranges (because `len <= len_i`),
+                // - if the caller doesn't repeat indices when calling
+                //   `cleanup_item_range()` and `exact_fetch_item()`, the
+                //   zip-min adaptor doesn't repeat indices passed to the
+                //   downstream descriptors.
                 unsafe {
                     desc.cleanup_item_range(range.clone());
                 }
@@ -805,16 +817,18 @@ where
             let desc = &self.descriptors[i];
             i += 1;
             // SAFETY: Given descriptors of minimal length `len`, the
-            // `ZipMinSourceDescriptor` implements a pass-through of indices in `0..len`
-            // to all of them.
+            // `ZipMinSourceDescriptor` implements a pass-through of indices in
+            // `0..len` to all of them.
             //
             // Therefore:
-            // - if the caller passes indices in `0..len`, indices passed to the downstream
-            //   `exact_fetch_item()` functions are also in the `0..len` range, itself
-            //   included in the respective `0..len_i` ranges (because `len <= len_i`),
-            // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
-            //   and `exact_fetch_item()`, the zip-min adaptor doesn't repeat indices passed
-            //   to the downstream descriptors.
+            // - if the caller passes indices in `0..len`, indices passed to the
+            //   downstream `exact_fetch_item()` functions are also in the
+            //   `0..len` range, itself included in the respective `0..len_i`
+            //   ranges (because `len <= len_i`),
+            // - if the caller doesn't repeat indices when calling
+            //   `cleanup_item_range()` and `exact_fetch_item()`, the zip-min
+            //   adaptor doesn't repeat indices passed to the downstream
+            //   descriptors.
             unsafe { desc.exact_fetch_item(ctxt, index) }
         })
     }
@@ -828,13 +842,14 @@ where
         if Self::NEEDS_CLEANUP {
             for desc in &self.descriptors {
                 // SAFETY: Given descriptors of minimal length `len`, the
-                // `ZipMinSourceDescriptor` implements a pass-through of indices in `0..len`
-                // to all of them.
+                // `ZipMinSourceDescriptor` implements a pass-through of indices
+                // in `0..len` to all of them.
                 //
                 // Therefore:
-                // - the range `len..len_i` is included in the respective range `0..len_i`,
-                // - items beyond the common `len` aren't passed to the inner descriptor other
-                //   than in this drop implementation.
+                // - the range `len..len_i` is included in the respective range
+                //   `0..len_i`,
+                // - items beyond the common `len` aren't passed to the inner
+                //   descriptor other than in this drop implementation.
                 unsafe {
                     desc.cleanup_item_range(self.len..desc.len());
                 }

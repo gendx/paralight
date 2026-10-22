@@ -246,8 +246,8 @@ impl SkipIterator for UpperBoundedRange<'_> {
             self.range.start += 1;
             (Some(start), None)
         } else {
-            // The upper bound can only decrease, so once it's reached the iterator is
-            // exhausted.
+            // The upper bound can only decrease, so once it's reached the
+            // iterator is exhausted.
             (None, None)
         }
     }
@@ -334,10 +334,10 @@ impl RangeOrchestrator for WorkStealingRangeOrchestrator {
         }) as u64;
         for (i, range) in self.ranges.iter().enumerate() {
             let i = i as u64;
-            // - This multiplication cannot overflow because `i+1` and `num_elements` both
-            //   fit in u32.
-            // - The result fits in u32 because `i < num_threads` and `num_elements` fits in
-            //   u32.
+            // - This multiplication cannot overflow because `i+1` and
+            //   `num_elements` both fit in u32.
+            // - The result fits in u32 because `i < num_threads` and
+            //   `num_elements` fits in u32.
             let start = (i * num_elements) / num_threads;
             let end = ((i + 1) * num_elements) / num_threads;
             range.store(PackedRange::new(start as u32, end as u32));
@@ -599,8 +599,8 @@ impl SkipIterator for WorkStealingRangeIterator<'_> {
     fn next(&mut self) -> (Option<usize>, Option<std::ops::Range<usize>>) {
         let my_atomic_range: &AtomicRange = &self.ranges[self.id];
 
-        // First phase: try to increment this thread's own range. Retries are needed in
-        // case another thread stole part of the range.
+        // First phase: try to increment this thread's own range. Retries are
+        // needed in case another thread stole part of the range.
         while !self.my_range.is_empty() {
             let (taken, my_new_range) = self.my_range.increment_start();
             match my_atomic_range.compare_exchange(self.my_range, my_new_range) {
@@ -637,7 +637,8 @@ impl SkipIterator for WorkStealingRangeIterator<'_> {
             }
         }
 
-        // Second phase: the range is empty, try to steal a range from another thread.
+        // Second phase: the range is empty, try to steal a range from another
+        // thread.
         self.steal()
     }
 }
@@ -658,10 +659,11 @@ impl WorkStealingRangeIterator<'_> {
         );
         let range_count = self.ranges.len();
 
-        // Read a snapshot of the other threads' ranges, to identify the best one to
-        // steal (the largest one). This is only used as a hint, and therefore it's fine
-        // that the underlying values may be concurrently modified by the other threads
-        // and that the snapshot becomes (slightly) out-of-date.
+        // Read a snapshot of the other threads' ranges, to identify the best
+        // one to steal (the largest one). This is only used as a hint, and
+        // therefore it's fine that the underlying values may be concurrently
+        // modified by the other threads and that the snapshot becomes
+        // (slightly) out-of-date.
         let mut other_ranges = vec![PackedRange::default(); range_count];
         for (i, range) in other_ranges.iter_mut().enumerate() {
             if i == self.id {
@@ -687,16 +689,17 @@ impl WorkStealingRangeIterator<'_> {
             }
         }
 
-        // Try to steal another thread's range. Retries are needed in case the target
-        // thread incremented its range or if another thread stole part of the
-        // target thread's range.
+        // Try to steal another thread's range. Retries are needed in case the
+        // target thread incremented its range or if another thread stole part
+        // of the target thread's range.
         while !max_range.is_empty() {
             // Try to steal half of the range.
             let (remaining, stolen) = max_range.split();
             match self.ranges[max_index].compare_exchange(max_range, remaining) {
                 // Theft succeeded.
                 Ok(()) => {
-                    // Take the first item, and place the rest in this thread's own range.
+                    // Take the first item, and place the rest in this thread's
+                    // own range.
                     let (taken, my_new_range) = stolen.increment_start();
                     my_atomic_range.store(my_new_range);
                     self.my_range = my_new_range;
@@ -804,10 +807,11 @@ impl SkipIterator for UpperBoundedWorkStealingRangeIterator<'_, '_> {
         let my_atomic_range: &AtomicRange = &self.ranges[self.id];
         let (mut my_bounded_range, mut my_residual_range) = self.my_range.upper_bound(bound);
 
-        // First phase: try to increment this thread's own range. Retries are needed in
-        // case another thread stole part of the range.
+        // First phase: try to increment this thread's own range. Retries are
+        // needed in case another thread stole part of the range.
         //
-        // Loop invariant: self.my_range = my_bounded_range || my_residual_range.
+        // Loop invariant:
+        //   self.my_range = my_bounded_range || my_residual_range.
         loop {
             if !my_bounded_range.is_empty() {
                 let (taken, my_new_range) = my_bounded_range.increment_start();
@@ -864,13 +868,14 @@ impl SkipIterator for UpperBoundedWorkStealingRangeIterator<'_, '_> {
             } else if !self.my_range.is_empty() {
                 #[cfg(feature = "nightly")]
                 cold_path();
-                // First, let's make sure other threads don't try to steal this range, which can
-                // happen if they have cached another bound.
+                // First, let's make sure other threads don't try to steal this
+                // range, which can happen if they have cached another bound.
                 match my_atomic_range.compare_exchange(self.my_range, my_bounded_range) {
                     Ok(()) => {
                         self.my_range = my_bounded_range;
-                        // In this branch `my_range` was not empty but `my_bounded_range` was so
-                        // `my_residual_range` must not be empty according to the loop invariant.
+                        // In this branch `my_range` was not empty but
+                        // `my_bounded_range` was so `my_residual_range` must
+                        // not be empty according to the loop invariant.
                         debug_assert!(!my_residual_range.is_empty());
                         let residual = my_residual_range.to_range();
                         #[cfg(feature = "log_parallelism")]
@@ -896,7 +901,8 @@ impl SkipIterator for UpperBoundedWorkStealingRangeIterator<'_, '_> {
             }
         }
 
-        // Second phase: the range is empty, try to steal a range from another thread.
+        // Second phase: the range is empty, try to steal a range from another
+        // thread.
         self.steal(
             bound,
             #[cfg(feature = "log_parallelism")]
@@ -932,10 +938,11 @@ impl UpperBoundedWorkStealingRangeIterator<'_, '_> {
         );
         let range_count = self.ranges.len();
 
-        // Read a snapshot of the other threads' ranges, to identify the best one to
-        // steal (the largest one). This is only used as a hint, and therefore it's fine
-        // that the underlying values may be concurrently modified by the other threads
-        // and that the snapshot becomes (slightly) out-of-date.
+        // Read a snapshot of the other threads' ranges, to identify the best
+        // one to steal (the largest one). This is only used as a hint, and
+        // therefore it's fine that the underlying values may be concurrently
+        // modified by the other threads and that the snapshot becomes
+        // (slightly) out-of-date.
         let mut other_ranges = vec![OtherRange::default(); range_count];
         for (i, range) in other_ranges.iter_mut().enumerate() {
             if i == self.id {
@@ -967,9 +974,9 @@ impl UpperBoundedWorkStealingRangeIterator<'_, '_> {
             }
         }
 
-        // Try to steal another thread's range. Retries are needed in case the target
-        // thread incremented its range or if another thread stole part of the
-        // target thread's range.
+        // Try to steal another thread's range. Retries are needed in case the
+        // target thread incremented its range or if another thread stole part
+        // of the target thread's range.
         while !max_range.bounded.is_empty() {
             // Try to steal half of the range.
             let (remaining, stolen) = max_range.bounded.split();
@@ -991,7 +998,8 @@ impl UpperBoundedWorkStealingRangeIterator<'_, '_> {
                         Some(residual)
                     };
 
-                    // Take the first item, and place the rest in this thread's own range.
+                    // Take the first item, and place the rest in this thread's
+                    // own range.
                     let (taken, my_new_range) = stolen.increment_start();
                     my_atomic_range.store(my_new_range);
                     self.my_range = my_new_range;
@@ -1102,7 +1110,8 @@ mod test {
                 });
                 let values: [Vec<usize>; 4] = handles.map(|handle| handle.join().unwrap());
 
-                // The fixed range implementation always yields the same items in order.
+                // The fixed range implementation always yields the same items
+                // in order.
                 for (i, set) in values.iter().enumerate() {
                     assert_eq!(*set, (i * 25..(i + 1) * 25).collect::<Vec<_>>());
                 }

@@ -69,9 +69,9 @@ mod rayon {
             .num_threads(NUM_THREADS)
             .build()
             .unwrap();
-        // Ideally we'd prefer to run bench_local() inside the Rayon thread pool, but
-        // that doesn't work because divan::Bencher isn't Send (and bench_local()
-        // consumes it).
+        // Ideally we'd prefer to run bench_local() inside the Rayon thread
+        // pool, but that doesn't work because divan::Bencher isn't Send
+        // (and bench_local() consumes it).
         bencher
             .counter(BytesCount::of_many::<u64>(len))
             .bench_local(|| thread_pool.install(|| black_box(input_slice).par_iter().sum::<u64>()));
@@ -91,9 +91,9 @@ mod rayon {
             .num_threads(NUM_THREADS)
             .build()
             .unwrap();
-        // Ideally we'd prefer to run bench_local() inside the Rayon thread pool, but
-        // that doesn't work because divan::Bencher isn't Send (and bench_local()
-        // consumes it).
+        // Ideally we'd prefer to run bench_local() inside the Rayon thread
+        // pool, but that doesn't work because divan::Bencher isn't Send
+        // (and bench_local() consumes it).
         bencher
             .counter(BytesCount::of_many::<u64>(len * 2))
             .bench_local(|| {

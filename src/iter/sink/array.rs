@@ -20,9 +20,9 @@ impl<T: Send, const N: usize> FromExactParallelSink for [T; N] {
 
         // SAFETY:
         //
-        // All the values are properly initialized, as the safety pre-conditions of
-        // `finalize()` require that each index in `0..N` was passed once and only once
-        // to `ArrayParallelSink::push_item`, and that no call to
+        // All the values are properly initialized, as the safety pre-conditions
+        // of `finalize()` require that each index in `0..N` was passed once and
+        // only once to `ArrayParallelSink::push_item`, and that no call to
         // `ArrayParallelSink::skip_item_range` was made.
         unsafe { sink.array.into_array() }
     }
@@ -105,25 +105,26 @@ impl<T: Send, const N: usize> ExactParallelSink for ArrayParallelSink<T, N> {
         debug_assert!(index < N);
         let base_ptr: *mut T = self.array.start();
         // SAFETY:
-        // - The offset in bytes `index * size_of::<T>()` fits in an `isize`, because
-        //   the index is smaller than the length of the (well-formed) wrapped array.
-        //   This is ensured by the safety pre-conditions of the `push_item()` function
-        //   (the `index` must be in the range `0..N`), and further confirmed by the
-        //   assertion.
-        // - The `base_ptr` is derived from an allocated object (the wrapped array), and
-        //   the entire range between `base_ptr` and the resulting `item_ptr` is in
-        //   bounds of that allocated object. This is because the index is smaller than
-        //   the length of the wrapped array.
+        // - The offset in bytes `index * size_of::<T>()` fits in an `isize`,
+        //   because the index is smaller than the length of the (well-formed)
+        //   wrapped array. This is ensured by the safety pre-conditions of the
+        //   `push_item()` function (the `index` must be in the range `0..N`),
+        //   and further confirmed by the assertion.
+        // - The `base_ptr` is derived from an allocated object (the wrapped
+        //   array), and the entire range between `base_ptr` and the resulting
+        //   `item_ptr` is in bounds of that allocated object. This is because
+        //   the index is smaller than the length of the wrapped array.
         let item_ptr: *mut T = unsafe { base_ptr.add(index) };
         // SAFETY:
-        // - The `item_ptr` is properly aligned, as it is constructed by calling `add()`
-        //   on the aligned `base_ptr`.
-        // - The `item_ptr` points to a not yet initialized value of type `T`, the
-        //   element from the wrapped array at position `index`.
+        // - The `item_ptr` is properly aligned, as it is constructed by calling
+        //   `add()` on the aligned `base_ptr`.
+        // - The `item_ptr` points to a not yet initialized value of type `T`,
+        //   the element from the wrapped array at position `index`.
         // - The `item_ptr` is valid for writes. This is ensured by the safety
-        //   pre-conditions of the `push_item()` function (each index must be passed at
-        //   most once), i.e. this item hasn't yet been written to. Additionally, there
-        //   are no concurrent reads nor writes to this slot in the array.
+        //   pre-conditions of the `push_item()` function (each index must be
+        //   passed at most once), i.e. this item hasn't yet been written to.
+        //   Additionally, there are no concurrent reads nor writes to this slot
+        //   in the array.
         unsafe { std::ptr::write(item_ptr, item) };
     }
 
@@ -162,33 +163,36 @@ impl<T: Send, const N: usize> ArrayParallelSink<T, N> {
             debug_assert!(range.start <= range.end);
             debug_assert!(range.end <= N);
             // SAFETY:
-            // - The offset in bytes `range.start * size_of::<T>()` fits in an `isize`,
-            //   because the range is included in the length of the (well-formed) wrapped
-            //   array. This is ensured by the safety pre-conditions of the
-            //   `ExactParallelSink::skip_item_range()` function (the `range` must be
-            //   included in `0..N`).
-            // - The `base_ptr` is derived from an allocated object (the wrapped array), and
-            //   the entire range between `base_ptr` and the resulting `start_ptr` is in
-            //   bounds of that allocated object. This is because the range start is smaller
-            //   than the length of the wrapped array.
+            // - The offset in bytes `range.start * size_of::<T>()` fits in an
+            //   `isize`, because the range is included in the length of the
+            //   (well-formed) wrapped array. This is ensured by the safety
+            //   pre-conditions of the `ExactParallelSink::skip_item_range()`
+            //   function (the `range` must be included in `0..N`).
+            // - The `base_ptr` is derived from an allocated object (the wrapped
+            //   array), and the entire range between `base_ptr` and the
+            //   resulting `start_ptr` is in bounds of that allocated object.
+            //   This is because the range start is smaller than the length of
+            //   the wrapped array.
             let start_ptr: *mut T = unsafe { base_ptr.add(range.start) };
             let slice: *mut [T] =
                 std::ptr::slice_from_raw_parts_mut(start_ptr, range.end - range.start);
             // SAFETY:
-            // - The `slice` is properly aligned, as it is constructed by calling `add()` on
-            //   the aligned `base_ptr`.
-            // - The `slice` isn't null, as it is constructed by calling `add()` on the
-            //   non-null `base_ptr`.
-            // - The `slice` is valid for reads and writes. This is ensured by the safety
-            //   pre-conditions of the `ExactParallelSink::cancel()` function (each index
-            //   appears once in calls to `push_item()` and `skip_item_range()`), i.e. the
-            //   items in this slice have all been pushed.
-            // - The `slice` is valid for dropping, as it is a part of the wrapped array
-            //   that nothing else accesses.
-            // - Nothing else is accessing the `slice` while `drop_in_place` is executing.
+            // - The `slice` is properly aligned, as it is constructed by
+            //   calling `add()` on the aligned `base_ptr`.
+            // - The `slice` isn't null, as it is constructed by calling `add()`
+            //   on the non-null `base_ptr`.
+            // - The `slice` is valid for reads and writes. This is ensured by
+            //   the safety pre-conditions of the `ExactParallelSink::cancel()`
+            //   function (each index appears once in calls to `push_item()` and
+            //   `skip_item_range()`), i.e. the items in this slice have all
+            //   been pushed.
+            // - The `slice` is valid for dropping, as it is a part of the
+            //   wrapped array that nothing else accesses.
+            // - Nothing else is accessing the `slice` while `drop_in_place` is
+            //   executing.
             //
-            // The above properties (aligned, non-null, etc.) still hold if the slice is
-            // empty.
+            // The above properties (aligned, non-null, etc.) still hold if the
+            // slice is empty.
             unsafe { std::ptr::drop_in_place(slice) };
         }
     }
@@ -224,8 +228,8 @@ impl<T, const N: usize> ArrayWrapper<T, N> {
     unsafe fn into_array(self) -> [T; N] {
         let array: [MaybeUninit<T>; N] = self.0.into_inner();
         let array: MaybeUninit<[T; N]> = array.transpose();
-        // SAFETY: As ensured by the caller, the whole array is now in an initialized
-        // state.
+        // SAFETY: As ensured by the caller, the whole array is now in an
+        // initialized state.
         unsafe { array.assume_init() }
     }
 

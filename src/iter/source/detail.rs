@@ -108,22 +108,22 @@ where
     ) -> Self::Item {
         #[cfg(debug_assertions)]
         debug_assert!(index + N <= self.inner_len);
-        // SAFETY: The ArrayWindowsSourceDescriptor type is private and only constructed
-        // in ArrayWindows::exact_descriptor, which requires that the underlying
-        // ExactParallelSource implements RewindableSource. This lowers the
-        // requirements: it's only necessary that each index passed to the inner
-        // exact_fetch_item is in the 0..inner_len range.
+        // SAFETY: The ArrayWindowsSourceDescriptor type is private and only
+        // constructed in ArrayWindows::exact_descriptor, which requires
+        // that the underlying ExactParallelSource implements RewindableSource.
+        // This lowers the requirements: it's only necessary that each index
+        // passed to the inner exact_fetch_item is in the 0..inner_len range.
         //
-        // This is itself confirmed by the debug assertion, and guaranteed by the
-        // following equations:
+        // This is itself confirmed by the debug assertion, and guaranteed by
+        // the following equations:
         // - 0 <= index < len
         // - len = inner_len.saturating_sub(N - 1)
         //
-        // which imply that index <= inner_len - N for any index passed as argument to
-        // this function.
+        // which imply that index <= inner_len - N for any index passed as
+        // argument to this function.
         //
-        // Besides the indices i below satisfy 0 <= i < N, therefore 0 <= index + i <
-        // inner_len.
+        // Besides the indices i below satisfy 0 <= i < N, therefore 0 <= index
+        // + i < inner_len.
         std::array::from_fn(|i| unsafe { self.inner.exact_fetch_item(context, index + i) })
     }
 }
@@ -237,40 +237,41 @@ where
     // len2` and `0..len1 | 0..len2`.
     //
     // Therefore:
-    // - if the caller passes ranges included in `0..len1 + len2`, ranges passed to
-    //   the two downstream `cleanup_item_range()` functions are included in their
-    //   respective ranges `0..len1` and `0..len2`,
-    // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
-    //   and `(exact_)fetch_item()`, the chain adaptor doesn't repeat indices passed
-    //   to the two downstream descriptors.
+    // - if the caller passes ranges included in `0..len1 + len2`, ranges passed
+    //   to the two downstream `cleanup_item_range()` functions are included in
+    //   their respective ranges `0..len1` and `0..len2`,
+    // - if the caller doesn't repeat indices when calling
+    //   `cleanup_item_range()` and `(exact_)fetch_item()`, the chain adaptor
+    //   doesn't repeat indices passed to the two downstream descriptors.
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
             debug_assert!(range.start <= range.end);
             debug_assert!(range.end <= self.len);
             if range.end <= self.len1 {
-                // SAFETY: See the function comment. This branch implements the mapping for a
-                // range fully included in `0..len1` to `0..len1`.
+                // SAFETY: See the function comment. This branch implements the
+                // mapping for a range fully included in `0..len1` to `0..len1`.
                 unsafe {
                     self.descriptor1.cleanup_item_range(range);
                 }
             } else if range.start >= self.len1 {
-                // SAFETY: See the function comment. This branch implements the mapping for a
-                // range fully included in `len1..len1 + len2` to `0..len2`.
+                // SAFETY: See the function comment. This branch implements the
+                // mapping for a range fully included in `len1..len1 + len2` to
+                // `0..len2`.
                 unsafe {
                     self.descriptor2
                         .cleanup_item_range(range.start - self.len1..range.end - self.len1);
                 }
             } else {
-                // SAFETY: See the function comment. This branch implements the mapping for a
-                // range that overlaps with `len1`.
+                // SAFETY: See the function comment. This branch implements the
+                // mapping for a range that overlaps with `len1`.
                 //
-                // This line implements the mapping of the first half of the range (included in
-                // `0..len1`) to `0..len1`.
+                // This line implements the mapping of the first half of the
+                // range (included in `0..len1`) to `0..len1`.
                 unsafe {
                     self.descriptor1.cleanup_item_range(range.start..self.len1);
                 }
-                // SAFETY: This line implements the mapping of the second half of the range
-                // (included in `len1..len1 + len2`) to `0..len2`.
+                // SAFETY: This line implements the mapping of the second half
+                // of the range (included in `len1..len1 + len2`) to `0..len2`.
                 unsafe {
                     self.descriptor2
                         .cleanup_item_range(0..range.end - self.len1);
@@ -297,12 +298,12 @@ where
     // len2` and `0..len1 | 0..len2`.
     //
     // Therefore:
-    // - if the caller passes indices in `0..len1 + len2`, indices passed to the two
-    //   downstream `fetch_item()` functions are included in their respective ranges
-    //   `0..len1` and `0..len2`,
-    // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
-    //   and `fetch_item()`, the chain adaptor doesn't repeat indices passed to the
-    //   two downstream descriptors.
+    // - if the caller passes indices in `0..len1 + len2`, indices passed to the
+    //   two downstream `fetch_item()` functions are included in their
+    //   respective ranges `0..len1` and `0..len2`,
+    // - if the caller doesn't repeat indices when calling
+    //   `cleanup_item_range()` and `fetch_item()`, the chain adaptor doesn't
+    //   repeat indices passed to the two downstream descriptors.
     unsafe fn fetch_item(
         &self,
         context: &mut Self::ThreadContext,
@@ -310,12 +311,12 @@ where
     ) -> Option<Self::Item> {
         debug_assert!(index < self.len);
         if index < self.len1 {
-            // SAFETY: See the function comment. This branch implements the mapping for an
-            // index in `0..len1` to `0..len1`.
+            // SAFETY: See the function comment. This branch implements the
+            // mapping for an index in `0..len1` to `0..len1`.
             unsafe { self.descriptor1.fetch_item(&mut context.0, index) }
         } else {
-            // SAFETY: See the function comment. This branch implements the mapping for an
-            // index in `len1..len1 + len2` to `0..len2`.
+            // SAFETY: See the function comment. This branch implements the
+            // mapping for an index in `len1..len1 + len2` to `0..len2`.
             unsafe {
                 self.descriptor2
                     .fetch_item(&mut context.1, index - self.len1)
@@ -341,12 +342,12 @@ where
     // len2` and `0..len1 | 0..len2`.
     //
     // Therefore:
-    // - if the caller passes indices in `0..len1 + len2`, indices passed to the two
-    //   downstream `exact_fetch_item()` functions are included in their respective
-    //   ranges `0..len1` and `0..len2`,
-    // - if the caller doesn't repeat indices when calling `cleanup_item_range()`
-    //   and `exact_fetch_item()`, the chain adaptor doesn't repeat indices passed
-    //   to the two downstream descriptors.
+    // - if the caller passes indices in `0..len1 + len2`, indices passed to the
+    //   two downstream `exact_fetch_item()` functions are included in their
+    //   respective ranges `0..len1` and `0..len2`,
+    // - if the caller doesn't repeat indices when calling
+    //   `cleanup_item_range()` and `exact_fetch_item()`, the chain adaptor
+    //   doesn't repeat indices passed to the two downstream descriptors.
     unsafe fn exact_fetch_item(
         &self,
         context: &mut Self::ThreadContext,
@@ -354,12 +355,12 @@ where
     ) -> Self::Item {
         debug_assert!(index < self.len);
         if index < self.len1 {
-            // SAFETY: See the function comment. This branch implements the mapping for an
-            // index in `0..len1` to `0..len1`.
+            // SAFETY: See the function comment. This branch implements the
+            // mapping for an index in `0..len1` to `0..len1`.
             unsafe { self.descriptor1.exact_fetch_item(&mut context.0, index) }
         } else {
-            // SAFETY: See the function comment. This branch implements the mapping for an
-            // index in `len1..len1 + len2` to `0..len2`.
+            // SAFETY: See the function comment. This branch implements the
+            // mapping for an index in `len1..len1 + len2` to `0..len2`.
             unsafe {
                 self.descriptor2
                     .exact_fetch_item(&mut context.1, index - self.len1)
@@ -587,10 +588,10 @@ where
         debug_assert!(index < self.len);
         // TODO: Make indexing stateful to avoid computing a modulo every time?
         // SAFETY:
-        // - Indices passed to the inner descriptor are in the `0..inner_len` range,
-        //   thanks to the modulo operation here. Note that there is no division by zero
-        //   because no item if fetched when the inner (and therefore outer) length is
-        //   zero.
+        // - Indices passed to the inner descriptor are in the `0..inner_len`
+        //   range, thanks to the modulo operation here. Note that there is no
+        //   division by zero because no item if fetched when the inner (and
+        //   therefore outer) length is zero.
         // - Indices can repeat, but that's OK because the inner parallel source
         //   implements `RewindableSource`, as ensured by the implementations of
         //   `Cycle`.
@@ -623,10 +624,10 @@ where
         debug_assert!(index < self.len);
         // TODO: Make indexing stateful to avoid computing a modulo every time?
         // SAFETY:
-        // - Indices passed to the inner descriptor are in the `0..inner_len` range,
-        //   thanks to the modulo operation here. Note that there is no division by zero
-        //   because no item if fetched when the inner (and therefore outer) length is
-        //   zero.
+        // - Indices passed to the inner descriptor are in the `0..inner_len`
+        //   range, thanks to the modulo operation here. Note that there is no
+        //   division by zero because no item if fetched when the inner (and
+        //   therefore outer) length is zero.
         // - Indices can repeat, but that's OK because the inner parallel source
         //   implements `RewindableSource`, as ensured by the implementations of
         //   `Cycle`.
@@ -675,8 +676,8 @@ impl<Inner: SourceCleanup> SourceCleanup for DowngradeSourceDescriptor<Inner> {
 
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
-            // SAFETY: This descriptor implements a pass-through of indices to the inner
-            // descriptor, therefore safety is preserved by induction.
+            // SAFETY: This descriptor implements a pass-through of indices to
+            // the inner descriptor, therefore safety is preserved by induction.
             unsafe {
                 self.inner.cleanup_item_range(range);
             }
@@ -697,8 +698,8 @@ impl<Inner: ExactSourceDescriptor> SourceDescriptor for DowngradeSourceDescripto
         context: &mut Self::ThreadContext,
         index: usize,
     ) -> Option<Self::Item> {
-        // SAFETY: This descriptor implements a pass-through of indices to the inner
-        // descriptor, therefore safety is preserved by induction.
+        // SAFETY: This descriptor implements a pass-through of indices to the
+        // inner descriptor, therefore safety is preserved by induction.
         unsafe { Some(self.inner.exact_fetch_item(context, index)) }
     }
 }
@@ -744,15 +745,15 @@ impl<Inner: SourceCleanup> SourceCleanup for EnumerateSourceDescriptor<Inner> {
 
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
-            // SAFETY: The `EnumerateSourceDescriptor` only implements a mapping of items,
-            // while passing through indices to the inner descriptor.
+            // SAFETY: The `EnumerateSourceDescriptor` only implements a mapping
+            // of items, while passing through indices to the inner descriptor.
             //
             // Therefore:
-            // - if the caller passes ranges included in `0..len`, ranges passed to the
-            //   inner `cleanup_item_range()` function are also included in the `0..len`
-            //   range,
-            // - if the caller doesn't repeat indices, the enumerate adaptor doesn't repeat
-            //   indices passed to the inner descriptor.
+            // - if the caller passes ranges included in `0..len`, ranges passed
+            //   to the inner `cleanup_item_range()` function are also included
+            //   in the `0..len` range,
+            // - if the caller doesn't repeat indices, the enumerate adaptor
+            //   doesn't repeat indices passed to the inner descriptor.
             unsafe {
                 self.inner.cleanup_item_range(range);
             }
@@ -773,14 +774,14 @@ impl<Inner: ExactSourceDescriptor> ExactSourceDescriptor for EnumerateSourceDesc
         context: &mut Self::ThreadContext,
         index: usize,
     ) -> Self::Item {
-        // SAFETY: The `EnumerateSourceDescriptor` only implements a mapping of items,
-        // while passing through indices to the inner descriptor.
+        // SAFETY: The `EnumerateSourceDescriptor` only implements a mapping of
+        // items, while passing through indices to the inner descriptor.
         //
         // Therefore:
-        // - if the caller passes indices in `0..len`, indices passed to the inner
-        //   `exact_fetch_item()` function are also in the `0..len` range,
-        // - if the caller doesn't repeat indices, the enumerate adaptor doesn't repeat
-        //   indices passed to the inner descriptor.
+        // - if the caller passes indices in `0..len`, indices passed to the
+        //   inner `exact_fetch_item()` function are also in the `0..len` range,
+        // - if the caller doesn't repeat indices, the enumerate adaptor doesn't
+        //   repeat indices passed to the inner descriptor.
         (index, unsafe {
             self.inner.exact_fetch_item(context, index)
         })
@@ -938,8 +939,8 @@ impl<Inner: SourceCleanup, F> SourceCleanup for FilterMapSourceDescriptor<Inner,
 
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
-            // SAFETY: This descriptor implements a pass-through of indices to the inner
-            // descriptor, therefore safety is preserved by induction.
+            // SAFETY: This descriptor implements a pass-through of indices to
+            // the inner descriptor, therefore safety is preserved by induction.
             unsafe {
                 self.inner.cleanup_item_range(range);
             }
@@ -964,8 +965,8 @@ where
         context: &mut Self::ThreadContext,
         index: usize,
     ) -> Option<Self::Item> {
-        // SAFETY: This descriptor implements a pass-through of indices to the inner
-        // descriptor, therefore safety is preserved by induction.
+        // SAFETY: This descriptor implements a pass-through of indices to the
+        // inner descriptor, therefore safety is preserved by induction.
         let item = unsafe { self.inner.fetch_item(context, index) };
         item.and_then(&self.f)
     }
@@ -985,8 +986,8 @@ impl<Inner: SourceCleanup, F> SourceCleanup for FilterMapExactSourceDescriptor<I
 
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
-            // SAFETY: This descriptor implements a pass-through of indices to the inner
-            // descriptor, therefore safety is preserved by induction.
+            // SAFETY: This descriptor implements a pass-through of indices to
+            // the inner descriptor, therefore safety is preserved by induction.
             unsafe {
                 self.inner.cleanup_item_range(range);
             }
@@ -1011,8 +1012,8 @@ where
         context: &mut Self::ThreadContext,
         index: usize,
     ) -> Option<Self::Item> {
-        // SAFETY: This descriptor implements a pass-through of indices to the inner
-        // descriptor, therefore safety is preserved by induction.
+        // SAFETY: This descriptor implements a pass-through of indices to the
+        // inner descriptor, therefore safety is preserved by induction.
         let item = unsafe { self.inner.exact_fetch_item(context, index) };
         (self.f)(item)
     }
@@ -1268,8 +1269,8 @@ impl<Inner: SourceCleanup, F> SourceCleanup for MapSourceDescriptor<Inner, F> {
 
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
-            // SAFETY: This descriptor implements a pass-through of indices to the inner
-            // descriptor, therefore safety is preserved by induction.
+            // SAFETY: This descriptor implements a pass-through of indices to
+            // the inner descriptor, therefore safety is preserved by induction.
             unsafe {
                 self.inner.cleanup_item_range(range);
             }
@@ -1294,8 +1295,8 @@ where
         context: &mut Self::ThreadContext,
         index: usize,
     ) -> Option<Self::Item> {
-        // SAFETY: This descriptor implements a pass-through of indices to the inner
-        // descriptor, therefore safety is preserved by induction.
+        // SAFETY: This descriptor implements a pass-through of indices to the
+        // inner descriptor, therefore safety is preserved by induction.
         let item = unsafe { self.inner.fetch_item(context, index) };
         item.map(&self.f)
     }
@@ -1318,8 +1319,8 @@ where
         context: &mut Self::ThreadContext,
         index: usize,
     ) -> Self::Item {
-        // SAFETY: This descriptor implements a pass-through of indices to the inner
-        // descriptor, therefore safety is preserved by induction.
+        // SAFETY: This descriptor implements a pass-through of indices to the
+        // inner descriptor, therefore safety is preserved by induction.
         let item = unsafe { self.inner.exact_fetch_item(context, index) };
         (self.f)(item)
     }
@@ -1393,8 +1394,8 @@ impl<Inner: SourceCleanup, Init, F> SourceCleanup for MapInitSourceDescriptor<In
 
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
-            // SAFETY: This descriptor implements a pass-through of indices to the inner
-            // descriptor, therefore safety is preserved by induction.
+            // SAFETY: This descriptor implements a pass-through of indices to
+            // the inner descriptor, therefore safety is preserved by induction.
             unsafe {
                 self.inner.cleanup_item_range(range);
             }
@@ -1420,8 +1421,8 @@ where
         context: &mut Self::ThreadContext,
         index: usize,
     ) -> Option<Self::Item> {
-        // SAFETY: This descriptor implements a pass-through of indices to the inner
-        // descriptor, therefore safety is preserved by induction.
+        // SAFETY: This descriptor implements a pass-through of indices to the
+        // inner descriptor, therefore safety is preserved by induction.
         let item = unsafe { self.inner.fetch_item(&mut context.0, index) };
         item.map(|item| (self.f)(&mut context.1, item))
     }
@@ -1445,8 +1446,8 @@ where
         context: &mut Self::ThreadContext,
         index: usize,
     ) -> Self::Item {
-        // SAFETY: This descriptor implements a pass-through of indices to the inner
-        // descriptor, therefore safety is preserved by induction.
+        // SAFETY: This descriptor implements a pass-through of indices to the
+        // inner descriptor, therefore safety is preserved by induction.
         let item = unsafe { self.inner.exact_fetch_item(&mut context.0, index) };
         (self.f)(&mut context.1, item)
     }
@@ -1571,19 +1572,20 @@ impl<Inner: SourceCleanup> SourceCleanup for RevSourceDescriptor<Inner> {
         if Self::NEEDS_CLEANUP {
             debug_assert!(range.start <= range.end);
             debug_assert!(range.end <= self.len);
-            // SAFETY: Given an inner descriptor of length `len`, the `RevSourceDescriptor`
-            // implements a bijective mapping of indices from `0..len` to `0..len` given by
-            // `rev: x -> len - 1 - x`.
+            // SAFETY: Given an inner descriptor of length `len`, the
+            // `RevSourceDescriptor` implements a bijective mapping of indices
+            // from `0..len` to `0..len` given by `rev: x -> len - 1 - x`.
             //
             // Therefore:
-            // - if the caller passes ranges included in `0..len`, ranges passed to the
-            //   inner `cleanup_item_range()` function are also included in the `0..len`
-            //   range,
-            // - if the caller doesn't repeat indices, the rev adaptor doesn't repeat
-            //   indices passed to the inner descriptor.
+            // - if the caller passes ranges included in `0..len`, ranges passed
+            //   to the inner `cleanup_item_range()` function are also included
+            //   in the `0..len` range,
+            // - if the caller doesn't repeat indices, the rev adaptor doesn't
+            //   repeat indices passed to the inner descriptor.
             //
-            // Given an open-ended input range `start..end` = `start..=end - 1`, the mapped
-            // range is `rev(end - 1)..rev(start) + 1` = `len - end..len - start`.
+            // Given an open-ended input range `start..end` = `start..=end - 1`,
+            // the mapped range is `rev(end - 1)..rev(start) + 1` =
+            // `len - end..len - start`.
             unsafe {
                 self.inner
                     .cleanup_item_range(self.len - range.end..self.len - range.start);
@@ -1606,15 +1608,15 @@ impl<Inner: SourceDescriptor> SourceDescriptor for RevSourceDescriptor<Inner> {
         index: usize,
     ) -> Option<Self::Item> {
         debug_assert!(index < self.len);
-        // SAFETY: Given an inner descriptor of length `len`, the `RevSourceDescriptor`
-        // implements a bijective mapping of indices from `0..len` to `0..len` given by
-        // `rev: x -> len - 1 - x`.
+        // SAFETY: Given an inner descriptor of length `len`, the
+        // `RevSourceDescriptor` implements a bijective mapping of indices
+        // from `0..len` to `0..len` given by `rev: x -> len - 1 - x`.
         //
         // Therefore:
-        // - if the caller passes indices in `0..len`, indices passed to the inner
-        //   `fetch_item()` function are also in the `0..len` range,
-        // - if the caller doesn't repeat indices, the rev adaptor doesn't repeat
-        //   indices passed to the inner descriptor.
+        // - if the caller passes indices in `0..len`, indices passed to the
+        //   inner `fetch_item()` function are also in the `0..len` range,
+        // - if the caller doesn't repeat indices, the rev adaptor doesn't
+        //   repeat indices passed to the inner descriptor.
         unsafe { self.inner.fetch_item(context, self.len - index - 1) }
     }
 }
@@ -1633,15 +1635,15 @@ impl<Inner: ExactSourceDescriptor> ExactSourceDescriptor for RevSourceDescriptor
         index: usize,
     ) -> Self::Item {
         debug_assert!(index < self.len);
-        // SAFETY: Given an inner descriptor of length `len`, the `RevSourceDescriptor`
-        // implements a bijective mapping of indices from `0..len` to `0..len` given by
-        // `rev: x -> len - 1 - x`.
+        // SAFETY: Given an inner descriptor of length `len`, the
+        // `RevSourceDescriptor` implements a bijective mapping of indices
+        // from `0..len` to `0..len` given by `rev: x -> len - 1 - x`.
         //
         // Therefore:
-        // - if the caller passes indices in `0..len`, indices passed to the inner
-        //   `exact_fetch_item()` function are also in the `0..len` range,
-        // - if the caller doesn't repeat indices, the rev adaptor doesn't repeat
-        //   indices passed to the inner descriptor.
+        // - if the caller passes indices in `0..len`, indices passed to the
+        //   inner `exact_fetch_item()` function are also in the `0..len` range,
+        // - if the caller doesn't repeat indices, the rev adaptor doesn't
+        //   repeat indices passed to the inner descriptor.
         unsafe { self.inner.exact_fetch_item(context, self.len - index - 1) }
     }
 }
@@ -1698,17 +1700,17 @@ impl<Inner: SourceCleanup> SourceCleanup for SkipSourceDescriptor<Inner> {
         if Self::NEEDS_CLEANUP {
             debug_assert!(range.start <= range.end);
             debug_assert!(range.end <= self.len);
-            // SAFETY: Given an inner descriptor of length `len` as well as a parameter
-            // `count <= len`, the `SkipSourceDescriptor` implements a bijective mapping of
-            // indices from `0..len - count` to `count..len` given by a translation of
-            // `count` places.
+            // SAFETY: Given an inner descriptor of length `len` as well as a
+            // parameter `count <= len`, the `SkipSourceDescriptor` implements a
+            // bijective mapping of indices from `0..len - count` to
+            // `count..len` given by a translation of `count` places.
             //
             // Therefore:
-            // - if the caller passes ranges included in `0..len - count`, ranges passed
-            //   here to the inner `cleanup_item_range()` function are included in the
-            //   `count..len` range,
-            // - if the caller doesn't repeat indices, the skip adaptor doesn't repeat
-            //   indices passed to the inner descriptor.
+            // - if the caller passes ranges included in `0..len - count`,
+            //   ranges passed here to the inner `cleanup_item_range()` function
+            //   are included in the `count..len` range,
+            // - if the caller doesn't repeat indices, the skip adaptor doesn't
+            //   repeat indices passed to the inner descriptor.
             unsafe {
                 self.inner
                     .cleanup_item_range(self.count + range.start..self.count + range.end);
@@ -1731,16 +1733,17 @@ impl<Inner: ExactSourceDescriptor> ExactSourceDescriptor for SkipSourceDescripto
         index: usize,
     ) -> Self::Item {
         debug_assert!(index < self.len);
-        // SAFETY: Given an inner descriptor of length `len` as well as a parameter
-        // `count <= len`, the `SkipSourceDescriptor` implements a bijective mapping of
-        // indices from `0..len - count` to `count..len` given by a translation of
-        // `count` places.
+        // SAFETY: Given an inner descriptor of length `len` as well as a
+        // parameter `count <= len`, the `SkipSourceDescriptor` implements a
+        // bijective mapping of indices from `0..len - count` to `count..len`
+        // given by a translation of `count` places.
         //
         // Therefore:
-        // - if the caller passes indices in `0..len - count`, indices passed here to
-        //   the inner `exact_fetch_item()` function are in the `count..len` range,
-        // - if the caller doesn't repeat indices, the skip adaptor doesn't repeat
-        //   indices passed to the inner descriptor.
+        // - if the caller passes indices in `0..len - count`, indices passed
+        //   here to the inner `exact_fetch_item()` function are in the
+        //   `count..len` range,
+        // - if the caller doesn't repeat indices, the skip adaptor doesn't
+        //   repeat indices passed to the inner descriptor.
         unsafe { self.inner.exact_fetch_item(context, self.count + index) }
     }
 }
@@ -1748,15 +1751,15 @@ impl<Inner: ExactSourceDescriptor> ExactSourceDescriptor for SkipSourceDescripto
 impl<Inner: SourceCleanup> Drop for SkipSourceDescriptor<Inner> {
     fn drop(&mut self) {
         if Self::NEEDS_CLEANUP && self.count != 0 {
-            // SAFETY: Given an inner descriptor of length `len` as well as a parameter
-            // `count <= len`, the `SkipSourceDescriptor` implements a bijective mapping of
-            // indices from `0..len - count` to `count..len` given by a translation of
-            // `count` places.
+            // SAFETY: Given an inner descriptor of length `len` as well as a
+            // parameter `count <= len`, the `SkipSourceDescriptor` implements a
+            // bijective mapping of indices from `0..len - count` to
+            // `count..len` given by a translation of `count` places.
             //
             // Therefore:
             // - the range `0..count` is included in the inner range `0..len`,
-            // - the items in `0..count` aren't passed to the inner descriptor other than in
-            //   this drop implementation.
+            // - the items in `0..count` aren't passed to the inner descriptor
+            //   other than in this drop implementation.
             unsafe {
                 self.inner.cleanup_item_range(0..self.count);
             }
@@ -1852,31 +1855,33 @@ impl<Inner: SourceCleanup> SourceCleanup for StepBySourceDescriptor<Inner> {
         self.len
     }
 
-    // For safety comments: given an inner descriptor of length `len` as well as a
-    // parameter `step != 0`, if we set `len' := ceil(len / step)` the
-    // `StepBySourceDescriptor` implements a bijective mapping between `0..len'` and
-    // `{0, step, 2*step, ..., (len' - 1)*step}` given by `f: x -> x * step`.
+    // For safety comments: given an inner descriptor of length `len` as well as
+    // a parameter `step != 0`, if we set `len' := ceil(len / step)` the
+    // `StepBySourceDescriptor` implements a bijective mapping between `0..len'`
+    // and `{0, step, 2*step, ..., (len' - 1)*step}` given by `f: x -> x *
+    // step`.
     //
     // Therefore:
-    // - if the caller passes indices included in `0..len'`, indices passed to the
-    //   inner descriptor are included in the `0..=(len' - 1) * step` range, itself
-    //   included in `0..len`,
-    // - if the caller doesn't repeat indices, the step-by adaptor doesn't repeat
-    //   indices passed to the inner descriptor.
+    // - if the caller passes indices included in `0..len'`, indices passed to
+    //   the inner descriptor are included in the `0..=(len' - 1) * step` range,
+    //   itself included in `0..len`,
+    // - if the caller doesn't repeat indices, the step-by adaptor doesn't
+    //   repeat indices passed to the inner descriptor.
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
             debug_assert!(range.start <= range.end);
             debug_assert!(range.end <= self.len);
             if self.step == 1 {
-                // SAFETY: See the function comment. When the step is 1 the mapping is the
-                // identity so we just pass the range through.
+                // SAFETY: See the function comment. When the step is 1 the
+                // mapping is the identity so we just pass the range through.
                 unsafe {
                     self.inner.cleanup_item_range(range);
                 }
             } else {
                 for i in range {
-                    // SAFETY: See the function comment. This call with a length-one range cleans up
-                    // the item at index `step * i`. The other items are cleaned up in the drop
+                    // SAFETY: See the function comment. This call with a
+                    // length-one range cleans up the item at index `step * i`.
+                    // The other items are cleaned up in the drop
                     // implementation.
                     unsafe {
                         self.inner
@@ -1909,26 +1914,28 @@ impl<Inner: ExactSourceDescriptor> ExactSourceDescriptor for StepBySourceDescrip
 }
 
 impl<Inner: SourceCleanup> Drop for StepBySourceDescriptor<Inner> {
-    // For safety comments: see the function comment in `Self::cleanup_item_range`.
-    // This drop implementation is the only one to invoke items that aren't
-    // multiples of `step`.
+    // For safety comments: see the function comment in
+    // `Self::cleanup_item_range`. This drop implementation is the only one
+    // to invoke items that aren't multiples of `step`.
     fn drop(&mut self) {
         if Self::NEEDS_CLEANUP && self.step != 1 {
             let full_blocks = self.inner_len / self.step;
             for i in 0..full_blocks {
-                // SAFETY: See the function comment. This line cleans up the items that aren't
-                // multiples of the `step` in the `step * i..step * (i + 1)` range.
+                // SAFETY: See the function comment. This line cleans up the
+                // items that aren't multiples of the `step` in the `step *
+                // i..step * (i + 1)` range.
                 unsafe {
                     self.inner
                         .cleanup_item_range(self.step * i + 1..self.step * (i + 1));
                 }
             }
             let last_block = self.step * full_blocks;
-            // This implements the comparison `last_block + 1 < inner_len` without risk of
-            // overflow.
+            // This implements the comparison `last_block + 1 < inner_len`
+            // without risk of overflow.
             if self.inner_len - last_block > 1 {
-                // SAFETY: See the function comment. This line cleans up the items that aren't
-                // multiples of the `step` beyond `step * len'`.
+                // SAFETY: See the function comment. This line cleans up the
+                // items that aren't multiples of the `step` beyond `step *
+                // len'`.
                 unsafe {
                     self.inner
                         .cleanup_item_range(last_block + 1..self.inner_len);
@@ -1989,16 +1996,16 @@ impl<Inner: SourceCleanup> SourceCleanup for TakeSourceDescriptor<Inner> {
         if Self::NEEDS_CLEANUP {
             debug_assert!(range.start <= range.end);
             debug_assert!(range.end <= self.count);
-            // SAFETY: Given an inner descriptor of length `len` as well as a parameter
-            // `count <= len`, the `TakeSourceDescriptor` implements a pass-through mapping
-            // of indices from `0..count` to `0..count`.
+            // SAFETY: Given an inner descriptor of length `len` as well as a
+            // parameter `count <= len`, the `TakeSourceDescriptor` implements a
+            // pass-through mapping of indices from `0..count` to `0..count`.
             //
             // Therefore:
-            // - if the caller passes ranges included in `0..count`, ranges passed here to
-            //   the inner `cleanup_item_range()` function are included in the `0..count`
-            //   range (itself included in `0..len`),
-            // - if the caller doesn't repeat indices, the take adaptor doesn't repeat
-            //   indices passed to the inner descriptor.
+            // - if the caller passes ranges included in `0..count`, ranges
+            //   passed here to the inner `cleanup_item_range()` function are
+            //   included in the `0..count` range (itself included in `0..len`),
+            // - if the caller doesn't repeat indices, the take adaptor doesn't
+            //   repeat indices passed to the inner descriptor.
             unsafe {
                 self.inner.cleanup_item_range(range);
             }
@@ -2020,16 +2027,16 @@ impl<Inner: ExactSourceDescriptor> ExactSourceDescriptor for TakeSourceDescripto
         index: usize,
     ) -> Self::Item {
         debug_assert!(index < self.count);
-        // SAFETY: Given an inner descriptor of length `len` as well as a parameter
-        // `count <= len`, the `TakeSourceDescriptor` implements a pass-through mapping
-        // of indices from `0..count` to `0..count`.
+        // SAFETY: Given an inner descriptor of length `len` as well as a
+        // parameter `count <= len`, the `TakeSourceDescriptor` implements a
+        // pass-through mapping of indices from `0..count` to `0..count`.
         //
         // Therefore:
-        // - if the caller passes indices in `0..count`, indices passed here to the
-        //   inner `exact_fetch_item()` function are in the `0..count` range (itself
-        //   included in `0..len`),
-        // - if the caller doesn't repeat indices, the take adaptor doesn't repeat
-        //   indices passed to the inner descriptor.
+        // - if the caller passes indices in `0..count`, indices passed here to
+        //   the inner `exact_fetch_item()` function are in the `0..count` range
+        //   (itself included in `0..len`),
+        // - if the caller doesn't repeat indices, the take adaptor doesn't
+        //   repeat indices passed to the inner descriptor.
         unsafe { self.inner.exact_fetch_item(context, index) }
     }
 }
@@ -2037,14 +2044,14 @@ impl<Inner: ExactSourceDescriptor> ExactSourceDescriptor for TakeSourceDescripto
 impl<Inner: SourceCleanup> Drop for TakeSourceDescriptor<Inner> {
     fn drop(&mut self) {
         if Self::NEEDS_CLEANUP && self.count != self.inner_len {
-            // SAFETY: Given an inner descriptor of length `len` as well as a parameter
-            // `count <= len`, the `TakeSourceDescriptor` implements a pass-through mapping
-            // of indices from `0..count` to `0..count`.
+            // SAFETY: Given an inner descriptor of length `len` as well as a
+            // parameter `count <= len`, the `TakeSourceDescriptor` implements a
+            // pass-through mapping of indices from `0..count` to `0..count`.
             //
             // Therefore:
             // - the range `count..len` is included in the inner range `0..len`,
-            // - the items in `count..len` aren't passed to the inner descriptor other than
-            //   in this drop implementation.
+            // - the items in `count..len` aren't passed to the inner descriptor
+            //   other than in this drop implementation.
             unsafe {
                 self.inner.cleanup_item_range(self.count..self.inner_len);
             }
@@ -2155,8 +2162,8 @@ impl<Inner: SourceCleanup, F> SourceCleanup for UpdateSourceDescriptor<Inner, F>
 
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
         if Self::NEEDS_CLEANUP {
-            // SAFETY: This descriptor implements a pass-through of indices to the inner
-            // descriptor, therefore safety is preserved by induction.
+            // SAFETY: This descriptor implements a pass-through of indices to
+            // the inner descriptor, therefore safety is preserved by induction.
             unsafe {
                 self.inner.cleanup_item_range(range);
             }
@@ -2181,8 +2188,8 @@ where
         context: &mut Self::ThreadContext,
         index: usize,
     ) -> Option<Self::Item> {
-        // SAFETY: This descriptor implements a pass-through of indices to the inner
-        // descriptor, therefore safety is preserved by induction.
+        // SAFETY: This descriptor implements a pass-through of indices to the
+        // inner descriptor, therefore safety is preserved by induction.
         let mut item = unsafe { self.inner.fetch_item(context, index) };
         item.as_mut().map(&self.f);
         item
@@ -2206,8 +2213,8 @@ where
         context: &mut Self::ThreadContext,
         index: usize,
     ) -> Self::Item {
-        // SAFETY: This descriptor implements a pass-through of indices to the inner
-        // descriptor, therefore safety is preserved by induction.
+        // SAFETY: This descriptor implements a pass-through of indices to the
+        // inner descriptor, therefore safety is preserved by induction.
         let mut item = unsafe { self.inner.exact_fetch_item(context, index) };
         (self.f)(&mut item);
         item
@@ -2257,13 +2264,13 @@ where
     }
 
     unsafe fn cleanup_item_range(&self, range: std::ops::Range<usize>) {
-        // SAFETY: This function implements a pass-through of indices to cleanup to the
-        // inner source, so safety is guaranteed by induction.
+        // SAFETY: This function implements a pass-through of indices to cleanup
+        // to the inner source, so safety is guaranteed by induction.
         unsafe {
             self.source.cleanup_item_range(range.clone());
         }
-        // SAFETY: This function implements a pass-through of indices to cleanup to the
-        // inner sink, so safety is guaranteed by induction.
+        // SAFETY: This function implements a pass-through of indices to cleanup
+        // to the inner sink, so safety is guaranteed by induction.
         unsafe {
             self.sink.skip_item_range(range);
         }

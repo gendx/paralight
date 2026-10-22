@@ -177,8 +177,8 @@ impl<T: SimpleSourceDescriptor> SourceDescriptor for T {
     fn init(&self) {}
 
     unsafe fn fetch_item(&self, _context: &mut (), index: usize) -> Option<Self::Item> {
-        // SAFETY: This implementation simply extends the inner descriptor with an empty
-        // context type, therefore safety is preserved by induction.
+        // SAFETY: This implementation simply extends the inner descriptor with
+        // an empty context type, therefore safety is preserved by induction.
         unsafe { self.simple_fetch_item(index) }
     }
 }
@@ -268,8 +268,8 @@ impl<T: SimpleExactSourceDescriptor> ExactSourceDescriptor for T {
     fn init(&self) {}
 
     unsafe fn exact_fetch_item(&self, _context: &mut (), index: usize) -> Self::Item {
-        // SAFETY: This implementation simply extends the inner descriptor with an empty
-        // context type, therefore safety is preserved by induction.
+        // SAFETY: This implementation simply extends the inner descriptor with
+        // an empty context type, therefore safety is preserved by induction.
         unsafe { self.simple_exact_fetch_item(index) }
     }
 }
@@ -2215,13 +2215,13 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
         let source_descriptor = self.source.exact_descriptor();
         let len = source_descriptor.len();
 
-        // If creating the sink panics, we need to make sure that the source is cleaned
-        // up.
+        // If creating the sink panics, we need to make sure that the source is
+        // cleaned up.
         let cleanup_guard = scopeguard::guard(source_descriptor, |descriptor| {
-            // SAFETY: This scope guard is only invoked if the next statement (creating the
-            // sink via `Sink::new()`) panics. In that case, it is safe (and desired) to
-            // cleanup the entire `0..len` range before the descriptor goes out
-            // of scope.
+            // SAFETY: This scope guard is only invoked if the next statement
+            // (creating the sink via `Sink::new()`) panics. In that case, it is
+            // safe (and desired) to cleanup the entire `0..len` range before
+            // the descriptor goes out of scope.
             unsafe {
                 descriptor.cleanup_item_range(0..len);
             }
@@ -2231,9 +2231,9 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
 
         // If the pipeline panics, we need to cancel this sink.
         let sink = scopeguard::guard(sink, |sink| {
-            // SAFETY: This scope guard is only invoked if the pipeline panics. The
-            // `CollectAccumulator` and `CollectCleaner` make sure that each index in
-            // `0..len` is passed to calls to `Sink::push_item()` or
+            // SAFETY: This scope guard is only invoked if the pipeline panics.
+            // The `CollectAccumulator` and `CollectCleaner` make sure that each
+            // index in `0..len` is passed to calls to `Sink::push_item()` or
             // `Sink::skip_item_range()` before this scope guard is invoked.
             unsafe {
                 sink.cancel();
@@ -2243,29 +2243,33 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
         let accumulator = CollectAccumulator {
             init: || source_descriptor.init(),
             process_item: |context: &mut _, index| {
-                // If fetching this item panics, we need to skip the sink at this index.
+                // If fetching this item panics, we need to skip the sink at
+                // this index.
                 let item_guard = scopeguard::guard((), |()| {
-                    // SAFETY: This scope guard is only invoked if a panic occurs during
-                    // `exact_fetch_item`. This ensures that this index is passed once to this
-                    // sink (as the regular `push_item` call doesn't happen).
+                    // SAFETY: This scope guard is only invoked if a panic
+                    // occurs during `exact_fetch_item`. This ensures that this
+                    // index is passed once to this sink (as the regular
+                    // `push_item` call doesn't happen).
                     unsafe {
                         sink.skip_item_range(index..index + 1);
                     }
                 });
 
-                // SAFETY: The pre-conditions to the `source_descriptor`'s `exact_fetch_item()`
-                // and `cleanup_item_range()` methods are ensured by the safety guarantees of
-                // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed are in
-                // `0..len` and they are each passed exactly once.
+                // SAFETY: The pre-conditions to the `source_descriptor`'s
+                // `exact_fetch_item()` and `cleanup_item_range()` methods are
+                // ensured by the safety guarantees of
+                // `ThreadPool::iter_pipeline()`, i.e. that all the indices
+                // passed are in `0..len` and they are each passed exactly once.
                 let item = unsafe { source_descriptor.exact_fetch_item(context, index) };
 
                 // Defuse the guard.
                 ScopeGuard::into_inner(item_guard);
 
                 // SAFETY: The pre-conditions to the sink's `push_item()` and
-                // `skip_item_range()` methods are ensured by the safety guarantees of
-                // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed are in
-                // `0..len` and they are each passed exactly once.
+                // `skip_item_range()` methods are ensured by the safety
+                // guarantees of `ThreadPool::iter_pipeline()`, i.e. that all
+                // the indices passed are in `0..len` and they are each passed
+                // exactly once.
                 unsafe { sink.push_item(index, item) };
             },
         };
@@ -2283,9 +2287,9 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
 
         let sink = ScopeGuard::into_inner(sink);
         // SAFETY: The pre-conditions are ensured by the safety guaranties of
-        // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed to the sink's
-        // `push_item()` and `skip_item_range()` are in `0..len` and they are each
-        // passed exactly once.
+        // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed to
+        // the sink's `push_item()` and `skip_item_range()` are in `0..len` and
+        // they are each passed exactly once.
         unsafe { C::finalize(sink) }
     }
 
@@ -2667,10 +2671,10 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
         let len = source_descriptor.len();
 
         let cleanup_guard = scopeguard::guard(source_descriptor, |descriptor| {
-            // SAFETY: This scope guard is only invoked if the next statement (creating the
-            // sink via `Sink::new()`) panics. In that case, it is safe (and desired) to
-            // cleanup the entire `0..len` range before the descriptor goes out
-            // of scope.
+            // SAFETY: This scope guard is only invoked if the next statement
+            // (creating the sink via `Sink::new()`) panics. In that case, it is
+            // safe (and desired) to cleanup the entire `0..len` range before
+            // the descriptor goes out of scope.
             unsafe {
                 descriptor.cleanup_item_range(0..len);
             }
@@ -2679,11 +2683,11 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
         let source_descriptor = ScopeGuard::into_inner(cleanup_guard);
 
         let sink = scopeguard::guard(sink, |sink| {
-            // SAFETY: This scope guard is only invoked if the pipeline panics or is
-            // interrupted early by an error. The `CollectAccumulator` and `CollectCleaner`
-            // make sure that each index in `0..len` is passed to calls to
-            // `Sink::push_item()` or `Sink::skip_item_range()` before this scope guard is
-            // invoked.
+            // SAFETY: This scope guard is only invoked if the pipeline panics
+            // or is interrupted early by an error. The `CollectAccumulator` and
+            // `CollectCleaner` make sure that each index in `0..len` is passed
+            // to calls to `Sink::push_item()` or `Sink::skip_item_range()`
+            // before this scope guard is invoked.
             unsafe {
                 sink.cancel();
             }
@@ -2692,21 +2696,23 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
         let accumulator = TryCollectAccumulator {
             init: || source_descriptor.init(),
             process_item: |context: &mut _, index| {
-                // If fetching this item panics or returns an error, we need to skip the sink at
-                // this index.
+                // If fetching this item panics or returns an error, we need to
+                // skip the sink at this index.
                 let item_guard = scopeguard::guard((), |()| {
-                    // SAFETY: This scope guard is only invoked if `exact_fetch_item` panics or
-                    // returns an error. This ensures that this index is passed once to this sink
-                    // (as the regular `push_item` call doesn't happen).
+                    // SAFETY: This scope guard is only invoked if
+                    // `exact_fetch_item` panics or returns an error. This
+                    // ensures that this index is passed once to this sink (as
+                    // the regular `push_item` call doesn't happen).
                     unsafe {
                         sink.skip_item_range(index..index + 1);
                     }
                 });
 
-                // SAFETY: The pre-conditions to the `source_descriptor`'s `exact_fetch_item()`
-                // and `cleanup_item_range()` methods are ensured by the safety guarantees of
-                // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed are in
-                // `0..len` and they are each passed exactly once.
+                // SAFETY: The pre-conditions to the `source_descriptor`'s
+                // `exact_fetch_item()` and `cleanup_item_range()` methods are
+                // ensured by the safety guarantees of
+                // `ThreadPool::iter_pipeline()`, i.e. that all the indices
+                // passed are in `0..len` and they are each passed exactly once.
                 let item = unsafe { source_descriptor.exact_fetch_item(context, index) };
                 let item = item?;
 
@@ -2714,9 +2720,10 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
                 ScopeGuard::into_inner(item_guard);
 
                 // SAFETY: The pre-conditions to the sink's `push_item()` and
-                // `skip_item_range()` methods are ensured by the safety guarantees of
-                // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed are in
-                // `0..len` and they are each passed exactly once.
+                // `skip_item_range()` methods are ensured by the safety
+                // guarantees of `ThreadPool::iter_pipeline()`, i.e. that all
+                // the indices passed are in `0..len` and they are each passed
+                // exactly once.
                 unsafe { sink.push_item(index, item) };
                 Ok(())
             },
@@ -2735,9 +2742,9 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
 
         let sink = ScopeGuard::into_inner(sink);
         // SAFETY: The pre-conditions are ensured by the safety guaranties of
-        // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed to the sink's
-        // `push_item()` and `skip_item_range()` are in `0..len` and they are each
-        // passed exactly once.
+        // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed to
+        // the sink's `push_item()` and `skip_item_range()` are in `0..len` and
+        // they are each passed exactly once.
         let collection = unsafe { C::finalize(sink) };
         Ok(collection)
     }
@@ -2935,10 +2942,10 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
         let len = source_descriptor.len();
 
         let cleanup_guard = scopeguard::guard(source_descriptor, |descriptor| {
-            // SAFETY: This scope guard is only invoked if the next statement (creating the
-            // sink via `Sink::new()`) panics. In that case, it is safe (and desired) to
-            // cleanup the entire `0..len` range before the descriptor goes out
-            // of scope.
+            // SAFETY: This scope guard is only invoked if the next statement
+            // (creating the sink via `Sink::new()`) panics. In that case, it is
+            // safe (and desired) to cleanup the entire `0..len` range before
+            // the descriptor goes out of scope.
             unsafe {
                 descriptor.cleanup_item_range(0..len);
             }
@@ -2947,11 +2954,11 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
         let source_descriptor = ScopeGuard::into_inner(cleanup_guard);
 
         let sink = scopeguard::guard(sink, |sink| {
-            // SAFETY: This scope guard is only invoked if the pipeline panics or is
-            // interrupted early by an error. The `CollectAccumulator` and `CollectCleaner`
-            // make sure that each index in `0..len` is passed to calls to
-            // `Sink::push_item()` or `Sink::skip_item_range()` before this scope guard is
-            // invoked.
+            // SAFETY: This scope guard is only invoked if the pipeline panics
+            // or is interrupted early by an error. The `CollectAccumulator` and
+            // `CollectCleaner` make sure that each index in `0..len` is passed
+            // to calls to `Sink::push_item()` or `Sink::skip_item_range()`
+            // before this scope guard is invoked.
             unsafe {
                 sink.cancel();
             }
@@ -2962,21 +2969,23 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
             process_item: |context: &mut _,
                            index|
              -> <<S::Item as Try>::Residual as Residual<()>>::TryType {
-                // If fetching this item panics or returns an error, we need to skip the sink at
-                // this index.
+                // If fetching this item panics or returns an error, we need to
+                // skip the sink at this index.
                 let item_guard = scopeguard::guard((), |()| {
-                    // SAFETY: This scope guard is only invoked if `exact_fetch_item` panics or
-                    // returns an error. This ensures that this index is passed once to this sink
-                    // (as the regular `push_item` call doesn't happen).
+                    // SAFETY: This scope guard is only invoked if
+                    // `exact_fetch_item` panics or returns an error. This
+                    // ensures that this index is passed once to this sink (as
+                    // the regular `push_item` call doesn't happen).
                     unsafe {
                         sink.skip_item_range(index..index + 1);
                     }
                 });
 
-                // SAFETY: The pre-conditions to the `source_descriptor`'s `exact_fetch_item()`
-                // and `cleanup_item_range()` methods are ensured by the safety guarantees of
-                // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed are in
-                // `0..len` and they are each passed exactly once.
+                // SAFETY: The pre-conditions to the `source_descriptor`'s
+                // `exact_fetch_item()` and `cleanup_item_range()` methods are
+                // ensured by the safety guarantees of
+                // `ThreadPool::iter_pipeline()`, i.e. that all the indices
+                // passed are in `0..len` and they are each passed exactly once.
                 let item = unsafe { source_descriptor.exact_fetch_item(context, index) };
                 let item = item?;
 
@@ -2984,9 +2993,10 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
                 ScopeGuard::into_inner(item_guard);
 
                 // SAFETY: The pre-conditions to the sink's `push_item()` and
-                // `skip_item_range()` methods are ensured by the safety guarantees of
-                // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed are in
-                // `0..len` and they are each passed exactly once.
+                // `skip_item_range()` methods are ensured by the safety
+                // guarantees of `ThreadPool::iter_pipeline()`, i.e. that all
+                // the indices passed are in `0..len` and they are each passed
+                // exactly once.
                 unsafe { sink.push_item(index, item) };
                 Try::from_output(())
             },
@@ -3005,9 +3015,9 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
 
         let sink = ScopeGuard::into_inner(sink);
         // SAFETY: The pre-conditions are ensured by the safety guaranties of
-        // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed to the sink's
-        // `push_item()` and `skip_item_range()` are in `0..len` and they are each
-        // passed exactly once.
+        // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed to
+        // the sink's `push_item()` and `skip_item_range()` are in `0..len` and
+        // they are each passed exactly once.
         let collection = unsafe { C::finalize(sink) };
         Try::from_output(collection)
     }
@@ -3281,10 +3291,12 @@ impl<T: GenericThreadPool, S: ParallelSource> ParallelIterator for BaseParallelI
             source_descriptor.len(),
             || (init(), source_descriptor.init()),
             |(acc, mut context), index| {
-                // SAFETY: The pre-conditions to the `source_descriptor`'s `fetch_item()` and
-                // `cleanup_item_range()` methods are ensured by the safety guarantees of
-                // `ThreadPool::upper_bounded_pipeline()`, i.e. that all the indices passed are
-                // in `0..len` and they are each passed exactly once.
+                // SAFETY: The pre-conditions to the `source_descriptor`'s
+                // `fetch_item()` and `cleanup_item_range()` methods are ensured
+                // by the safety guarantees of
+                // `ThreadPool::upper_bounded_pipeline()`, i.e. that all the
+                // indices passed are in `0..len` and they are each passed
+                // exactly once.
                 let item = unsafe { source_descriptor.fetch_item(&mut context, index) };
                 match item {
                     None => ControlFlow::Continue((acc, context)),
@@ -3312,10 +3324,11 @@ impl<T: GenericThreadPool, S: ParallelSource> ParallelIterator for BaseParallelI
             // Note: the `&mut _` annotation is needed here to avoid compilation errors, see
             // https://users.rust-lang.org/t/implementation-of-fnonce-is-not-general-enough/78006/4.
             fetch_item: |context: &mut _, index| {
-                // SAFETY: The pre-conditions to the `source_descriptor`'s `fetch_item()` and
-                // `cleanup_item_range()` methods are ensured by the safety guarantees of
-                // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed are in
-                // `0..len` and they are each passed exactly once.
+                // SAFETY: The pre-conditions to the `source_descriptor`'s
+                // `fetch_item()` and `cleanup_item_range()` methods are ensured
+                // by the safety guarantees of `ThreadPool::iter_pipeline()`,
+                // i.e. that all the indices passed are in `0..len` and they are
+                // each passed exactly once.
                 unsafe { source_descriptor.fetch_item(context, index) }
             },
         };
@@ -3345,10 +3358,12 @@ impl<T: GenericThreadPool, S: ExactParallelSource> ParallelIterator
             source_descriptor.len(),
             || (init(), source_descriptor.init()),
             |(acc, mut context), index| {
-                // SAFETY: The pre-conditions to the `source_descriptor`'s `exact_fetch_item()`
-                // and `cleanup_item_range()` methods are ensured by the safety guarantees of
-                // `ThreadPool::upper_bounded_pipeline()`, i.e. that all the indices passed are
-                // in `0..len` and they are each passed exactly once.
+                // SAFETY: The pre-conditions to the `source_descriptor`'s
+                // `exact_fetch_item()` and `cleanup_item_range()` methods are
+                // ensured by the safety guarantees of
+                // `ThreadPool::upper_bounded_pipeline()`, i.e. that all the
+                // indices passed are in `0..len` and they are each passed
+                // exactly once.
                 let item = unsafe { source_descriptor.exact_fetch_item(&mut context, index) };
                 match process_item(acc, index, item) {
                     ControlFlow::Continue(acc) => ControlFlow::Continue((acc, context)),
@@ -3373,10 +3388,11 @@ impl<T: GenericThreadPool, S: ExactParallelSource> ParallelIterator
             // Note: the `&mut _` annotation is needed here to avoid compilation errors, see
             // https://users.rust-lang.org/t/implementation-of-fnonce-is-not-general-enough/78006/4.
             fetch_item: |context: &mut _, index| {
-                // SAFETY: The pre-conditions to the `source_descriptor`'s `exact_fetch_item()`
-                // and `cleanup_item_range()` methods are ensured by the safety guarantees of
-                // `ThreadPool::iter_pipeline()`, i.e. that all the indices passed are in
-                // `0..len` and they are each passed exactly once.
+                // SAFETY: The pre-conditions to the `source_descriptor`'s
+                // `exact_fetch_item()` and `cleanup_item_range()` methods are
+                // ensured by the safety guarantees of
+                // `ThreadPool::iter_pipeline()`, i.e. that all the indices
+                // passed are in `0..len` and they are each passed exactly once.
                 unsafe { source_descriptor.exact_fetch_item(context, index) }
             },
         };

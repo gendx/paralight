@@ -432,8 +432,8 @@ mod test {
     #[cfg(miri)]
     const INPUT_LEN: u64 = 200;
 
-    // TSAN reports segmentation faults when creating too large arrays on the stack,
-    // so we cap the input size accordingly.
+    // TSAN reports segmentation faults when creating too large arrays on the
+    // stack, so we cap the input size accordingly.
     #[cfg(feature = "nightly")]
     const ARRAY_LEN: u64 = if INPUT_LEN < 10_000 {
         INPUT_LEN
@@ -866,8 +866,8 @@ mod test {
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
-        // The pipeline functions can borrow local values (and therefore have a local
-        // lifetime).
+        // The pipeline functions can borrow local values (and therefore have a
+        // local lifetime).
         let zero = 0;
         let zero_ref = &zero;
         let one = 1;
@@ -923,8 +923,8 @@ mod test {
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
-        // The pipeline input can borrow local values (and therefore have a local
-        // lifetime).
+        // The pipeline input can borrow local values (and therefore have a
+        // local lifetime).
         let token = ();
         let token_ref = &token;
 
@@ -942,8 +942,8 @@ mod test {
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
-        // The pipeline output can borrow local values (and therefore have a local
-        // lifetime).
+        // The pipeline output can borrow local values (and therefore have a
+        // local lifetime).
         let token = ();
         let token_ref = &token;
 
@@ -965,8 +965,8 @@ mod test {
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
-        // The pipeline accumulator can borrow local values (and therefore have a local
-        // lifetime).
+        // The pipeline accumulator can borrow local values (and therefore have
+        // a local lifetime).
         let token = ();
         let token_ref = &token;
 
@@ -1622,8 +1622,9 @@ mod test {
             .sum::<u64>();
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
 
-        // Even though each set yields elements in arbitrary order, this specific needle
-        // is guaranteed to be in the first half of the chained iterator.
+        // Even though each set yields elements in arbitrary order, this
+        // specific needle is guaranteed to be in the first half of the
+        // chained iterator.
         let needle = input1
             .par_iter()
             .chain(input2.par_iter())
@@ -1834,8 +1835,9 @@ mod test {
             .sum::<u64>();
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
 
-        // Even though each set yields elements in arbitrary order, this specific needle
-        // is guaranteed to be in the first half of the chained and reversed iterator.
+        // Even though each set yields elements in arbitrary order, this
+        // specific needle is guaranteed to be in the first half of the
+        // chained and reversed iterator.
         let input1 = (0..INPUT_LEN / 2).collect::<MyHashSet<u64>>();
         let input2 = (INPUT_LEN / 2..=INPUT_LEN).collect::<MyHashSet<u64>>();
         let needle = input1
@@ -3929,8 +3931,8 @@ mod test {
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
-        // Custom comparison function where even numbers are smaller than all odd
-        // numbers.
+        // Custom comparison function where even numbers are smaller than all
+        // odd numbers.
         let mut input = (0..=INPUT_LEN).collect::<Vec<u64>>();
         let max = input
             .par_iter()
@@ -4022,8 +4024,8 @@ mod test {
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
-        // Custom comparison function where even numbers are smaller than all odd
-        // numbers.
+        // Custom comparison function where even numbers are smaller than all
+        // odd numbers.
         let mut input = (1..=INPUT_LEN).collect::<Vec<u64>>();
         let min = input
             .par_iter()
@@ -4121,8 +4123,8 @@ mod test {
     where
         for<'a> &'a mut T: GenericThreadPool,
     {
-        // Custom comparison function where even numbers are smaller than all odd
-        // numbers.
+        // Custom comparison function where even numbers are smaller than all
+        // odd numbers.
         let mut input = (1..=INPUT_LEN).collect::<Vec<u64>>();
         let minmax = input
             .par_iter()
@@ -5150,7 +5152,8 @@ mod test {
                     Err(x)
                 }
             });
-        // The probability for this to fail is negligible if INPUT_LEN is large enough.
+        // The probability for this to fail is negligible if INPUT_LEN is large
+        // enough.
         assert!(result.is_err());
 
         let result = input
@@ -5195,7 +5198,8 @@ mod test {
                     None
                 }
             });
-        // The probability for this to fail is negligible if INPUT_LEN is large enough.
+        // The probability for this to fail is negligible if INPUT_LEN is large
+        // enough.
         assert!(result.is_none());
 
         let result = input

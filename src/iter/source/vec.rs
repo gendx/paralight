@@ -74,7 +74,8 @@ impl<T: Send> IntoExactParallelSource for Box<[T]> {
     type Source = VecParallelSource<T>;
 
     fn into_par_iter(self) -> Self::Source {
-        // There's no Box::<[T]>::from_raw_parts(), so we just piggy back on Vec.
+        // There's no Box::<[T]>::from_raw_parts(), so we just piggy back on
+        // Vec.
         VecParallelSource {
             vec: self.into_vec(),
         }
@@ -118,35 +119,38 @@ impl<T: Send> SourceCleanup for VecSourceDescriptor<T> {
             debug_assert!(range.end <= self.len);
             let base_ptr: *mut T = self.ptr.get();
             // SAFETY:
-            // - The offset in bytes `range.start * size_of::<T>()` fits in an `isize`,
-            //   because the range is included in the length of the (well-formed) input
-            //   vector. This is ensured by the safety pre-conditions of the
-            //   `cleanup_item_range()` function (the `range` must be included in
-            //   `0..self.len`).
-            // - The `base_ptr` is derived from an allocated object (the input vector), and
-            //   the entire range between `base_ptr` and the resulting `start_ptr` is in
-            //   bounds of that allocated object. This is because the range start is smaller
-            //   than the length of the input vector.
+            // - The offset in bytes `range.start * size_of::<T>()` fits in an
+            //   `isize`, because the range is included in the length of the
+            //   (well-formed) input vector. This is ensured by the safety
+            //   pre-conditions of the `cleanup_item_range()` function (the
+            //   `range` must be included in `0..self.len`).
+            // - The `base_ptr` is derived from an allocated object (the input
+            //   vector), and the entire range between `base_ptr` and the
+            //   resulting `start_ptr` is in bounds of that allocated object.
+            //   This is because the range start is smaller than the length of
+            //   the input vector.
             let start_ptr: *mut T = unsafe { base_ptr.add(range.start) };
             let slice: *mut [T] =
                 std::ptr::slice_from_raw_parts_mut(start_ptr, range.end - range.start);
             // SAFETY:
-            // - The `slice` is properly aligned, as it is constructed by calling `add()` on
-            //   the aligned `base_ptr`.
-            // - The `slice` isn't null, as it is constructed by calling `add()` on the
-            //   non-null `base_ptr`. Indeed, `Vec` guarantees that its pointer is never
-            //   null: https://doc.rust-lang.org/stable/std/vec/struct.Vec.html#guarantees.
-            // - The `slice` is valid for reads and writes. This is ensured by the safety
-            //   pre-conditions of the `cleanup_item_range()` function (each index appears
-            //   at most once in calls to `simple_exact_fetch_item()` and
-            //   `cleanup_item_range()`), i.e. the range of items in this slice isn't
-            //   accessed by anything else.
-            // - The `slice` is valid for dropping, as it is a part of the input vector that
-            //   nothing else accesses.
-            // - Nothing else is accessing the `slice` while `drop_in_place` is executing.
+            // - The `slice` is properly aligned, as it is constructed by
+            //   calling `add()` on the aligned `base_ptr`.
+            // - The `slice` isn't null, as it is constructed by calling `add()`
+            //   on the non-null `base_ptr`. Indeed, `Vec` guarantees that its pointer
+            //   is never null: https://doc.rust-lang.org/stable/std/vec/struct.Vec.html#guarantees.
+            // - The `slice` is valid for reads and writes. This is ensured by
+            //   the safety pre-conditions of the `cleanup_item_range()`
+            //   function (each index appears at most once in calls to
+            //   `simple_exact_fetch_item()` and `cleanup_item_range()`), i.e.
+            //   the range of items in this slice isn't accessed by anything
+            //   else.
+            // - The `slice` is valid for dropping, as it is a part of the input
+            //   vector that nothing else accesses.
+            // - Nothing else is accessing the `slice` while `drop_in_place` is
+            //   executing.
             //
-            // The above properties (aligned, non-null, etc.) still hold if the slice is
-            // empty.
+            // The above properties (aligned, non-null, etc.) still hold if the
+            // slice is empty.
             unsafe { std::ptr::drop_in_place(slice) };
         }
     }
@@ -159,26 +163,26 @@ impl<T: Send> SimpleExactSourceDescriptor for VecSourceDescriptor<T> {
         debug_assert!(index < self.len);
         let base_ptr: *const T = self.ptr.get();
         // SAFETY:
-        // - The offset in bytes `index * size_of::<T>()` fits in an `isize`, because
-        //   the index is smaller than the length of the (well-formed) input vector.
-        //   This is ensured by the safety pre-conditions of the
-        //   `simple_exact_fetch_item()` function (the `index` must be in the range
-        //   `0..self.len`), and further confirmed by the assertion.
-        // - The `base_ptr` is derived from an allocated object (the input vector), and
-        //   the entire range between `base_ptr` and the resulting `item_ptr` is in
-        //   bounds of that allocated object. This is because the index is smaller than
-        //   the length of the input vector.
+        // - The offset in bytes `index * size_of::<T>()` fits in an `isize`,
+        //   because the index is smaller than the length of the (well-formed)
+        //   input vector. This is ensured by the safety pre-conditions of the
+        //   `simple_exact_fetch_item()` function (the `index` must be in the
+        //   range `0..self.len`), and further confirmed by the assertion.
+        // - The `base_ptr` is derived from an allocated object (the input
+        //   vector), and the entire range between `base_ptr` and the resulting
+        //   `item_ptr` is in bounds of that allocated object. This is because
+        //   the index is smaller than the length of the input vector.
         let item_ptr: *const T = unsafe { base_ptr.add(index) };
         // SAFETY:
-        // - The `item_ptr` is properly aligned, as it is constructed by calling `add()`
-        //   on the aligned `base_ptr`.
-        // - The `item_ptr` points to a properly initialized value of type `T`, the
-        //   element from the input vector at position `index`.
+        // - The `item_ptr` is properly aligned, as it is constructed by calling
+        //   `add()` on the aligned `base_ptr`.
+        // - The `item_ptr` points to a properly initialized value of type `T`,
+        //   the element from the input vector at position `index`.
         // - The `item_ptr` is valid for reads. This is ensured by the safety
-        //   pre-conditions of the `simple_exact_fetch_item()` function (each index must
-        //   be passed at most once), i.e. this item hasn't been read (and moved out of
-        //   the vector) yet. Additionally, there are no concurrent writes to this slot
-        //   in the vector.
+        //   pre-conditions of the `simple_exact_fetch_item()` function (each
+        //   index must be passed at most once), i.e. this item hasn't been read
+        //   (and moved out of the vector) yet. Additionally, there are no
+        //   concurrent writes to this slot in the vector.
         let item: T = unsafe { std::ptr::read(item_ptr) };
         item
     }
@@ -188,17 +192,17 @@ impl<T> Drop for VecSourceDescriptor<T> {
     fn drop(&mut self) {
         let base_ptr: *mut T = self.ptr.get();
         // SAFETY:
-        // - The `base_ptr` has been allocated with the global allocator, as it is
-        //   derived from the source vector.
-        // - `T` has the same alignement as what `base_ptr` was allocated with, because
-        //   `base_ptr` derives from a vector of `T`s.
-        // - `T * capacity` is the size of what `base_ptr` was allocated with, because
-        //   that's the capacity of the source vector.
+        // - The `base_ptr` has been allocated with the global allocator, as it
+        //   is derived from the source vector.
+        // - `T` has the same alignement as what `base_ptr` was allocated with,
+        //   because `base_ptr` derives from a vector of `T`s.
+        // - `T * capacity` is the size of what `base_ptr` was allocated with,
+        //   because that's the capacity of the source vector.
         // - `length <= capacity` because the `length` is set to zero here.
-        // - The first `length` values are properly initialized values of type `T`
-        //   because the `length` is set to zero.
-        // - The allocated size in bytes isn't larger than `isize::MAX`, because that's
-        //   derived from the source vector.
+        // - The first `length` values are properly initialized values of type
+        //   `T` because the `length` is set to zero.
+        // - The allocated size in bytes isn't larger than `isize::MAX`, because
+        //   that's derived from the source vector.
         let vec: Vec<T> = unsafe { Vec::from_raw_parts(base_ptr, 0, self.capacity) };
         drop(vec);
     }

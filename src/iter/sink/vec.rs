@@ -23,20 +23,22 @@ impl<T: Send> FromExactParallelSink for Vec<T> {
         let capacity = sink.capacity;
 
         // SAFETY:
-        // - The `base_ptr` has been allocated with the global allocator, as it is
-        //   derived from the vector created in `VecParallelSink::new`.
-        // - `T` has the same alignement as what `base_ptr` was allocated with, because
-        //   `base_ptr` derives from a vector of `T`s.
-        // - `T * capacity` is the size of what `base_ptr` was allocated with, because
-        //   that's the capacity of the vector created in `VecParallelSink::new`.
-        // - `len <= capacity` because the vector was created using `Vec::with_capacity`
-        //   with `len` as the requested minimal capacity.
-        // - The first `len` values are properly initialized values of type `T`, as the
-        //   safety pre-conditions of `finalize()` require that each index in `0..len`
-        //   was passed once and only once to `VecParallelSink::push_item`, and that no
-        //   call to `VecParallelSink::skip_item_range` was made.
-        // - The allocated size in bytes isn't larger than `isize::MAX`, because that's
-        //   derived from the vector created in `VecParallelSink::new`.
+        // - The `base_ptr` has been allocated with the global allocator, as it
+        //   is derived from the vector created in `VecParallelSink::new`.
+        // - `T` has the same alignement as what `base_ptr` was allocated with,
+        //   because `base_ptr` derives from a vector of `T`s.
+        // - `T * capacity` is the size of what `base_ptr` was allocated with,
+        //   because that's the capacity of the vector created in
+        //   `VecParallelSink::new`.
+        // - `len <= capacity` because the vector was created using
+        //   `Vec::with_capacity` with `len` as the requested minimal capacity.
+        // - The first `len` values are properly initialized values of type `T`,
+        //   as the safety pre-conditions of `finalize()` require that each
+        //   index in `0..len` was passed once and only once to
+        //   `VecParallelSink::push_item`, and that no call to
+        //   `VecParallelSink::skip_item_range` was made.
+        // - The allocated size in bytes isn't larger than `isize::MAX`, because
+        //   that's derived from the vector created in `VecParallelSink::new`.
         unsafe { Vec::from_raw_parts(base_ptr, len, capacity) }
     }
 }
@@ -177,25 +179,26 @@ impl<T: Send> ExactParallelSink for VecParallelSink<T> {
         debug_assert!(index < self.len);
         let base_ptr: *mut T = self.ptr.get();
         // SAFETY:
-        // - The offset in bytes `index * size_of::<T>()` fits in an `isize`, because
-        //   the index is smaller than the length of the (well-formed) output vector.
-        //   This is ensured by the safety pre-conditions of the `push_item()` function
-        //   (the `index` must be in the range `0..self.len`), and further confirmed by
-        //   the assertion.
-        // - The `base_ptr` is derived from an allocated object (the output vector), and
-        //   the entire range between `base_ptr` and the resulting `item_ptr` is in
-        //   bounds of that allocated object. This is because the index is smaller than
-        //   the length of the output vector.
+        // - The offset in bytes `index * size_of::<T>()` fits in an `isize`,
+        //   because the index is smaller than the length of the (well-formed)
+        //   output vector. This is ensured by the safety pre-conditions of the
+        //   `push_item()` function (the `index` must be in the range
+        //   `0..self.len`), and further confirmed by the assertion.
+        // - The `base_ptr` is derived from an allocated object (the output
+        //   vector), and the entire range between `base_ptr` and the resulting
+        //   `item_ptr` is in bounds of that allocated object. This is because
+        //   the index is smaller than the length of the output vector.
         let item_ptr: *mut T = unsafe { base_ptr.add(index) };
         // SAFETY:
-        // - The `item_ptr` is properly aligned, as it is constructed by calling `add()`
-        //   on the aligned `base_ptr`.
-        // - The `item_ptr` points to a not yet initialized value of type `T`, the
-        //   element from the input vector at position `index`.
+        // - The `item_ptr` is properly aligned, as it is constructed by calling
+        //   `add()` on the aligned `base_ptr`.
+        // - The `item_ptr` points to a not yet initialized value of type `T`,
+        //   the element from the input vector at position `index`.
         // - The `item_ptr` is valid for writes. This is ensured by the safety
-        //   pre-conditions of the `push_item()` function (each index must be passed at
-        //   most once), i.e. this item hasn't yet been written to. Additionally, there
-        //   are no concurrent reads nor writes to this slot in the vector.
+        //   pre-conditions of the `push_item()` function (each index must be
+        //   passed at most once), i.e. this item hasn't yet been written to.
+        //   Additionally, there are no concurrent reads nor writes to this slot
+        //   in the vector.
         unsafe { std::ptr::write(item_ptr, item) };
     }
 
@@ -227,17 +230,18 @@ impl<T: Send> ExactParallelSink for VecParallelSink<T> {
         // Deallocate the vector.
         //
         // SAFETY:
-        // - The `base_ptr` has been allocated with the global allocator, as it is
-        //   derived from the vector created in `VecParallelSink::new`.
-        // - `T` has the same alignement as what `base_ptr` was allocated with, because
-        //   `base_ptr` derives from a vector of `T`s.
-        // - `T * capacity` is the size of what `base_ptr` was allocated with, because
-        //   that's the capacity of the vector created in `VecParallelSink::new`.
+        // - The `base_ptr` has been allocated with the global allocator, as it
+        //   is derived from the vector created in `VecParallelSink::new`.
+        // - `T` has the same alignement as what `base_ptr` was allocated with,
+        //   because `base_ptr` derives from a vector of `T`s.
+        // - `T * capacity` is the size of what `base_ptr` was allocated with,
+        //   because that's the capacity of the vector created in
+        //   `VecParallelSink::new`.
         // - `length <= capacity` because the `length` is set to zero here.
-        // - The first `length` values are properly initialized values of type `T`
-        //   because the `length` is set to zero.
-        // - The allocated size in bytes isn't larger than `isize::MAX`, because that's
-        //   derived from the vector created in `VecParallelSink::new`.
+        // - The first `length` values are properly initialized values of type
+        //   `T` because the `length` is set to zero.
+        // - The allocated size in bytes isn't larger than `isize::MAX`, because
+        //   that's derived from the vector created in `VecParallelSink::new`.
         let vec: Vec<T> = unsafe { Vec::from_raw_parts(base_ptr, 0, self.capacity) };
         drop(vec);
     }
@@ -249,34 +253,37 @@ impl<T: Send> VecParallelSink<T> {
             debug_assert!(range.start <= range.end);
             debug_assert!(range.end <= len);
             // SAFETY:
-            // - The offset in bytes `range.start * size_of::<T>()` fits in an `isize`,
-            //   because the range is included in the length of the (well-formed) output
-            //   vector. This is ensured by the safety pre-conditions of the
-            //   `ExactParallelSink::skip_item_range()` function (the `range` must be
-            //   included in `0..self.len`).
-            // - The `base_ptr` is derived from an allocated object (the output vector), and
-            //   the entire range between `base_ptr` and the resulting `start_ptr` is in
-            //   bounds of that allocated object. This is because the range start is smaller
-            //   than the length of the input vector.
+            // - The offset in bytes `range.start * size_of::<T>()` fits in an
+            //   `isize`, because the range is included in the length of the
+            //   (well-formed) output vector. This is ensured by the safety
+            //   pre-conditions of the `ExactParallelSink::skip_item_range()`
+            //   function (the `range` must be included in `0..self.len`).
+            // - The `base_ptr` is derived from an allocated object (the output
+            //   vector), and the entire range between `base_ptr` and the
+            //   resulting `start_ptr` is in bounds of that allocated object.
+            //   This is because the range start is smaller than the length of
+            //   the input vector.
             let start_ptr: *mut T = unsafe { base_ptr.add(range.start) };
             let slice: *mut [T] =
                 std::ptr::slice_from_raw_parts_mut(start_ptr, range.end - range.start);
             // SAFETY:
-            // - The `slice` is properly aligned, as it is constructed by calling `add()` on
-            //   the aligned `base_ptr`.
-            // - The `slice` isn't null, as it is constructed by calling `add()` on the
-            //   non-null `base_ptr`. Indeed, `Vec` guarantees that its pointer is never
-            //   null: https://doc.rust-lang.org/stable/std/vec/struct.Vec.html#guarantees.
-            // - The `slice` is valid for reads and writes. This is ensured by the safety
-            //   pre-conditions of the `ExactParallelSink::cancel()` function (each index
-            //   appears once in calls to `push_item()` and `skip_item_range()`), i.e. the
-            //   items in this slice have all been pushed.
-            // - The `slice` is valid for dropping, as it is a part of the output vector
-            //   that nothing else accesses.
-            // - Nothing else is accessing the `slice` while `drop_in_place` is executing.
+            // - The `slice` is properly aligned, as it is constructed by
+            //   calling `add()` on the aligned `base_ptr`.
+            // - The `slice` isn't null, as it is constructed by calling `add()`
+            //   on the non-null `base_ptr`. Indeed, `Vec` guarantees that its pointer
+            //   is never null: https://doc.rust-lang.org/stable/std/vec/struct.Vec.html#guarantees.
+            // - The `slice` is valid for reads and writes. This is ensured by
+            //   the safety pre-conditions of the `ExactParallelSink::cancel()`
+            //   function (each index appears once in calls to `push_item()` and
+            //   `skip_item_range()`), i.e. the items in this slice have all
+            //   been pushed.
+            // - The `slice` is valid for dropping, as it is a part of the
+            //   output vector that nothing else accesses.
+            // - Nothing else is accessing the `slice` while `drop_in_place` is
+            //   executing.
             //
-            // The above properties (aligned, non-null, etc.) still hold if the slice is
-            // empty.
+            // The above properties (aligned, non-null, etc.) still hold if the
+            // slice is empty.
             unsafe { std::ptr::drop_in_place(slice) };
         }
     }

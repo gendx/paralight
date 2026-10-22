@@ -436,8 +436,8 @@ impl<F: RangeFactory> ThreadPoolImpl<F> {
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
         // The safety guarantees derive from this call as well as how the
-        // `UpperBoundedPipelineImpl` uses a `SkipIteratorWrapper` on each worker
-        // thread's range.
+        // `UpperBoundedPipelineImpl` uses a `SkipIteratorWrapper` on each
+        // worker thread's range.
         self.range_orchestrator.reset_ranges(input_len);
 
         let num_threads = self.threads.len();
@@ -481,8 +481,8 @@ impl<F: RangeFactory> ThreadPoolImpl<F> {
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
         // The safety guarantees derive from this call as well as how the
-        // `IterPipelineImpl` uses a `SkipIteratorWrapper` on each worker thread's
-        // range.
+        // `IterPipelineImpl` uses a `SkipIteratorWrapper` on each worker
+        // thread's range.
         self.range_orchestrator.reset_ranges(input_len);
 
         let num_threads = self.threads.len();

@@ -2902,7 +2902,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
         // ~ Result<C, E>: Send
         <<Self::Item as Try>::Residual as Residual<C>>::TryType: Send,
     {
-        // Helper function instead of a lambda to avoid overlong type annotations.
+        // Helper function instead of a lambda to avoid overlong type
+        // annotations.
         #[inline(always)]
         fn try_fold<C, R>(
             mut vec: Vec<C>,

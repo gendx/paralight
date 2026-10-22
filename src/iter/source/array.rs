@@ -106,33 +106,37 @@ impl<T: Send, const N: usize> SourceCleanup for ArraySourceDescriptor<T, N> {
             debug_assert!(range.end <= N);
             let base_ptr: *mut T = self.array.start();
             // SAFETY:
-            // - The offset in bytes `range.start * size_of::<T>()` fits in an `isize`,
-            //   because the range is included in the length of the (well-formed) wrapped
-            //   array. This is ensured by the safety pre-conditions of the
-            //   `cleanup_item_range()` function (the `range` must be included in `0..N`).
-            // - The `base_ptr` is derived from an allocated object (the wrapped array), and
-            //   the entire range between `base_ptr` and the resulting `start_ptr` is in
-            //   bounds of that allocated object. This is because the range start is smaller
-            //   than the length of the wrapped array.
+            // - The offset in bytes `range.start * size_of::<T>()` fits in an
+            //   `isize`, because the range is included in the length of the
+            //   (well-formed) wrapped array. This is ensured by the safety
+            //   pre-conditions of the `cleanup_item_range()` function (the
+            //   `range` must be included in `0..N`).
+            // - The `base_ptr` is derived from an allocated object (the wrapped
+            //   array), and the entire range between `base_ptr` and the
+            //   resulting `start_ptr` is in bounds of that allocated object.
+            //   This is because the range start is smaller than the length of
+            //   the wrapped array.
             let start_ptr: *mut T = unsafe { base_ptr.add(range.start) };
             let slice: *mut [T] =
                 std::ptr::slice_from_raw_parts_mut(start_ptr, range.end - range.start);
             // SAFETY:
-            // - The `slice` is properly aligned, as it is constructed by calling `add()` on
-            //   the aligned `base_ptr`.
-            // - The `slice` isn't null, as it is constructed by calling `add()` on the
-            //   non-null `base_ptr`.
-            // - The `slice` is valid for reads and writes. This is ensured by the safety
-            //   pre-conditions of the `cleanup_item_range()` function (each index appears
-            //   at most once in calls to `simple_exact_fetch_item()` and
-            //   `cleanup_item_range()`), i.e. the range of items in this slice isn't
-            //   accessed by anything else.
-            // - The `slice` is valid for dropping, as it is a part of the wrapped array
-            //   that nothing else accesses.
-            // - Nothing else is accessing the `slice` while `drop_in_place` is executing.
+            // - The `slice` is properly aligned, as it is constructed by
+            //   calling `add()` on the aligned `base_ptr`.
+            // - The `slice` isn't null, as it is constructed by calling `add()`
+            //   on the non-null `base_ptr`.
+            // - The `slice` is valid for reads and writes. This is ensured by
+            //   the safety pre-conditions of the `cleanup_item_range()`
+            //   function (each index appears at most once in calls to
+            //   `simple_exact_fetch_item()` and `cleanup_item_range()`), i.e.
+            //   the range of items in this slice isn't accessed by anything
+            //   else.
+            // - The `slice` is valid for dropping, as it is a part of the
+            //   wrapped array that nothing else accesses.
+            // - Nothing else is accessing the `slice` while `drop_in_place` is
+            //   executing.
             //
-            // The above properties (aligned, non-null, etc.) still hold if the `slice` is
-            // empty.
+            // The above properties (aligned, non-null, etc.) still hold if the
+            // `slice` is empty.
             unsafe { std::ptr::drop_in_place(slice) };
         }
     }
@@ -145,26 +149,26 @@ impl<T: Send, const N: usize> SimpleExactSourceDescriptor for ArraySourceDescrip
         debug_assert!(index < N);
         let base_ptr: *const T = self.array.start();
         // SAFETY:
-        // - The offset in bytes `index * size_of::<T>()` fits in an `isize`, because
-        //   the index is smaller than the length of the (well-formed) wrapped array.
-        //   This is ensured by the safety pre-conditions of the
-        //   `simple_exact_fetch_item()` function (the `index` must be in the range
-        //   `0..N`), and further confirmed by the assertion.
-        // - The `base_ptr` is derived from an allocated object (the wrapped array), and
-        //   the entire range between `base_ptr` and the resulting `item_ptr` is in
-        //   bounds of that allocated object. This is because the index is smaller than
-        //   the length of the wrapped array.
+        // - The offset in bytes `index * size_of::<T>()` fits in an `isize`,
+        //   because the index is smaller than the length of the (well-formed)
+        //   wrapped array. This is ensured by the safety pre-conditions of the
+        //   `simple_exact_fetch_item()` function (the `index` must be in the
+        //   range `0..N`), and further confirmed by the assertion.
+        // - The `base_ptr` is derived from an allocated object (the wrapped
+        //   array), and the entire range between `base_ptr` and the resulting
+        //   `item_ptr` is in bounds of that allocated object. This is because
+        //   the index is smaller than the length of the wrapped array.
         let item_ptr: *const T = unsafe { base_ptr.add(index) };
         // SAFETY:
-        // - The `item_ptr` is properly aligned, as it is constructed by calling `add()`
-        //   on the aligned `base_ptr`.
-        // - The `item_ptr` points to a properly initialized value of type `T`, the
-        //   element from the wrapped array at position `index`.
+        // - The `item_ptr` is properly aligned, as it is constructed by calling
+        //   `add()` on the aligned `base_ptr`.
+        // - The `item_ptr` points to a properly initialized value of type `T`,
+        //   the element from the wrapped array at position `index`.
         // - The `item_ptr` is valid for reads. This is ensured by the safety
-        //   pre-conditions of the `simple_exact_fetch_item()` function (each index must
-        //   be passed at most once), i.e. this item hasn't been read (and moved out of
-        //   the array) yet. Additionally, there are no concurrent writes to this slot
-        //   in the array.
+        //   pre-conditions of the `simple_exact_fetch_item()` function (each
+        //   index must be passed at most once), i.e. this item hasn't been read
+        //   (and moved out of the array) yet. Additionally, there are no
+        //   concurrent writes to this slot in the array.
         let item: T = unsafe { std::ptr::read(item_ptr) };
         item
     }

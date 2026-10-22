@@ -104,8 +104,9 @@ impl<'data, T: Sync> SimpleExactSourceDescriptor for SliceSourceDescriptor<'data
 
     unsafe fn simple_exact_fetch_item(&self, index: usize) -> Self::Item {
         debug_assert!(index < self.slice.len());
-        // SAFETY: The index is smaller than the length of the input slice, due to the
-        // safety pre-conditions of the `simple_exact_fetch_item()` function.
+        // SAFETY: The index is smaller than the length of the input slice, due
+        // to the safety pre-conditions of the `simple_exact_fetch_item()`
+        // function.
         unsafe { self.slice.get_unchecked(index) }
     }
 }
@@ -207,41 +208,43 @@ impl<'data, T: Send + 'data> SimpleExactSourceDescriptor for MutSliceSourceDescr
         debug_assert!(index < self.len);
         let base_ptr: *mut T = self.ptr.get();
         // SAFETY:
-        // - The offset in bytes `index * size_of::<T>()` fits in an `isize`, because
-        //   the index is smaller than the length of the (well-formed) input slice. This
-        //   is ensured by the safety pre-conditions of the `simple_exact_fetch_item()`
-        //   function (the `index` must be in the range `0..self.len`), and further
-        //   confirmed by the assertion.
-        // - The `base_ptr` is derived from an allocated object (the input slice), and
-        //   the entire range between `base_ptr` and the resulting `item_ptr` is in
-        //   bounds of that allocated object. This is because the index is smaller than
-        //   the length of the input slice.
+        // - The offset in bytes `index * size_of::<T>()` fits in an `isize`,
+        //   because the index is smaller than the length of the (well-formed)
+        //   input slice. This is ensured by the safety pre-conditions of the
+        //   `simple_exact_fetch_item()` function (the `index` must be in the
+        //   range `0..self.len`), and further confirmed by the assertion.
+        // - The `base_ptr` is derived from an allocated object (the input
+        //   slice), and the entire range between `base_ptr` and the resulting
+        //   `item_ptr` is in bounds of that allocated object. This is because
+        //   the index is smaller than the length of the input slice.
         let item_ptr: *mut T = unsafe { base_ptr.add(index) };
         // SAFETY:
         //
         // From https://doc.rust-lang.org/std/ptr/index.html#pointer-to-reference-conversion:
-        // - The `item_ptr` is properly aligned, as it is constructed by calling `add()`
-        //   on the aligned `base_ptr`.
-        // - The `item_ptr` is not null, as the `base_ptr` isn't null (obtained from a
-        //   well-formed non-empty slice) and the `index` is in bounds of the slice (no
-        //   wrap around).
-        // - The `item_ptr` is dereferenceable, as the whole memory range of length
-        //   `size_of::<T>()` starting from it is within bounds of a single allocated
-        //   object (the input slice).
-        // - The `item_ptr` points to a valid value of type `T`, the element from the
-        //   input slice at position `index`.
-        // - The `item_ptr` follows the aliasing rules: while this reference exists
-        //   (within this scope and in particular during the call to `process_item()`),
-        //   the memory it points to isn't accessed through any other pointer or
-        //   reference. This is ensured by the safety pre-conditions of the
-        //   `simple_exact_fetch_item()` function (each index must be passed at most
-        //   once), and because the slice is exclusively owned during the scope of this
+        // - The `item_ptr` is properly aligned, as it is constructed by calling
+        //   `add()` on the aligned `base_ptr`.
+        // - The `item_ptr` is not null, as the `base_ptr` isn't null (obtained
+        //   from a well-formed non-empty slice) and the `index` is in bounds of
+        //   the slice (no wrap around).
+        // - The `item_ptr` is dereferenceable, as the whole memory range of
+        //   length `size_of::<T>()` starting from it is within bounds of a
+        //   single allocated object (the input slice).
+        // - The `item_ptr` points to a valid value of type `T`, the element
+        //   from the input slice at position `index`.
+        // - The `item_ptr` follows the aliasing rules: while this reference
+        //   exists (within this scope and in particular during the call to
+        //   `process_item()`), the memory it points to isn't accessed through
+        //   any other pointer or reference. This is ensured by the safety
+        //   pre-conditions of the `simple_exact_fetch_item()` function (each
+        //   index must be passed at most once), and because the slice is
+        //   exclusively owned during the scope of this
         //   `ParallelIterator::pipeline()` function.
         //
-        // Lastly, materializing this mutable reference on any thread is sound given
-        // that `T` is `Send`. Indeed, this amounts to sending a `&mut T` across
-        // threads, and `&mut T` is `Send` if and only if `T` is `Send`. This is the
-        // rationale for why `MutPtrWrapper` implements `Sync` when `T` is `Send`.
+        // Lastly, materializing this mutable reference on any thread is sound
+        // given that `T` is `Send`. Indeed, this amounts to sending a `&mut T`
+        // across threads, and `&mut T` is `Send` if and only if `T` is `Send`.
+        // This is the rationale for why `MutPtrWrapper` implements `Sync` when
+        // `T` is `Send`.
         let item: &mut T = unsafe { &mut *item_ptr };
         item
     }

@@ -128,11 +128,13 @@ impl<I: SkipIterator, Cleanup: SourceCleanup> Iterator for SkipIteratorWrapper<'
                 (index, None) => return index,
                 (index, Some(skipped_range)) => {
                     // SAFETY: Due to the safety guarantees of `RangeFactory`:
-                    // - `skipped_range` is included in the range `0..input_len` (where `input_len`
-                    //   is the parameter to the `ThreadPool::*_pipeline()` call),
-                    // - `skipped_range` doesn't overlap with any other range passed to
-                    //   `cleanup_item_range()` (here or in the `Drop` implementation) nor index
-                    //   passed to `fetch_item()` (any index returned by this `next()` function).
+                    // - `skipped_range` is included in the range `0..input_len`
+                    //   (where `input_len` is the parameter to the
+                    //   `ThreadPool::*_pipeline()` call),
+                    // - `skipped_range` doesn't overlap with any other range
+                    //   passed to `cleanup_item_range()` (here or in the `Drop`
+                    //   implementation) nor index passed to `fetch_item()` (any
+                    //   index returned by this `next()` function).
                     unsafe {
                         self.cleanup.cleanup_item_range(skipped_range);
                     }
@@ -149,11 +151,13 @@ impl<I: SkipIterator, Cleanup: SourceCleanup> Drop for SkipIteratorWrapper<'_, I
     fn drop(&mut self) {
         if let Some(range) = self.iter.remaining_range() {
             // SAFETY: Due to the safety guarantees of `RangeFactory`:
-            // - `range` is included in the range `0..input_len` (where `input_len` is the
-            //   parameter to the `ThreadPool::*_pipeline()` call),
+            // - `range` is included in the range `0..input_len` (where
+            //   `input_len` is the parameter to the `ThreadPool::*_pipeline()`
+            //   call),
             // - `range` doesn't overlap with any other range passed to
-            //   `cleanup_item_range()` (here or in the `next()` implementation) nor index
-            //   passed to `fetch_item()` (any index returned by the `next()` function).
+            //   `cleanup_item_range()` (here or in the `next()` implementation)
+            //   nor index passed to `fetch_item()` (any index returned by the
+            //   `next()` function).
             unsafe {
                 self.cleanup.cleanup_item_range(range);
             }

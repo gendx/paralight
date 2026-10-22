@@ -101,11 +101,12 @@ impl<T: LifetimeParameterized> DynLifetimeView<T> {
         self.ptr.map(|static_ptr| {
             let ptr = static_ptr.as_ptr() as *mut T::T<'a>;
             // SAFETY:
-            // - This pointer points to a valid initialized `T`, as previously set via
-            //   `set()`.
-            // - The underlying `T` outlives the output lifetime, as ensured by the caller.
-            // - The underlying `T` isn't mutated during the whole output lifetime, as
-            //   ensured by the caller.
+            // - This pointer points to a valid initialized `T`, as previously
+            //   set via `set()`.
+            // - The underlying `T` outlives the output lifetime, as ensured by
+            //   the caller.
+            // - The underlying `T` isn't mutated during the whole output
+            //   lifetime, as ensured by the caller.
             unsafe { &*ptr }
         })
     }
@@ -228,8 +229,8 @@ mod test {
         }
     }
 
-    // This ignored test showcases how to misuse the unsafe API by mutating a value
-    // while it is referenced. Running it under Miri returns a failure.
+    // This ignored test showcases how to misuse the unsafe API by mutating a
+    // value while it is referenced. Running it under Miri returns a failure.
     #[ignore]
     #[cfg_attr(coverage_nightly, coverage(off))]
     #[test]
@@ -239,15 +240,15 @@ mod test {
         let mut foo = 42;
         view.set(&foo);
         let bar = unsafe { view.get().unwrap() };
-        // Undefined behavior: This mutates `foo` while a reference to it `bar` is
-        // active.
+        // Undefined behavior: This mutates `foo` while a reference to it `bar`
+        // is active.
         foo = 1;
         assert_eq!(*bar, 1);
     }
 
     // This ignored test showcases how to misuse the unsafe API by obtaining a
-    // reference whose lifetime extends beyond the underlying value's. Running it
-    // under Miri returns a failure.
+    // reference whose lifetime extends beyond the underlying value's. Running
+    // it under Miri returns a failure.
     #[ignore]
     #[cfg_attr(coverage_nightly, coverage(off))]
     #[test]
@@ -257,8 +258,8 @@ mod test {
             let foo = 42;
             view.set(&foo);
         }
-        // Undefined behavior: This obtains a reference to `foo` which isn't live
-        // anymore.
+        // Undefined behavior: This obtains a reference to `foo` which isn't
+        // live anymore.
         let bar = unsafe { view.get().unwrap() };
         assert_ne!(*bar, 42);
     }
@@ -368,8 +369,8 @@ mod test {
         }
     }
 
-    // This ignored test showcases how to misuse the unsafe API by mutating a value
-    // while it is referenced. Running it under Miri returns a failure.
+    // This ignored test showcases how to misuse the unsafe API by mutating a
+    // value while it is referenced. Running it under Miri returns a failure.
     #[ignore]
     #[cfg_attr(coverage_nightly, coverage(off))]
     #[test]
@@ -381,15 +382,15 @@ mod test {
         view.set(&foo);
         let bar = unsafe { view.get().unwrap() };
         let y = 1;
-        // Undefined behavior: This mutates `foo` while a reference to it `bar` is
-        // active.
+        // Undefined behavior: This mutates `foo` while a reference to it `bar`
+        // is active.
         foo = &y;
         assert_eq!(**bar, 1);
     }
 
     // This ignored test showcases how to misuse the unsafe API by obtaining a
-    // reference whose lifetime extends beyond the underlying value's. Running it
-    // under Miri returns a failure.
+    // reference whose lifetime extends beyond the underlying value's. Running
+    // it under Miri returns a failure.
     #[ignore]
     #[cfg_attr(coverage_nightly, coverage(off))]
     #[test]
@@ -400,8 +401,8 @@ mod test {
             let foo = &x;
             view.set(&foo);
         }
-        // Undefined behavior: This obtains a reference to `foo` which isn't live
-        // anymore.
+        // Undefined behavior: This obtains a reference to `foo` which isn't
+        // live anymore.
         let bar = unsafe { view.get().unwrap() };
         assert_eq!(**bar, 42);
     }
