@@ -2144,6 +2144,17 @@ pub struct BaseExactParallelIterator<T: GenericThreadPool, S: ExactParallelSourc
 }
 
 impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, S> {
+    fn map_source<Z: ExactParallelSource>(
+        self,
+        f: impl FnOnce(S) -> Z,
+    ) -> BaseExactParallelIterator<T, Z> {
+        BaseExactParallelIterator {
+            thread_pool: self.thread_pool,
+            source: f(self.source),
+            chunk_by: self.chunk_by,
+        }
+    }
+
     /// Returns [`true`] if all items produced by this iterator are equal, and
     /// [`false`] otherwise.
     ///
@@ -2573,11 +2584,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
         S: RewindableSource,
         F: Fn(S::Item, S::Item) -> bool + Sync,
     {
-        let iter = BaseExactParallelIterator {
-            thread_pool: self.thread_pool,
-            source: self.source.array_windows::<2>(),
-            chunk_by: 1,
-        };
+        let iter = self.map_source(|source| source.array_windows::<2>());
         iter.all(|[x, y]| f(x, y))
     }
 
@@ -2631,11 +2638,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
         F: Fn(S::Item) -> A + Sync,
         A: PartialOrd,
     {
-        let iter = BaseExactParallelIterator {
-            thread_pool: self.thread_pool,
-            source: self.source.map(f),
-            chunk_by: 1,
-        };
+        let iter = self.map_source(|source| source.map(f));
         iter.is_sorted()
     }
 
