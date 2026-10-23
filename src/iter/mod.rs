@@ -35,14 +35,14 @@ pub use source::vec::VecParallelSource;
 pub use source::vec_deque::{VecDequeRefMutParallelSource, VecDequeRefParallelSource};
 pub use source::zip::{ZipEq, ZipMax, ZipMin, ZipableSource};
 pub use source::{
-    ArrayWindows, BaseExactParallelIterator, BaseParallelIterator, Chain, Cloned, Copied,
-    Downgrade, Enumerate, ExactParallelSource, ExactParallelSourceExt, ExactSourceDescriptor,
-    Filter, FilterExact, FilterMap, FilterMapExact, Inspect, IntoExactParallelRefMutSource,
-    IntoExactParallelRefSource, IntoExactParallelSource, IntoParallelRefMutSource,
-    IntoParallelRefSource, IntoParallelSource, MapInit, MapSource, ParallelSource,
-    ParallelSourceExt, Rev, RewindableSource, SimpleExactSourceDescriptor, SimpleSourceDescriptor,
-    Skip, SkipExact, SourceCleanup, SourceDescriptor, StepBy, Take, TakeExact, generate,
-    generate_init, repeat,
+    ArrayWindows, BaseExactParallelIterator, BaseParallelIterator, Chain, ChunkBy, ChunkByExact,
+    Cloned, Copied, Downgrade, Enumerate, ExactParallelSource, ExactParallelSourceExt,
+    ExactSourceDescriptor, Filter, FilterExact, FilterMap, FilterMapExact, Inspect,
+    IntoExactParallelRefMutSource, IntoExactParallelRefSource, IntoExactParallelSource,
+    IntoParallelRefMutSource, IntoParallelRefSource, IntoParallelSource, MapInit, MapSource,
+    ParallelSource, ParallelSourceExt, Rev, RewindableSource, SimpleExactSourceDescriptor,
+    SimpleSourceDescriptor, Skip, SkipExact, SourceCleanup, SourceDescriptor, StepBy, Take,
+    TakeExact, generate, generate_init, repeat,
 };
 use std::cmp::Ordering;
 use std::iter::{Product, Sum};
@@ -101,9 +101,11 @@ pub unsafe trait GenericThreadPool {
     ///   `0..input_len`,
     /// - each index in `0..inner_len` is passed exactly once in calls to
     ///   `process_item()` and `cleanup.cleanup_item_range()`.
+    #[expect(clippy::too_many_arguments)]
     fn upper_bounded_pipeline<Output: Send, Accum>(
         self,
         input_len: usize,
+        chunk_by: usize,
         init: impl Fn() -> Accum + Sync,
         process_item: impl Fn(Accum, usize) -> ControlFlow<Accum, Accum> + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
@@ -125,6 +127,7 @@ pub unsafe trait GenericThreadPool {
     fn iter_pipeline<Output, Accum: Send>(
         self,
         input_len: usize,
+        chunk_by: usize,
         accum: impl Accumulator<usize, Accum> + Sync,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
@@ -140,6 +143,7 @@ where
     fn upper_bounded_pipeline<Output: Send, Accum>(
         self,
         input_len: usize,
+        chunk_by: usize,
         init: impl Fn() -> Accum + Sync,
         process_item: impl Fn(Accum, usize) -> ControlFlow<Accum, Accum> + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
@@ -148,6 +152,7 @@ where
     ) -> Output {
         (self as &'a T).upper_bounded_pipeline(
             input_len,
+            chunk_by,
             init,
             process_item,
             finalize,
@@ -159,11 +164,12 @@ where
     fn iter_pipeline<Output, Accum: Send>(
         self,
         input_len: usize,
+        chunk_by: usize,
         accum: impl Accumulator<usize, Accum> + Sync,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
-        (self as &'a T).iter_pipeline(input_len, accum, reduce, cleanup)
+        (self as &'a T).iter_pipeline(input_len, chunk_by, accum, reduce, cleanup)
     }
 }
 

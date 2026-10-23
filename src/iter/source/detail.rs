@@ -9,10 +9,10 @@
 //! Implementation details of source adaptors.
 
 use super::{
-    ExactParallelSource, ExactSourceDescriptor, ParallelSource, RewindableSource,
-    SimpleExactSourceDescriptor, SourceCleanup, SourceDescriptor,
+    BaseExactParallelIterator, BaseParallelIterator, ExactParallelSource, ExactSourceDescriptor,
+    ParallelSource, RewindableSource, SimpleExactSourceDescriptor, SourceCleanup, SourceDescriptor,
 };
-use crate::iter::{Accumulator, ExactParallelSink, ExactSizeAccumulator};
+use crate::iter::{Accumulator, ExactParallelSink, ExactSizeAccumulator, GenericThreadPool};
 use crate::util::Divider;
 #[cfg(feature = "nightly")]
 use std::ops::Try;
@@ -365,6 +365,99 @@ where
                 self.descriptor2
                     .exact_fetch_item(&mut context.1, index - self.len1)
             }
+        }
+    }
+}
+
+/// This struct is created by the
+/// [`chunk_by()`](super::ParallelSourceExt::chunk_by) method on
+/// [`ParallelSourceExt`](super::ParallelSourceExt).
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// provides a fluent [`with_thread_pool()`](Self::with_thread_pool) API.
+#[must_use = "iterator adaptors are lazy"]
+pub struct ChunkBy<Inner> {
+    pub(super) inner: Inner,
+    pub(super) chunk_by: usize,
+}
+
+impl<Inner: ParallelSource> ChunkBy<Inner> {
+    /// Attaches the given [`GenericThreadPool`] to this [`ParallelSource`] and
+    /// obtain a [`ParallelIterator`](super::ParallelIterator).
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// let mut thread_pool = ThreadPoolBuilder {
+    ///     num_threads: ThreadCount::AvailableParallelism,
+    ///     range_strategy: RangeStrategy::WorkStealing,
+    ///     cpu_pinning: CpuPinningPolicy::No,
+    /// }
+    /// .build();
+    ///
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum = input
+    ///     .par_iter()
+    ///     .downgrade() // ExactParallelSource -> ParallelSource
+    ///     .chunk_by(2)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// assert_eq!(sum, 5 * 11);
+    /// ```
+    pub fn with_thread_pool<T: GenericThreadPool>(
+        self,
+        thread_pool: T,
+    ) -> BaseParallelIterator<T, Inner> {
+        assert!(self.chunk_by != 0, "called chunk_by() with a step of zero");
+        BaseParallelIterator {
+            thread_pool,
+            source: self.inner,
+            chunk_by: self.chunk_by,
+        }
+    }
+}
+
+/// This struct is created by the
+/// [`chunk_by()`](super::ExactParallelSourceExt::chunk_by) method on
+/// [`ExactParallelSourceExt`](super::ExactParallelSourceExt).
+///
+/// You most likely won't need to interact with this struct directly, as it
+/// provides a fluent [`with_thread_pool()`](Self::with_thread_pool) API.
+#[must_use = "iterator adaptors are lazy"]
+pub struct ChunkByExact<Inner> {
+    pub(super) inner: Inner,
+    pub(super) chunk_by: usize,
+}
+
+impl<Inner: ExactParallelSource> ChunkByExact<Inner> {
+    /// Attaches the given [`GenericThreadPool`] to this [`ExactParallelSource`]
+    /// and obtain a [`ParallelIterator`](super::ParallelIterator).
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// let mut thread_pool = ThreadPoolBuilder {
+    ///     num_threads: ThreadCount::AvailableParallelism,
+    ///     range_strategy: RangeStrategy::WorkStealing,
+    ///     cpu_pinning: CpuPinningPolicy::No,
+    /// }
+    /// .build();
+    ///
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let sum = input
+    ///     .par_iter()
+    ///     .chunk_by(2)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// assert_eq!(sum, 5 * 11);
+    /// ```
+    pub fn with_thread_pool<T: GenericThreadPool>(
+        self,
+        thread_pool: T,
+    ) -> BaseExactParallelIterator<T, Inner> {
+        assert!(self.chunk_by != 0, "called chunk_by() with a step of zero");
+        BaseExactParallelIterator {
+            thread_pool,
+            source: self.inner,
+            chunk_by: self.chunk_by,
         }
     }
 }

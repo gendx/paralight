@@ -9,7 +9,9 @@
 //! Adaptors over Rayon thread pools.
 
 use super::{RangeStrategy, ThreadCount};
-use crate::core::pipeline::{IterPipelineImpl, Pipeline, UpperBoundedPipelineImpl};
+use crate::core::pipeline::{
+    IterPipelineImpl, Pipeline, ScaledIterPipelineImpl, UpperBoundedPipelineImpl,
+};
 use crate::core::range::{
     FixedRangeFactory, RangeFactory, RangeOrchestrator, WorkStealingRangeFactory,
 };
@@ -256,6 +258,7 @@ unsafe impl GenericThreadPool for &RayonThreadPool<'_> {
     fn upper_bounded_pipeline<Output: Send, Accum>(
         self,
         input_len: usize,
+        chunk_by: usize,
         init: impl Fn() -> Accum + Sync,
         process_item: impl Fn(Accum, usize) -> ControlFlow<Accum, Accum> + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
@@ -265,12 +268,21 @@ unsafe impl GenericThreadPool for &RayonThreadPool<'_> {
         let mut inner =
             RayonThreadPoolEnum::new(self.thread_pool, self.num_tasks, self.range_strategy);
         // Proof of the safety guarantees is deferred to the inner function.
-        inner.upper_bounded_pipeline(input_len, init, process_item, finalize, reduce, cleanup)
+        inner.upper_bounded_pipeline(
+            input_len,
+            chunk_by,
+            init,
+            process_item,
+            finalize,
+            reduce,
+            cleanup,
+        )
     }
 
     fn iter_pipeline<Output, Accum: Send>(
         self,
         input_len: usize,
+        chunk_by: usize,
         accum: impl Accumulator<usize, Accum> + Sync,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
@@ -278,7 +290,7 @@ unsafe impl GenericThreadPool for &RayonThreadPool<'_> {
         let mut inner =
             RayonThreadPoolEnum::new(self.thread_pool, self.num_tasks, self.range_strategy);
         // Proof of the safety guarantees is deferred to the inner function.
-        inner.iter_pipeline(input_len, accum, reduce, cleanup)
+        inner.iter_pipeline(input_len, chunk_by, accum, reduce, cleanup)
     }
 }
 
@@ -329,9 +341,11 @@ impl<'a> RayonThreadPoolEnum<'a> {
     ///   `0..input_len`,
     /// - each index in `0..inner_len` is passed exactly once in calls to
     ///   `process_item()` and `cleanup.cleanup_item_range()`.
+    #[expect(clippy::too_many_arguments)]
     fn upper_bounded_pipeline<Output: Send, Accum>(
         &mut self,
         input_len: usize,
+        chunk_by: usize,
         init: impl Fn() -> Accum + Sync,
         process_item: impl Fn(Accum, usize) -> ControlFlow<Accum, Accum> + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
@@ -342,6 +356,7 @@ impl<'a> RayonThreadPoolEnum<'a> {
         match self {
             RayonThreadPoolEnum::Fixed(inner) => inner.upper_bounded_pipeline(
                 input_len,
+                chunk_by,
                 init,
                 process_item,
                 finalize,
@@ -350,6 +365,7 @@ impl<'a> RayonThreadPoolEnum<'a> {
             ),
             RayonThreadPoolEnum::WorkStealing(inner) => inner.upper_bounded_pipeline(
                 input_len,
+                chunk_by,
                 init,
                 process_item,
                 finalize,
@@ -373,6 +389,7 @@ impl<'a> RayonThreadPoolEnum<'a> {
     fn iter_pipeline<Output, Accum: Send>(
         &mut self,
         input_len: usize,
+        chunk_by: usize,
         accum: impl Accumulator<usize, Accum> + Sync,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
@@ -380,10 +397,10 @@ impl<'a> RayonThreadPoolEnum<'a> {
         // Proof of the safety guarantees is deferred to the inner function.
         match self {
             RayonThreadPoolEnum::Fixed(inner) => {
-                inner.iter_pipeline(input_len, accum, reduce, cleanup)
+                inner.iter_pipeline(input_len, chunk_by, accum, reduce, cleanup)
             }
             RayonThreadPoolEnum::WorkStealing(inner) => {
-                inner.iter_pipeline(input_len, accum, reduce, cleanup)
+                inner.iter_pipeline(input_len, chunk_by, accum, reduce, cleanup)
             }
         }
     }
@@ -447,19 +464,22 @@ where
     ///   `0..input_len`,
     /// - each index in `0..inner_len` is passed exactly once in calls to
     ///   `process_item()` and `cleanup.cleanup_item_range()`.
+    #[expect(clippy::too_many_arguments)]
     fn upper_bounded_pipeline<Output: Send, Accum>(
         &mut self,
         input_len: usize,
+        chunk_by: usize,
         init: impl Fn() -> Accum + Sync,
         process_item: impl Fn(Accum, usize) -> ControlFlow<Accum, Accum> + Sync,
         finalize: impl Fn(Accum) -> Output + Sync,
         reduce: impl Fn(Output, Output) -> Output,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
+        let scaled_input_len = input_len.div_ceil(chunk_by);
         // The safety guarantees derive from this call as well as how the
         // `UpperBoundedPipelineImpl` uses a `SkipIteratorWrapper` on each
         // worker thread's range.
-        self.range_orchestrator.reset_ranges(input_len);
+        self.range_orchestrator.reset_ranges(scaled_input_len);
 
         let num_tasks = self.ranges.len();
         let outputs = (0..num_tasks)
@@ -468,6 +488,8 @@ where
         let bound = AtomicUsize::new(usize::MAX);
 
         let pipeline = &UpperBoundedPipelineImpl {
+            input_len,
+            chunk_by,
             bound: CachePadded::new(bound),
             outputs: outputs.clone(),
             init,
@@ -508,36 +530,57 @@ where
     fn iter_pipeline<Output, Accum: Send>(
         &mut self,
         input_len: usize,
+        chunk_by: usize,
         accum: impl Accumulator<usize, Accum> + Sync,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
         cleanup: &(impl SourceCleanup + Sync),
     ) -> Output {
+        let scaled_input_len = input_len.div_ceil(chunk_by);
         // The safety guarantees derive from this call as well as how the
         // `IterPipelineImpl` uses a `SkipIteratorWrapper` on each worker
         // thread's range.
-        self.range_orchestrator.reset_ranges(input_len);
+        self.range_orchestrator.reset_ranges(scaled_input_len);
 
         let num_tasks = self.ranges.len();
         let outputs = (0..num_tasks)
             .map(|_| Mutex::new(None))
             .collect::<Arc<[_]>>();
 
-        let pipeline = &IterPipelineImpl {
-            outputs: outputs.clone(),
-            accum,
-            cleanup,
-        };
-
         let ranges = &self.ranges;
-        self.scope({
-            |scope| {
-                for (id, range) in ranges.iter().enumerate() {
-                    scope.spawn(move |_| {
-                        pipeline.run(id, range);
-                    });
+
+        if chunk_by == 1 {
+            let pipeline = &IterPipelineImpl {
+                outputs: outputs.clone(),
+                accum,
+                cleanup,
+            };
+            self.scope({
+                |scope| {
+                    for (id, range) in ranges.iter().enumerate() {
+                        scope.spawn(move |_| {
+                            pipeline.run(id, range);
+                        });
+                    }
                 }
-            }
-        });
+            });
+        } else {
+            let pipeline = &ScaledIterPipelineImpl {
+                input_len,
+                chunk_by,
+                outputs: outputs.clone(),
+                accum,
+                cleanup,
+            };
+            self.scope({
+                |scope| {
+                    for (id, range) in ranges.iter().enumerate() {
+                        scope.spawn(move |_| {
+                            pipeline.run(id, range);
+                        });
+                    }
+                }
+            });
+        }
 
         reduce.accumulate_exact(
             outputs

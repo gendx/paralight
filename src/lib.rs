@@ -195,6 +195,9 @@ mod test {
                 #[cfg(feature = "nightly_tests")]
                 #[cfg(not(any(miri, coverage, sanitize = "thread")))]
                 test_source_range_u32max,
+                #[cfg(feature = "nightly_tests")]
+                #[cfg(not(any(miri, coverage, sanitize = "thread")))]
+                test_source_range_u33max_by_2,
                 #[cfg(feature = "nightly")]
                 test_source_range_u64,
                 #[cfg(feature = "nightly")]
@@ -298,6 +301,10 @@ mod test {
                 test_sink_vec_one_panic => fail("worker thread(s) panicked!", "arithmetic panic"),
                 test_sink_vec_deque,
                 test_sink_vec_deque_panic => fail("worker thread(s) panicked!", "arithmetic panic"),
+                test_chunk_by,
+                test_chunk_by_empty,
+                test_chunk_by_cleanup,
+                test_chunk_by_zero => fail("called chunk_by() with a step of zero", "called chunk_by() with a step of zero"),
                 test_adaptor_all,
                 test_adaptor_all_equal,
                 test_adaptor_any,
@@ -1357,6 +1364,21 @@ mod test {
 
         let sum = (0..u32::MAX as usize * 2)
             .into_par_iter()
+            .with_thread_pool(&mut thread_pool)
+            .map(|x| x as u64)
+            .reduce(|| 0, |a, b| a.wrapping_add(b));
+        assert_eq!(sum, (u32::MAX as u64 * 2 - 1).wrapping_mul(u32::MAX as u64));
+    }
+
+    #[cfg(feature = "nightly_tests")]
+    #[cfg(not(any(miri, coverage, sanitize = "thread")))]
+    fn test_source_range_u33max_by_2<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let sum = (0..u32::MAX as usize * 2)
+            .into_par_iter()
+            .chunk_by(2)
             .with_thread_pool(&mut thread_pool)
             .map(|x| x as u64)
             .reduce(|| 0, |a, b| a.wrapping_add(b));
@@ -3241,6 +3263,119 @@ mod test {
             })
             .with_thread_pool(&mut thread_pool)
             .collect::<VecDeque<Box<u64>>>();
+    }
+
+    fn test_chunk_by<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        for chunks in [1, 2, 3, INPUT_LEN as usize + 1, usize::MAX] {
+            let sum = input
+                .par_iter()
+                .chunk_by(chunks)
+                .with_thread_pool(&mut thread_pool)
+                .sum::<u64>();
+            assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+
+            let needle = input
+                .par_iter()
+                .chunk_by(chunks)
+                .with_thread_pool(&mut thread_pool)
+                .find_any(|x| *x % 10 == 9);
+            assert!(needle.is_some());
+            assert_eq!(*needle.unwrap() % 10, 9);
+
+            let needle = input
+                .par_iter()
+                .chunk_by(chunks)
+                .with_thread_pool(&mut thread_pool)
+                .find_first(|x| *x % 10 == 9);
+            assert_eq!(needle, Some(&9));
+        }
+    }
+
+    fn test_chunk_by_empty<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input: Vec<Box<u64>> = Vec::new();
+        for chunks in [1, 2, 3, usize::MAX] {
+            let sum = input
+                .clone()
+                .into_par_iter()
+                .chunk_by(chunks)
+                .with_thread_pool(&mut thread_pool)
+                .map(|x| *x)
+                .sum::<u64>();
+            assert_eq!(sum, 0);
+
+            let needle = input
+                .clone()
+                .into_par_iter()
+                .chunk_by(chunks)
+                .with_thread_pool(&mut thread_pool)
+                .map(|x| *x)
+                .find_any(|x| *x % 10 == 9);
+            assert_eq!(needle, None);
+
+            let needle = input
+                .clone()
+                .into_par_iter()
+                .chunk_by(chunks)
+                .with_thread_pool(&mut thread_pool)
+                .map(|x| *x)
+                .find_first(|x| *x % 10 == 9);
+            assert_eq!(needle, None);
+        }
+    }
+
+    fn test_chunk_by_cleanup<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).map(Box::new).collect::<Box<[Box<u64>]>>();
+        for chunks in [1, 2, 3, INPUT_LEN as usize + 1, usize::MAX] {
+            let sum = input
+                .clone()
+                .into_par_iter()
+                .chunk_by(chunks)
+                .with_thread_pool(&mut thread_pool)
+                .map(|x| *x)
+                .sum::<u64>();
+            assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
+
+            let needle = input
+                .clone()
+                .into_par_iter()
+                .chunk_by(chunks)
+                .with_thread_pool(&mut thread_pool)
+                .map(|x| *x)
+                .find_any(|x| *x % 10 == 9);
+            assert!(needle.is_some());
+            assert_eq!(needle.unwrap() % 10, 9);
+
+            let needle = input
+                .clone()
+                .into_par_iter()
+                .chunk_by(chunks)
+                .with_thread_pool(&mut thread_pool)
+                .map(|x| *x)
+                .find_first(|x| *x % 10 == 9);
+            assert_eq!(needle, Some(9));
+        }
+    }
+
+    fn test_chunk_by_zero<T>(mut thread_pool: T)
+    where
+        for<'a> &'a mut T: GenericThreadPool,
+    {
+        let input = (0..=INPUT_LEN).collect::<Vec<u64>>();
+        input
+            .par_iter()
+            .chunk_by(0)
+            .with_thread_pool(&mut thread_pool)
+            .sum::<u64>();
     }
 
     fn test_adaptor_all<T>(mut thread_pool: T)

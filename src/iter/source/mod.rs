@@ -24,9 +24,9 @@ use super::{
     ParallelIterator, ParallelIteratorExt, Unzip,
 };
 pub use detail::{
-    ArrayWindows, Chain, Cloned, Copied, Cycle, Downgrade, Enumerate, Filter, FilterExact,
-    FilterMap, FilterMapExact, Generate, GenerateInit, Inspect, MapInit, MapSource, Repeat, Rev,
-    Skip, SkipExact, StepBy, Take, TakeExact, Update,
+    ArrayWindows, Chain, ChunkBy, ChunkByExact, Cloned, Copied, Cycle, Downgrade, Enumerate,
+    Filter, FilterExact, FilterMap, FilterMapExact, Generate, GenerateInit, Inspect, MapInit,
+    MapSource, Repeat, Rev, Skip, SkipExact, StepBy, Take, TakeExact, Update,
 };
 use detail::{
     CollectAccumulator, CollectCleaner, ErrorAccumulator, NoopAccumulator, TryCollectAccumulator,
@@ -944,6 +944,66 @@ pub trait ParallelSourceExt: ParallelSource {
         BaseParallelIterator {
             thread_pool,
             source: self,
+            chunk_by: 1,
+        }
+    }
+
+    /// Returns a parallel source that processes items from this source by
+    /// chunks of (at most) `n` items, where each chunk is processed together by
+    /// one worker thread.
+    ///
+    /// The last chunk contains fewer than `n` items if the chunk size doesn't
+    /// divide the source size. All the other chunks contain exactly `n` items.
+    ///
+    /// Note that chunking doesn't affect the results, but can improve
+    /// performance when using
+    /// [`RangeStrategy::WorkStealing`](crate::threads::RangeStrategy::WorkStealing)
+    /// if the amount of work per item is small, as it reduces the
+    /// synchronization overhead between threads. With chunking, synchronization
+    /// happens only once every `n` items rather than once per item.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    ///
+    /// // Splits the input into 4 chunks of at most 3 items: [1, 2, 3], [4, 5, 6], [7, 8, 9] and [10].
+    /// let sum = input
+    ///     .par_iter()
+    ///     .downgrade() // ExactParallelSource -> ParallelSource
+    ///     .chunk_by(3)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// assert_eq!(sum, 5 * 11);
+    /// ```
+    ///
+    /// This panics if `n` is zero.
+    ///
+    /// ```should_panic
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let _ = input
+    ///     .par_iter()
+    ///     .downgrade() // ExactParallelSource -> ParallelSource
+    ///     .chunk_by(0)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// ```
+    fn chunk_by(self, n: usize) -> ChunkBy<Self> {
+        ChunkBy {
+            inner: self,
+            chunk_by: n,
         }
     }
 }
@@ -1854,6 +1914,64 @@ pub trait ExactParallelSourceExt: ExactParallelSource {
         BaseExactParallelIterator {
             thread_pool,
             source: self,
+            chunk_by: 1,
+        }
+    }
+
+    /// Returns a parallel source that processes items from this source by
+    /// chunks of (at most) `n` items, where each chunk is processed together by
+    /// one worker thread.
+    ///
+    /// The last chunk contains fewer than `n` items if the chunk size doesn't
+    /// divide the source size. All the other chunks contain exactly `n` items.
+    ///
+    /// Note that chunking doesn't affect the results, but can improve
+    /// performance when using
+    /// [`RangeStrategy::WorkStealing`](crate::threads::RangeStrategy::WorkStealing)
+    /// if the amount of work per item is small, as it reduces the
+    /// synchronization overhead between threads. With chunking, synchronization
+    /// happens only once every `n` items rather than once per item.
+    ///
+    /// ```
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    ///
+    /// // Splits the input into 4 chunks of at most 3 items: [1, 2, 3], [4, 5, 6], [7, 8, 9] and [10].
+    /// let sum = input
+    ///     .par_iter()
+    ///     .chunk_by(3)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// assert_eq!(sum, 5 * 11);
+    /// ```
+    ///
+    /// This panics if `n` is zero.
+    ///
+    /// ```should_panic
+    /// # use paralight::prelude::*;
+    /// # let mut thread_pool = ThreadPoolBuilder {
+    /// #     num_threads: ThreadCount::AvailableParallelism,
+    /// #     range_strategy: RangeStrategy::WorkStealing,
+    /// #     cpu_pinning: CpuPinningPolicy::No,
+    /// # }
+    /// # .build();
+    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    /// let _ = input
+    ///     .par_iter()
+    ///     .chunk_by(0)
+    ///     .with_thread_pool(&mut thread_pool)
+    ///     .sum::<i32>();
+    /// ```
+    fn chunk_by(self, n: usize) -> ChunkByExact<Self> {
+        ChunkByExact {
+            inner: self,
+            chunk_by: n,
         }
     }
 }
@@ -2008,6 +2126,7 @@ where
 pub struct BaseParallelIterator<T: GenericThreadPool, S: ParallelSource> {
     thread_pool: T,
     source: S,
+    chunk_by: usize,
 }
 
 /// This struct is created by the
@@ -2021,6 +2140,7 @@ pub struct BaseParallelIterator<T: GenericThreadPool, S: ParallelSource> {
 pub struct BaseExactParallelIterator<T: GenericThreadPool, S: ExactParallelSource> {
     thread_pool: T,
     source: S,
+    chunk_by: usize,
 }
 
 impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, S> {
@@ -2283,7 +2403,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
         };
 
         self.thread_pool
-            .iter_pipeline(len, accumulator, reduce, &cleanup);
+            .iter_pipeline(len, self.chunk_by, accumulator, reduce, &cleanup);
 
         let sink = ScopeGuard::into_inner(sink);
         // SAFETY: The pre-conditions are ensured by the safety guaranties of
@@ -2456,6 +2576,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
         let iter = BaseExactParallelIterator {
             thread_pool: self.thread_pool,
             source: self.source.array_windows::<2>(),
+            chunk_by: 1,
         };
         iter.all(|[x, y]| f(x, y))
     }
@@ -2513,6 +2634,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
         let iter = BaseExactParallelIterator {
             thread_pool: self.thread_pool,
             source: self.source.map(f),
+            chunk_by: 1,
         };
         iter.is_sorted()
     }
@@ -2738,7 +2860,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
         };
 
         self.thread_pool
-            .iter_pipeline(len, accumulator, reduce, &cleanup)?;
+            .iter_pipeline(len, self.chunk_by, accumulator, reduce, &cleanup)?;
 
         let sink = ScopeGuard::into_inner(sink);
         // SAFETY: The pre-conditions are ensured by the safety guaranties of
@@ -3011,7 +3133,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
         };
 
         self.thread_pool
-            .iter_pipeline(len, accumulator, reduce, &cleanup)?;
+            .iter_pipeline(len, self.chunk_by, accumulator, reduce, &cleanup)?;
 
         let sink = ScopeGuard::into_inner(sink);
         // SAFETY: The pre-conditions are ensured by the safety guaranties of
@@ -3289,6 +3411,7 @@ impl<T: GenericThreadPool, S: ParallelSource> ParallelIterator for BaseParallelI
         let source_descriptor = self.source.descriptor();
         self.thread_pool.upper_bounded_pipeline(
             source_descriptor.len(),
+            self.chunk_by,
             || (init(), source_descriptor.init()),
             |(acc, mut context), index| {
                 // SAFETY: The pre-conditions to the `source_descriptor`'s
@@ -3321,7 +3444,8 @@ impl<T: GenericThreadPool, S: ParallelSource> ParallelIterator for BaseParallelI
         let accumulator = FetchAccumulator {
             inner: accum,
             init: || source_descriptor.init(),
-            // Note: the `&mut _` annotation is needed here to avoid compilation errors, see
+            // Note: the `&mut _` annotation is needed here to avoid compilation
+            // errors, see
             // https://users.rust-lang.org/t/implementation-of-fnonce-is-not-general-enough/78006/4.
             fetch_item: |context: &mut _, index| {
                 // SAFETY: The pre-conditions to the `source_descriptor`'s
@@ -3334,6 +3458,7 @@ impl<T: GenericThreadPool, S: ParallelSource> ParallelIterator for BaseParallelI
         };
         self.thread_pool.iter_pipeline(
             source_descriptor.len(),
+            self.chunk_by,
             accumulator,
             reduce,
             &source_descriptor,
@@ -3356,6 +3481,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> ParallelIterator
         let source_descriptor = self.source.exact_descriptor();
         self.thread_pool.upper_bounded_pipeline(
             source_descriptor.len(),
+            self.chunk_by,
             || (init(), source_descriptor.init()),
             |(acc, mut context), index| {
                 // SAFETY: The pre-conditions to the `source_descriptor`'s
@@ -3385,7 +3511,8 @@ impl<T: GenericThreadPool, S: ExactParallelSource> ParallelIterator
         let accumulator = ExactFetchAccumulator {
             inner: accum,
             init: || source_descriptor.init(),
-            // Note: the `&mut _` annotation is needed here to avoid compilation errors, see
+            // Note: the `&mut _` annotation is needed here to avoid compilation
+            // errors, see
             // https://users.rust-lang.org/t/implementation-of-fnonce-is-not-general-enough/78006/4.
             fetch_item: |context: &mut _, index| {
                 // SAFETY: The pre-conditions to the `source_descriptor`'s
@@ -3398,6 +3525,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> ParallelIterator
         };
         self.thread_pool.iter_pipeline(
             source_descriptor.len(),
+            self.chunk_by,
             accumulator,
             reduce,
             &source_descriptor,
