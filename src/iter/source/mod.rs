@@ -3321,7 +3321,8 @@ impl<T: GenericThreadPool, S: ParallelSource> ParallelIterator for BaseParallelI
         let accumulator = FetchAccumulator {
             inner: accum,
             init: || source_descriptor.init(),
-            // Note: the `&mut _` annotation is needed here to avoid compilation errors, see
+            // Note: the `&mut _` annotation is needed here to avoid compilation
+            // errors, see
             // https://users.rust-lang.org/t/implementation-of-fnonce-is-not-general-enough/78006/4.
             fetch_item: |context: &mut _, index| {
                 // SAFETY: The pre-conditions to the `source_descriptor`'s
@@ -3385,7 +3386,8 @@ impl<T: GenericThreadPool, S: ExactParallelSource> ParallelIterator
         let accumulator = ExactFetchAccumulator {
             inner: accum,
             init: || source_descriptor.init(),
-            // Note: the `&mut _` annotation is needed here to avoid compilation errors, see
+            // Note: the `&mut _` annotation is needed here to avoid compilation
+            // errors, see
             // https://users.rust-lang.org/t/implementation-of-fnonce-is-not-general-enough/78006/4.
             fetch_item: |context: &mut _, index| {
                 // SAFETY: The pre-conditions to the `source_descriptor`'s
