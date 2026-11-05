@@ -32,11 +32,11 @@ rayon-core = { optional = true, version = "1.13.0" }
 scopeguard = "1.2.0"
 
 # Platforms that support `libc::sched_setaffinity()`.
-[target.'cfg(any(target_os = "android", target_os = "dragonfly", target_os = "freebsd", target_os = "linux"))'.dependencies]
+[target.'cfg(all(not(miri), any(target_os = "android", target_os = "dragonfly", target_os = "freebsd", target_os = "linux")))'.dependencies]
 nix = { optional = true, version = "0.31.3", features = ["sched"] }
 
 # Windows thread affinity support.
-[target.'cfg(target_os = "windows")'.dependencies]
+[target.'cfg(all(not(miri), target_os = "windows"))'.dependencies]
 windows-sys = { optional = true, version = "0.61.2", features = ["Win32_System_Threading"] }
 
 [dev-dependencies]
