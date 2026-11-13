@@ -97,6 +97,7 @@ macro_rules! unzipable_tuple {
                     // - The current range is used at most once by the caller in calls to
                     //   `push_item` and `skip_item_range`, so it's also passed at most once to the
                     //   callees, to `skip_item_range` below.
+                    // TODO(MSRV >= 1.100.0): Use std::mem::DropGuard.
                     scopeguard::guard(&self.0.$i, |sink| unsafe {
                         sink.skip_item_range(range.clone());
                     }),

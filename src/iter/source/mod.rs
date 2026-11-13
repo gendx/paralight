@@ -2217,6 +2217,7 @@ impl<T: GenericThreadPool, S: ExactParallelSource> BaseExactParallelIterator<T, 
 
         // If creating the sink panics, we need to make sure that the source is
         // cleaned up.
+        // TODO(MSRV >= 1.100.0): Use std::mem::DropGuard.
         let cleanup_guard = scopeguard::guard(source_descriptor, |descriptor| {
             // SAFETY: This scope guard is only invoked if the next statement
             // (creating the sink via `Sink::new()`) panics. In that case, it is

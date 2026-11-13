@@ -698,6 +698,7 @@ impl<Inner: ParallelIterator> ParallelIterator for PanicFuse<Inner> {
     ) -> Output {
         let fuse = Fuse::new();
         self.inner.upper_bounded_pipeline(
+            // TODO(MSRV >= 1.100.0): Use std::mem::DropGuard.
             || (init(), scopeguard::guard(&fuse, |fuse| fuse.set())),
             |(acc, guard), index, item| match guard.load() {
                 FuseState::Unset => match process_item(acc, index, item) {
