@@ -811,7 +811,7 @@ impl SkipIterator for UpperBoundedWorkStealingRangeIterator<'_, '_> {
         // needed in case another thread stole part of the range.
         //
         // Loop invariant:
-        //   self.my_range = my_bounded_range || my_residual_range.
+        //   self.my_range = concat(my_bounded_range, my_residual_range).
         loop {
             if !my_bounded_range.is_empty() {
                 let (taken, my_new_range) = my_bounded_range.increment_start();
