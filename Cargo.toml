@@ -33,7 +33,7 @@ scopeguard = "1.2.0"
 
 # Platforms that support `libc::sched_setaffinity()`.
 [target.'cfg(all(not(miri), any(target_os = "android", target_os = "dragonfly", target_os = "freebsd", target_os = "linux")))'.dependencies]
-nix = { optional = true, version = "0.31.3", features = ["sched"] }
+nix = { optional = true, version = "0.32.0", features = ["sched"] }
 
 # Windows thread affinity support.
 [target.'cfg(all(not(miri), target_os = "windows"))'.dependencies]
@@ -41,12 +41,12 @@ windows-sys = { optional = true, version = "0.61.2", features = ["Win32_System_T
 
 [dev-dependencies]
 chacha20 = { version = "0.10.2", features = ["rng"] }
-clap = { version = "4.6.7", features = ["derive"] }
+clap = { version = "4.6.8", features = ["derive"] }
 criterion = "0.8.2"
 divan = "0.1.21"
 env_logger = "0.11.11"
 hashbrown = "0.17.1"
-rand = "0.10.3"
+rand = "0.10.4"
 rayon = "1.12.0"
 
 [[bench]]
