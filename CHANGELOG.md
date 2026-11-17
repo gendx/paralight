@@ -6,6 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.0.13 - 2026-11-17
+
+### Added
+
+- 3 free-standing adaptors: `generate()`, `generate_init()` and `repeat()`.
+- `cycle()` adaptor to `(Exact)ParallelSourceExt`.
+- `unzip()` and `try_unzip()` adaptors to `BaseExactParallelIterator`.
+- The `Unzip` and `UnzipSink` support structs, to unzip into a tuple or array of
+  sinks.
+
+### Changed
+
+- The minimum supported Rust version (MSRV) is now
+  [1.91.0](https://releases.rs/docs/1.91.0/).
+- Performance improvement in the work-stealing implementation: remove one atomic
+  load per loop iteration.
+- Performance improvement in the upper-bounded work-stealing implementation:
+  remove one redundant check in an error path.
+- Annotate failure branches with `std::hint::cold_path()` in the work-stealing
+  implementation when the `nightly` feature in enabled.
+- Migrated to the 2024 edition of Rust.
+- Upgraded the `crossbeam-utils` dependency to version 0.8.23.
+- Upgraded the `log` dependency to version 0.4.35.
+- Upgraded the `nix` dependency to version 0.32.0.
+- Upgraded the `chacha20` dev-dependency to version 0.10.2.
+- Upgraded the `clap` dev-dependency to version 4.6.8.
+- Upgraded the `env_logger` dev-dependency to version 0.11.11.
+- Upgraded the `hashbrown` dev-dependency to version 0.17.1.
+- Upgraded the `rand` dev-dependency to version 0.10.4.
+- Upgraded the `rayon` dev-dependency to version 1.12.0.
+
 ## 0.0.12 - 2026-04-24
 
 ### Added
