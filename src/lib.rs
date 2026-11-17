@@ -984,6 +984,7 @@ mod test {
     }
 
     #[cfg(feature = "nightly")]
+    #[expect(clippy::large_unopt_stack_frames)]
     fn test_source_array<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
@@ -1012,6 +1013,7 @@ mod test {
     }
 
     #[cfg(feature = "nightly")]
+    #[expect(clippy::large_unopt_stack_frames)]
     fn test_source_array_boxed<T>(mut thread_pool: T)
     where
         for<'a> &'a mut T: GenericThreadPool,
