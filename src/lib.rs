@@ -1130,7 +1130,7 @@ mod test {
         let sum = input
             .par_iter()
             .with_thread_pool(&mut thread_pool)
-            .pipeline(|| 0, |acc, x| acc + x, |acc| acc, |a, b| a + b);
+            .fold_per_thread(|| 0, |acc, x| acc + x, |_| 0, |a, b| a + b);
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -1151,7 +1151,7 @@ mod test {
     {
         let sum = crate::iter::generate(INPUT_LEN as usize, |i| NotSend(i as u64))
             .with_thread_pool(&mut thread_pool)
-            .pipeline(|| 0, |acc, x| acc + x.0, |acc| acc, |a, b| a + b);
+            .fold_per_thread(|| 0, |acc, x| acc + x.0, |_| 0, |a, b| a + b);
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN - 1) / 2);
     }
 
@@ -1161,7 +1161,7 @@ mod test {
     {
         let sum = crate::iter::generate(INPUT_LEN as usize, |i| Cell::new(i as u64))
             .with_thread_pool(&mut thread_pool)
-            .pipeline(|| 0, |acc, x| acc + x.get(), |acc| acc, |a, b| a + b);
+            .fold_per_thread(|| 0, |acc, x| acc + x.get(), |_| 0, |a, b| a + b);
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN - 1) / 2);
     }
 
@@ -1189,7 +1189,7 @@ mod test {
             NotSend(if rng.random() { i * 2 } else { i * 3 } as u64)
         })
         .with_thread_pool(&mut thread_pool)
-        .pipeline(|| 0, |acc, x| acc + x.0, |acc| acc, |a, b| a + b);
+        .fold_per_thread(|| 0, |acc, x| acc + x.0, |_| 0, |a, b| a + b);
         assert!(sum >= INPUT_LEN * (INPUT_LEN - 1));
         assert!(sum <= 3 * INPUT_LEN * (INPUT_LEN - 1) / 2);
     }
@@ -1202,7 +1202,7 @@ mod test {
             Cell::new(if rng.random() { i * 2 } else { i * 3 } as u64)
         })
         .with_thread_pool(&mut thread_pool)
-        .pipeline(|| 0, |acc, x| acc + x.get(), |acc| acc, |a, b| a + b);
+        .fold_per_thread(|| 0, |acc, x| acc + x.get(), |_| 0, |a, b| a + b);
         assert!(sum >= INPUT_LEN * (INPUT_LEN - 1));
         assert!(sum <= 3 * INPUT_LEN * (INPUT_LEN - 1) / 2);
     }
@@ -1224,7 +1224,7 @@ mod test {
     {
         let sum = crate::iter::repeat(NotSend(42), INPUT_LEN as usize)
             .with_thread_pool(&mut thread_pool)
-            .pipeline(|| 0, |acc, x| acc + x.get(), |acc| acc, |a, b| a + b);
+            .fold_per_thread(|| 0, |acc, x| acc + x.get(), |_| 0, |a, b| a + b);
         assert_eq!(sum, 42 * INPUT_LEN);
     }
 
@@ -1236,7 +1236,7 @@ mod test {
         let sum = input
             .par_iter()
             .with_thread_pool(&mut thread_pool)
-            .pipeline(|| 0, |acc, x| acc + x, |acc| acc, |a, b| a + b);
+            .fold_per_thread(|| 0, |acc, x| acc + x, |_| 0, |a, b| a + b);
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -1249,7 +1249,7 @@ mod test {
         let sum = input
             .par_iter()
             .with_thread_pool(&mut thread_pool)
-            .pipeline(|| 0, |acc, x| acc + x.get(), |acc| acc, |a, b| a + b);
+            .fold_per_thread(|| 0, |acc, x| acc + x.get(), |_| 0, |a, b| a + b);
         assert_eq!(sum, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -1803,7 +1803,7 @@ mod test {
             // and isn't shared with other threads.
             .map(|&x| Rc::new(x))
             .with_thread_pool(&mut thread_pool)
-            .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
+            .fold_per_thread(|| 0, |acc, x| acc + *x, |_| 0, |a, b| a + b);
         assert_eq!(sum3, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -2306,7 +2306,7 @@ mod test {
             // and isn't shared with other threads.
             .map(|&x| Rc::new(x))
             .with_thread_pool(&mut thread_pool)
-            .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
+            .fold_per_thread(|| 0, |acc, x| acc + *x, |_| 0, |a, b| a + b);
         assert_eq!(sum3, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 
@@ -3896,7 +3896,7 @@ mod test {
             // Mapping to a non-Send non-Sync type is fine, as the item stays on the same thread
             // and isn't shared with other threads.
             .map(|&x| Rc::new(x))
-            .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
+            .fold_per_thread(|| 0, |acc, x| acc + *x, |_| 0, |a, b| a + b);
         assert_eq!(sum3, INPUT_LEN * (INPUT_LEN + 1) / 2);
     }
 

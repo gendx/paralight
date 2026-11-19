@@ -714,7 +714,7 @@ pub trait ParallelSourceExt: ParallelSource {
     ///     .downgrade() // ExactParallelSource -> ParallelSource
     ///     .filter_map(|&x| if x % 2 == 0 { Some(Rc::new(x)) } else { None })
     ///     .with_thread_pool(&mut thread_pool)
-    ///     .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
+    ///     .fold_per_thread(|| 0, |acc, x| acc + *x, |_| 0, |a, b| a + b);
     /// assert_eq!(sum_even, 5 * 6);
     /// ```
     fn filter_map<T, F>(self, f: F) -> FilterMap<Self, F>
@@ -804,7 +804,7 @@ pub trait ParallelSourceExt: ParallelSource {
     ///     .downgrade() // ExactParallelSource -> ParallelSource
     ///     .map(|&x| Rc::new(x))
     ///     .with_thread_pool(&mut thread_pool)
-    ///     .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
+    ///     .fold_per_thread(|| 0, |acc, x| acc + *x, |_| 0, |a, b| a + b);
     /// assert_eq!(sum, 5 * 11);
     /// ```
     fn map<T, F>(self, f: F) -> MapSource<Self, F>
@@ -1376,7 +1376,7 @@ pub trait ExactParallelSourceExt: ExactParallelSource {
     ///     .par_iter()
     ///     .filter_map(|&x| if x % 2 == 0 { Some(Rc::new(x)) } else { None })
     ///     .with_thread_pool(&mut thread_pool)
-    ///     .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
+    ///     .fold_per_thread(|| 0, |acc, x| acc + *x, |_| 0, |a, b| a + b);
     /// assert_eq!(sum_even, 5 * 6);
     /// ```
     fn filter_map<T, F>(self, f: F) -> FilterMapExact<Self, F>
@@ -1463,7 +1463,7 @@ pub trait ExactParallelSourceExt: ExactParallelSource {
     ///     .par_iter()
     ///     .map(|&x| Rc::new(x))
     ///     .with_thread_pool(&mut thread_pool)
-    ///     .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
+    ///     .fold_per_thread(|| 0, |acc, x| acc + *x, |_| 0, |a, b| a + b);
     /// assert_eq!(sum, 5 * 11);
     /// ```
     fn map<T, F>(self, f: F) -> MapSource<Self, F>
@@ -1895,7 +1895,7 @@ impl<T: ExactParallelSource> ExactParallelSourceExt for T {}
 /// # .build();
 /// let sum = generate(10, Rc::new)
 ///     .with_thread_pool(&mut thread_pool)
-///     .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
+///     .fold_per_thread(|| 0, |acc, x| acc + *x, |_| 0, |a, b| a + b);
 /// assert_eq!(sum, 45);
 /// ```
 pub fn generate<T, F>(n: usize, f: F) -> Generate<F>
@@ -1958,7 +1958,7 @@ where
 ///     }
 /// })
 /// .with_thread_pool(&mut thread_pool)
-/// .pipeline(|| 0, |acc, x| acc + *x, |acc| acc, |a, b| a + b);
+/// .fold_per_thread(|| 0, |acc, x| acc + *x, |_| 0, |a, b| a + b);
 ///
 /// assert!(sum >= 45);
 /// assert!(sum <= 55);
