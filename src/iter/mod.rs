@@ -189,170 +189,9 @@ pub trait ParallelIterator: Sized {
     /// - `finalize` function to transform an accumulator into an output,
     /// - `reduce` function to reduce a pair of outputs into one output.
     ///
-    /// ```
-    /// # use paralight::prelude::*;
-    /// # let mut thread_pool = ThreadPoolBuilder {
-    /// #     num_threads: ThreadCount::AvailableParallelism,
-    /// #     range_strategy: RangeStrategy::WorkStealing,
-    /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # }
-    /// # .build();
-    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    /// let sum = input
-    ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
-    ///     .pipeline(|| 0, |acc, x| acc + x, |acc| acc, |x, y| x + y);
-    /// assert_eq!(sum, 5 * 11);
-    /// ```
-    fn pipeline<Output: Send, Accum>(
-        self,
-        init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, Self::Item) -> Accum + Sync,
-        finalize: impl Fn(Accum) -> Output + Sync,
-        reduce: impl Fn(Output, Output) -> Output,
-    ) -> Output {
-        self.iter_pipeline(
-            IterAccumulator {
-                init: &init,
-                process_item,
-                finalize: &finalize,
-            },
-            IterReducer { reduce },
-        )
-        .unwrap_or_else(|| finalize(init()))
-    }
-
-    /// Runs the pipeline defined by the given functions on this iterator.
-    ///
-    /// # Parameters
-    ///
-    /// - `init` function to create a new (per-thread) accumulator,
-    /// - `process_item` function to accumulate an item into the accumulator,
-    /// - `finalize` function to transform an accumulator into an output,
-    /// - `reduce` function to reduce a pair of outputs into one output.
-    ///
-    /// Contrary to [`pipeline()`](Self::pipeline), the `process_item` function
-    /// can return [`ControlFlow::Break`] to indicate that the pipeline should
-    /// terminate early.
-    ///
-    /// ```
-    /// # #![expect(clippy::bool_assert_comparison)]
-    /// # use paralight::prelude::*;
-    /// # use std::ops::ControlFlow;
-    /// # let mut thread_pool = ThreadPoolBuilder {
-    /// #     num_threads: ThreadCount::AvailableParallelism,
-    /// #     range_strategy: RangeStrategy::WorkStealing,
-    /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # }
-    /// # .build();
-    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    /// let any_even = input
-    ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
-    ///     .short_circuiting_pipeline(
-    ///         || (),
-    ///         |_, x| {
-    ///             if x % 2 == 0 {
-    ///                 ControlFlow::Break(())
-    ///             } else {
-    ///                 ControlFlow::Continue(())
-    ///             }
-    ///         },
-    ///         |acc| acc.is_break(),
-    ///         |x, y| x || y,
-    ///     );
-    /// assert_eq!(any_even, true);
-    /// ```
-    fn short_circuiting_pipeline<Output: Send, Accum, Break>(
-        self,
-        init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, Self::Item) -> ControlFlow<Break, Accum> + Sync,
-        finalize: impl Fn(ControlFlow<Break, Accum>) -> Output + Sync,
-        reduce: impl Fn(Output, Output) -> Output,
-    ) -> Output {
-        self.iter_pipeline(
-            ShortCircuitingAccumulator {
-                fuse: Fuse::new(),
-                init: &init,
-                process_item,
-                finalize: &finalize,
-            },
-            IterReducer { reduce },
-        )
-        .unwrap_or_else(|| finalize(ControlFlow::Continue(init())))
-    }
-
-    /// Runs the pipeline defined by the given functions on this iterator.
-    ///
-    /// # Parameters
-    ///
-    /// - `init` function to create a new (per-thread) accumulator,
-    /// - `process_item` function to accumulate an item into the accumulator,
-    /// - `finalize` function to transform an accumulator into an output,
-    /// - `reduce` function to reduce a pair of outputs into one output.
-    ///
-    /// Contrary to
-    /// [`short_circuiting_pipeline()`](Self::short_circuiting_pipeline), the
-    /// `process_item` function can return any type that implements the
-    /// [`Try`] trait to indicate that the pipeline should terminate early
-    /// (failures being represented by the corresponding [`Try::Residual`]
-    /// type).
-    ///
-    /// ```
-    /// # use paralight::prelude::*;
-    /// # let mut thread_pool = ThreadPoolBuilder {
-    /// #     num_threads: ThreadCount::AvailableParallelism,
-    /// #     range_strategy: RangeStrategy::WorkStealing,
-    /// #     cpu_pinning: CpuPinningPolicy::No,
-    /// # }
-    /// # .build();
-    /// let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-    /// let any_even = input
-    ///     .par_iter()
-    ///     .with_thread_pool(&mut thread_pool)
-    ///     .try_short_circuiting_pipeline(
-    ///         || (),
-    ///         |(), x| {
-    ///             if x % 2 == 0 { Err(x) } else { Ok(()) }
-    ///         },
-    ///         |acc| acc,
-    ///         |x, y| x.and(y),
-    ///     );
-    /// assert!(any_even.is_err());
-    /// assert!(any_even.unwrap_err() % 2 == 0);
-    /// ```
-    #[cfg(feature = "nightly")]
-    fn try_short_circuiting_pipeline<Output: Send, Accum, R: Try<Output = Accum>>(
-        self,
-        init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, Self::Item) -> R + Sync,
-        finalize: impl Fn(R) -> Output + Sync,
-        reduce: impl Fn(Output, Output) -> Output,
-    ) -> Output {
-        self.iter_pipeline(
-            ShortCircuitingAccumulator {
-                fuse: Fuse::new(),
-                init: &init,
-                process_item,
-                finalize: &finalize,
-            },
-            IterReducer { reduce },
-        )
-        .unwrap_or_else(|| finalize(Try::from_output(init())))
-    }
-
-    /// Runs the pipeline defined by the given functions on this iterator.
-    ///
-    /// # Parameters
-    ///
-    /// - `init` function to create a new (per-thread) accumulator,
-    /// - `process_item` function to accumulate an item into the accumulator,
-    /// - `finalize` function to transform an accumulator into an output,
-    /// - `reduce` function to reduce a pair of outputs into one output.
-    ///
-    /// Contrary to [`pipeline()`](Self::pipeline), the `process_item` function
-    /// can return [`ControlFlow::Break`] to indicate that the pipeline should
-    /// skip processing items at larger indices.
+    /// The `process_item` function can return [`ControlFlow::Break`] to
+    /// indicate that the pipeline should skip processing items at larger
+    /// indices.
     ///
     /// ```
     /// # use paralight::prelude::*;
@@ -532,6 +371,100 @@ impl<T: ParallelAdaptor> ParallelIterator for T {
     }
 }
 
+/// Runs the pipeline defined by the given functions on this iterator.
+///
+/// # Parameters
+///
+/// - `init` function to create a new (per-thread) accumulator,
+/// - `process_item` function to accumulate an item into the accumulator,
+/// - `finalize` function to transform an accumulator into an output,
+/// - `reduce` function to reduce a pair of outputs into one output.
+pub(crate) fn pipeline<T: ParallelIterator, Output: Send, Accum>(
+    iter: T,
+    init: impl Fn() -> Accum + Sync,
+    process_item: impl Fn(Accum, T::Item) -> Accum + Sync,
+    finalize: impl Fn(Accum) -> Output + Sync,
+    reduce: impl Fn(Output, Output) -> Output,
+) -> Output {
+    iter.iter_pipeline(
+        IterAccumulator {
+            init: &init,
+            process_item,
+            finalize: &finalize,
+        },
+        IterReducer { reduce },
+    )
+    .unwrap_or_else(|| finalize(init()))
+}
+
+/// Runs the pipeline defined by the given functions on this iterator.
+///
+/// # Parameters
+///
+/// - `init` function to create a new (per-thread) accumulator,
+/// - `process_item` function to accumulate an item into the accumulator,
+/// - `finalize` function to transform an accumulator into an output,
+/// - `reduce` function to reduce a pair of outputs into one output.
+///
+/// Contrary to [`pipeline()`], the `process_item` function can return
+/// [`ControlFlow::Break`] to indicate that the pipeline should terminate early.
+fn short_circuiting_pipeline<T: ParallelIterator, Output: Send, Accum, Break>(
+    iter: T,
+    init: impl Fn() -> Accum + Sync,
+    process_item: impl Fn(Accum, T::Item) -> ControlFlow<Break, Accum> + Sync,
+    finalize: impl Fn(ControlFlow<Break, Accum>) -> Output + Sync,
+    reduce: impl Fn(Output, Output) -> Output,
+) -> Output {
+    iter.iter_pipeline(
+        ShortCircuitingAccumulator {
+            fuse: Fuse::new(),
+            init: &init,
+            process_item,
+            finalize: &finalize,
+        },
+        IterReducer { reduce },
+    )
+    .unwrap_or_else(|| finalize(ControlFlow::Continue(init())))
+}
+
+/// Runs the pipeline defined by the given functions on this iterator.
+///
+/// # Parameters
+///
+/// - `init` function to create a new (per-thread) accumulator,
+/// - `process_item` function to accumulate an item into the accumulator,
+/// - `finalize` function to transform an accumulator into an output,
+/// - `reduce` function to reduce a pair of outputs into one output.
+///
+/// Contrary to [`short_circuiting_pipeline()`], the `process_item` function can
+/// return any type that implements the [`Try`] trait to indicate that the
+/// pipeline should terminate early (failures being represented by the
+/// corresponding [`Try::Residual`] type).
+#[cfg(feature = "nightly")]
+fn try_short_circuiting_pipeline<
+    T: ParallelIterator,
+    Output: Send,
+    Accum,
+    R: Try<Output = Accum>,
+>(
+    iter: T,
+    init: impl Fn() -> Accum + Sync,
+    process_item: impl Fn(Accum, T::Item) -> R + Sync,
+    finalize: impl Fn(R) -> Output + Sync,
+    reduce: impl Fn(Output, Output) -> Output,
+) -> Output {
+    iter.iter_pipeline(
+        ShortCircuitingAccumulator {
+            fuse: Fuse::new(),
+            init: &init,
+            process_item,
+            finalize: &finalize,
+        },
+        IterReducer { reduce },
+    )
+    .unwrap_or_else(|| finalize(Try::from_output(init())))
+}
+
 impl<T: ParallelIterator> ParallelIteratorExt for T {}
 
 /// Additional methods provided for types that implement [`ParallelIterator`].
@@ -587,7 +520,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     where
         F: Fn(Self::Item) -> bool + Sync,
     {
-        self.short_circuiting_pipeline(
+        short_circuiting_pipeline(
+            self,
             || (),
             |_, item| match f(item) {
                 true => ControlFlow::Continue(()),
@@ -646,7 +580,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     where
         F: Fn(Self::Item) -> bool + Sync,
     {
-        self.short_circuiting_pipeline(
+        short_circuiting_pipeline(
+            self,
             || (),
             |_, item| match f(item) {
                 true => ControlFlow::Break(()),
@@ -1191,7 +1126,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
         F: Fn(&Self::Item) -> bool + Sync,
         Self::Item: Send,
     {
-        self.short_circuiting_pipeline(
+        short_circuiting_pipeline(
+            self,
             || (),
             |_, item| match f(&item) {
                 true => ControlFlow::Break(item),
@@ -1320,7 +1256,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
         F: Fn(Self::Item) -> Option<T> + Sync,
         T: Send,
     {
-        self.short_circuiting_pipeline(
+        short_circuiting_pipeline(
+            self,
             || (),
             |_, item| match f(item) {
                 Some(t) => ControlFlow::Break(t),
@@ -1504,7 +1441,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     where
         F: Fn(Self::Item) + Sync,
     {
-        self.pipeline(
+        pipeline(
+            self,
             /* init */ || (),
             /* process_item */ |(), item| f(item),
             /* finalize */ |()| (),
@@ -1550,7 +1488,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
         Init: Fn() -> T + Sync,
         F: Fn(&mut T, Self::Item) + Sync,
     {
-        self.pipeline(
+        pipeline(
+            self,
             init,
             |mut t, item| {
                 f(&mut t, item);
@@ -1631,7 +1570,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     where
         Self::Item: Ord + Send,
     {
-        self.pipeline(
+        pipeline(
+            self,
             || None,
             |max, x| match max {
                 None => Some(x),
@@ -1674,7 +1614,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
         F: Fn(&Self::Item, &Self::Item) -> Ordering + Sync,
         Self::Item: Send,
     {
-        self.pipeline(
+        pipeline(
+            self,
             || None,
             |max, x| match max {
                 None => Some(x),
@@ -1756,7 +1697,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
     where
         Self::Item: Ord + Send,
     {
-        self.pipeline(
+        pipeline(
+            self,
             || None,
             |min, x| match min {
                 None => Some(x),
@@ -1799,7 +1741,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
         F: Fn(&Self::Item, &Self::Item) -> Ordering + Sync,
         Self::Item: Send,
     {
-        self.pipeline(
+        pipeline(
+            self,
             || None,
             |min, x| match min {
                 None => Some(x),
@@ -2613,7 +2556,7 @@ pub trait ParallelIteratorExt: ParallelIterator {
         F: Fn(Self::Item, Self::Item) -> Self::Item + Sync,
         Self::Item: Send,
     {
-        self.pipeline(init, &f, |acc| acc, &f)
+        pipeline(self, init, &f, |acc| acc, &f)
     }
 
     /// Returns the sum of the items produced by this iterator.
@@ -3300,7 +3243,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
         F: Fn(Self::Item) -> Result<(), E> + Sync,
         E: Send,
     {
-        self.short_circuiting_pipeline(
+        short_circuiting_pipeline(
+            self,
             || (),
             |_, item| match f(item) {
                 Ok(()) => ControlFlow::Continue(()),
@@ -3472,7 +3416,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
         F: Fn(Self::Item) -> R + Sync,
         R: Try<Output = ()> + Send,
     {
-        self.try_short_circuiting_pipeline(
+        try_short_circuiting_pipeline(
+            self,
             || (),
             |_, item| f(item),
             |result| result,
@@ -3539,7 +3484,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
         F: Fn(&mut T, Self::Item) -> Result<(), E> + Sync,
         E: Send,
     {
-        self.short_circuiting_pipeline(
+        short_circuiting_pipeline(
+            self,
             init,
             |mut t, item| match f(&mut t, item) {
                 Ok(()) => ControlFlow::Continue(t),
@@ -3642,7 +3588,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
         F: Fn(&mut T, Self::Item) -> R + Sync,
         R: Try<Output = ()> + Send,
     {
-        self.short_circuiting_pipeline(
+        short_circuiting_pipeline(
+            self,
             init,
             |mut t, item| f(&mut t, item).branch().map_continue(|()| t),
             |result| match result {
@@ -3730,7 +3677,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
         Self::Item: Send,
         E: Send,
     {
-        self.short_circuiting_pipeline(
+        short_circuiting_pipeline(
+            self,
             init,
             |a, b| match f(a, b) {
                 Ok(x) => ControlFlow::Continue(x),
@@ -3872,7 +3820,8 @@ pub trait ParallelIteratorExt: ParallelIterator {
         F: Fn(Self::Item, Self::Item) -> R + Sync,
         R: Try<Output = Self::Item> + Send,
     {
-        self.try_short_circuiting_pipeline(
+        try_short_circuiting_pipeline(
+            self,
             init,
             &f,
             |acc| acc,
@@ -3881,5 +3830,83 @@ pub trait ParallelIteratorExt: ParallelIterator {
                 (ControlFlow::Break(e), _) | (_, ControlFlow::Break(e)) => R::from_residual(e),
             },
         )
+    }
+}
+
+#[cfg(all(test, feature = "default-thread-pool"))]
+mod test {
+    use super::*;
+    use crate::threads::{CpuPinningPolicy, RangeStrategy, ThreadCount, ThreadPoolBuilder};
+    use std::ops::ControlFlow;
+
+    #[test]
+    fn test_pipeline() {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy: RangeStrategy::WorkStealing,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        let sum = pipeline(
+            input.par_iter().with_thread_pool(&mut thread_pool),
+            || 0,
+            |acc, x| acc + x,
+            |acc| acc,
+            |x, y| x + y,
+        );
+        assert_eq!(sum, 5 * 11);
+    }
+
+    #[test]
+    #[expect(clippy::bool_assert_comparison)]
+    fn test_short_circuiting_pipeline() {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy: RangeStrategy::WorkStealing,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        let any_even = short_circuiting_pipeline(
+            input.par_iter().with_thread_pool(&mut thread_pool),
+            || (),
+            |_, x| {
+                if x % 2 == 0 {
+                    ControlFlow::Break(())
+                } else {
+                    ControlFlow::Continue(())
+                }
+            },
+            |acc| acc.is_break(),
+            |x, y| x || y,
+        );
+        assert_eq!(any_even, true);
+    }
+
+    #[cfg(feature = "nightly")]
+    #[test]
+    fn test_try_short_circuiting_pipeline() {
+        let mut thread_pool = ThreadPoolBuilder {
+            num_threads: ThreadCount::AvailableParallelism,
+            range_strategy: RangeStrategy::WorkStealing,
+            cpu_pinning: CpuPinningPolicy::No,
+        }
+        .build();
+
+        let input = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        let any_even = try_short_circuiting_pipeline(
+            input.par_iter().with_thread_pool(&mut thread_pool),
+            || (),
+            |(), x| {
+                if x % 2 == 0 { Err(x) } else { Ok(()) }
+            },
+            |acc| acc,
+            |x, y| x.and(y),
+        );
+        assert!(any_even.is_err());
+        assert!(any_even.unwrap_err() % 2 == 0);
     }
 }

@@ -366,10 +366,7 @@ pub unsafe trait RewindableSource {}
 pub trait IntoParallelSource {
     /// The type of items that this parallel source produces.
     ///
-    /// Items are sent to worker threads (where they are then consumed by the
-    /// `process_item` function parameter of the
-    /// [`ParallelIterator::pipeline()`](super::ParallelIterator::pipeline)),
-    /// hence the required [`Send`] bound.
+    /// Items are sent to worker threads, hence the required [`Send`] bound.
     type Item: Send;
 
     /// Target parallel source type.
@@ -383,10 +380,7 @@ pub trait IntoParallelSource {
 pub trait IntoExactParallelSource {
     /// The type of items that this parallel source produces.
     ///
-    /// Items are sent to worker threads (where they are then consumed by the
-    /// `process_item` function parameter of the
-    /// [`ParallelIterator::pipeline()`](super::ParallelIterator::pipeline)),
-    /// hence the required [`Send`] bound.
+    /// Items are sent to worker threads, hence the required [`Send`] bound.
     type Item: Send;
 
     /// Target parallel source type.
@@ -400,10 +394,8 @@ pub trait IntoExactParallelSource {
 pub trait IntoParallelRefSource<'data> {
     /// The type of items that this parallel source produces.
     ///
-    /// Like for [`IntoParallelSource`], items are sent to worker threads (where
-    /// they are then consumed by the `process_item` function parameter of the
-    /// [`ParallelIterator::pipeline()`](super::ParallelIterator::pipeline)),
-    /// hence the required [`Send`] bound.
+    /// Like for [`IntoParallelSource`], items are sent to worker threads, hence
+    /// the required [`Send`] bound.
     type Item: Send;
 
     /// Target parallel source type.
@@ -418,10 +410,7 @@ pub trait IntoParallelRefSource<'data> {
 pub trait IntoExactParallelRefSource<'data> {
     /// The type of items that this parallel source produces.
     ///
-    /// Like for [`IntoExactParallelSource`], items are sent to worker threads
-    /// (where they are then consumed by the `process_item` function
-    /// parameter of the
-    /// [`ParallelIterator::pipeline()`](super::ParallelIterator::pipeline)),
+    /// Like for [`IntoExactParallelSource`], items are sent to worker threads,
     /// hence the required [`Send`] bound.
     type Item: Send;
 
@@ -453,10 +442,8 @@ pub trait IntoExactParallelRefSource<'data> {
 pub trait IntoParallelRefMutSource<'data> {
     /// The type of items that this parallel source produces.
     ///
-    /// Like for [`IntoParallelSource`], items are sent to worker threads (where
-    /// they are then consumed by the `process_item` function parameter of the
-    /// [`ParallelIterator::pipeline()`](super::ParallelIterator::pipeline)),
-    /// hence the required [`Send`] bound.
+    /// Like for [`IntoParallelSource`], items are sent to worker threads, hence
+    /// the required [`Send`] bound.
     type Item: Send;
 
     /// Target parallel source type.
@@ -471,10 +458,7 @@ pub trait IntoParallelRefMutSource<'data> {
 pub trait IntoExactParallelRefMutSource<'data> {
     /// The type of items that this parallel source produces.
     ///
-    /// Like for [`IntoExactParallelSource`], items are sent to worker threads
-    /// (where they are then consumed by the `process_item` function
-    /// parameter of the
-    /// [`ParallelIterator::pipeline()`](super::ParallelIterator::pipeline)),
+    /// Like for [`IntoExactParallelSource`], items are sent to worker threads,
     /// hence the required [`Send`] bound.
     type Item: Send;
 
