@@ -13,9 +13,9 @@ mod sink;
 mod source;
 
 use detail::{
-    AdaptorAccumulator, Fuse, IterAccumulator, IterCollector, IterFolder, IterReducer,
-    MinMaxAccumulator, ProductAccumulator, ShortCircuitingAccumulator, SumAccumulator,
-    TryIterCollector, TryIterFolder,
+    Fuse, IterAccumulator, IterCollector, IterFolder, IterReducer, MinMaxAccumulator,
+    ProductAccumulator, ShortCircuitingAccumulator, SumAccumulator, TryIterCollector,
+    TryIterFolder,
 };
 pub use detail::{Map, MinMaxResult, PanicFuse};
 #[cfg(feature = "nightly")]
@@ -294,81 +294,6 @@ pub trait ParallelIterator: Sized {
         accum: impl Accumulator<Self::Item, Accum> + Sync,
         reduce: impl ExactSizeAccumulator<Accum, Output>,
     ) -> Output;
-}
-
-/// An internal object describing how to transform items in a
-/// [`ParallelAdaptor`].
-pub struct ParallelAdaptorDescriptor<
-    Item,
-    Inner: ParallelIterator,
-    TransformItem: Fn(Inner::Item) -> Option<Item> + Sync,
-> {
-    /// The underlying parallel iterator that this adaptor builds on top of.
-    inner: Inner,
-    /// Function to transform an item from the inner iterator into the adapted
-    /// iterator.
-    transform_item: TransformItem,
-}
-
-/// An internal trait to define iterator adaptors. Types that implement this
-/// trait automatically implement [`ParallelIterator`] and
-/// [`ParallelIteratorExt`].
-pub trait ParallelAdaptor {
-    /// The type of items that this parallel iterator adaptor produces.
-    ///
-    /// As for [`ParallelIterator`] this type has no particular [`Send`] nor
-    /// [`Sync`] bounds.
-    type Item;
-    /// The underlying parallel iterator that this type adapts on top of.
-    type Inner: ParallelIterator;
-
-    /// Definition of the parallel adaptor.
-    // We can't really avoid the complexity in the result type as the function may come from an
-    // anonymous lambda.
-    #[expect(clippy::type_complexity)]
-    fn descriptor(
-        self,
-    ) -> ParallelAdaptorDescriptor<
-        Self::Item,
-        Self::Inner,
-        impl Fn(<Self::Inner as ParallelIterator>::Item) -> Option<Self::Item> + Sync,
-    >;
-}
-
-impl<T: ParallelAdaptor> ParallelIterator for T {
-    type Item = T::Item;
-
-    fn upper_bounded_pipeline<Output: Send, Accum>(
-        self,
-        init: impl Fn() -> Accum + Sync,
-        process_item: impl Fn(Accum, usize, Self::Item) -> ControlFlow<Accum, Accum> + Sync,
-        finalize: impl Fn(Accum) -> Output + Sync,
-        reduce: impl Fn(Output, Output) -> Output,
-    ) -> Output {
-        let descriptor = self.descriptor();
-        descriptor.inner.upper_bounded_pipeline(
-            init,
-            |accum, index, item| match (descriptor.transform_item)(item) {
-                Some(item) => process_item(accum, index, item),
-                None => ControlFlow::Continue(accum),
-            },
-            finalize,
-            reduce,
-        )
-    }
-
-    fn iter_pipeline<Output, Accum: Send>(
-        self,
-        accum: impl Accumulator<Self::Item, Accum> + Sync,
-        reduce: impl ExactSizeAccumulator<Accum, Output>,
-    ) -> Output {
-        let descriptor = self.descriptor();
-        let accumulator = AdaptorAccumulator {
-            inner: accum,
-            transform_item: descriptor.transform_item,
-        };
-        descriptor.inner.iter_pipeline(accumulator, reduce)
-    }
 }
 
 /// Runs the pipeline defined by the given functions on this iterator.
